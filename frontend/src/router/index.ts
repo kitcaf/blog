@@ -36,11 +36,12 @@ const router = createRouter({
 
 // View Transitions API integration for smooth cross-route animations
 router.beforeResolve((to, from, next) => {
+  // 如果浏览器不支持Transitions API直接跳过
   if (!document.startViewTransition) {
     next()
     return
   }
-
+  // View Transitions
   document.startViewTransition(() => {
     next()
   })

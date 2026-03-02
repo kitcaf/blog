@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useSearch } from '@/composables/useSearch'
 
 /**
@@ -7,6 +8,7 @@ import { useSearch } from '@/composables/useSearch'
  */
 
 const { query } = useSearch()
+const isLoading = ref(true)
 
 const navLinks = [
   { path: '/blog', label: 'Blog' },
@@ -23,7 +25,7 @@ const categories = [
 ]
 
 const posts = [
-  { date: '10.24', title: 'The Evolution of React Server Components', tags: ['REACT', 'RSC'] },
+  { date: '10.24', title: 'agent的未来是什么', tags: ['REACT', 'RSC'] },
   { date: '09.12', title: 'Building a Custom Vue 3 Renderer', tags: ['VUE3', 'CANVAS'] },
   { date: '08.05', title: 'Designing Idempotent APIs in Go', tags: ['GO', 'API'] },
   { date: '07.22', title: 'A Deep Dive into Layout Animations', tags: ['ANIMATION', 'UX'] },
@@ -32,6 +34,14 @@ const posts = [
   { date: '04.12', title: 'Implementing a RAG System from Scratch', tags: ['AI', 'LLM'] },
   { date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'] }
 ]
+
+onMounted(() => {
+  // Use a small timeout to let the View Transition finish its main morphing
+  // before we show the blog content, avoiding the "double refresh" look.
+  setTimeout(() => {
+    isLoading.value = false
+  }, 150)
+})
 </script>
 
 <template>
@@ -73,49 +83,51 @@ const posts = [
         </nav>
       </header>
 
-      <div class="flex gap-24 items-start">
-        <!-- Sidebar Navigation -->
-        <aside class="w-48 shrink-0">
-          <ul class="space-y-6">
-            <li v-for="cat in categories" :key="cat.label">
-              <a href="#" class="text-sm transition-all duration-300 flex items-center gap-3 group"
-                :class="cat.active ? 'text-[var(--color-fg-deeper)] font-bold' : 'text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)]'">
-                <span v-if="cat.active" class="w-1 h-1 rounded-full bg-[var(--color-fg-deeper)] animate-pulse"></span>
-                <span :class="{ 'translate-x-4 group-hover:translate-x-5 transition-transform': !cat.active }">{{
-                  cat.label }}</span>
-              </a>
-            </li>
-          </ul>
-        </aside>
+      <Transition name="content-fade">
+        <div v-if="!isLoading" class="flex gap-24 items-start" style="view-transition-name: blog-content">
+          <!-- Sidebar Navigation -->
+          <aside class="w-48 shrink-0">
+            <ul class="space-y-6">
+              <li v-for="cat in categories" :key="cat.label">
+                <a href="#" class="text-sm transition-all duration-300 flex items-center gap-3 group"
+                  :class="cat.active ? 'text-[var(--color-fg-deeper)] font-bold' : 'text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)]'">
+                  <span v-if="cat.active" class="w-1 h-1 rounded-full bg-[var(--color-fg-deeper)] animate-pulse"></span>
+                  <span :class="{ 'translate-x-4 group-hover:translate-x-5 transition-transform': !cat.active }">{{
+                    cat.label }}</span>
+                </a>
+              </li>
+            </ul>
+          </aside>
 
-        <!-- Blog Post List -->
-        <main class="flex-1 max-w-3xl">
-          <div
-            class="flex text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)] mb-8 border-b border-[var(--color-fg-lightest)] pb-4 px-2">
-            <span class="w-20">Date</span>
-            <span class="flex-1">Title</span>
-            <span class="w-32 text-right">Tags</span>
-          </div>
+          <!-- Blog Post List -->
+          <main class="flex-1 max-w-3xl">
+            <div
+              class="flex text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)] mb-8 border-b border-[var(--color-fg-lightest)] pb-4 px-2">
+              <span class="w-20">Date</span>
+              <span class="flex-1">Title</span>
+              <span class="w-32 text-right">Tags</span>
+            </div>
 
-          <div class="space-y-1">
-            <article v-for="post in posts" :key="post.title"
-              class="group flex items-center py-7 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
-              <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
-              <h2
-                class="flex-1 text-xl font-serif italic text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
-                {{ post.title }}
-              </h2>
-              <div
-                class="w-40 flex justify-end gap-2 opacity-60 group-hover:opacity-100 transition-opacity duration-500">
-                <span v-for="tag in post.tags" :key="tag"
-                  class="text-[9px] px-2 py-0.5 rounded-full border border-[var(--color-fg-lighter)] text-[var(--color-fg-light)] uppercase tracking-tighter">
-                  {{ tag }}
-                </span>
-              </div>
-            </article>
-          </div>
-        </main>
-      </div>
+            <div class="space-y-1">
+              <article v-for="post in posts" :key="post.title"
+                class="group flex items-center py-7 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
+                <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
+                <h2
+                  class="flex-1 text-xl font-serif italic text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
+                  {{ post.title }}
+                </h2>
+                <div
+                  class="w-40 flex justify-end gap-2 opacity-60 group-hover:opacity-100 transition-opacity duration-500">
+                  <span v-for="tag in post.tags" :key="tag"
+                    class="text-[9px] px-2 py-0.5 rounded-full border border-[var(--color-fg-lighter)] text-[var(--color-fg-light)] uppercase tracking-tighter">
+                    {{ tag }}
+                  </span>
+                </div>
+              </article>
+            </div>
+          </main>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>
@@ -125,29 +137,13 @@ const posts = [
   font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
 }
 
-/* Custom Animation for Page Entry */
-@keyframes slideUpFade {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Coordinated content entrance */
+.content-fade-enter-active {
+  transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-article,
-aside {
-  animation: slideUpFade 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-}
-
-aside {
-  animation-delay: 0.1s;
-}
-
-article {
-  animation-delay: 0.2s;
+.content-fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
 }
 </style>

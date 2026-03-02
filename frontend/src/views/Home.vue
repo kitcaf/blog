@@ -46,11 +46,10 @@ const navLinks = [
 
       <!-- Search Input -->
       <div class="w-full mb-6" style="view-transition-name: search-input">
-        <SearchInput v-model="query" @search="onSearch" placeholder="Search or command..." />
+        <SearchInput v-model="query" @search="onSearch" placeholder="Search articles, projects..." />
       </div>
       <!-- Inline Navigation Links -->
-      <nav
-        class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)]"
+      <nav class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)]"
         style="view-transition-name: nav-links">
         <router-link v-for="link in navLinks" :key="link.label" :to="link.path"
           class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200">

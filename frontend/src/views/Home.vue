@@ -39,26 +39,26 @@ const navLinks = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-white dark:bg-slate-950 font-sans flex flex-col items-center justify-center relative">
+  <div class="min-h-screen bg-[var(--color-bg)] font-sans flex flex-col items-center justify-center relative">
 
     <!-- Main Centered Content -->
     <main class="w-full max-w-4xl px-8 flex flex-col items-center animate-in fade-in duration-1000">
 
       <!-- Search Input -->
-      <div class="w-full mb-6">
+      <div class="w-full mb-6" style="view-transition-name: search-input">
         <SearchInput v-model="query" @search="onSearch" placeholder="Search or command..." />
       </div>
-
       <!-- Inline Navigation Links -->
       <nav
-        class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-slate-400 dark:text-slate-500">
+        class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)]"
+        style="view-transition-name: nav-links">
         <router-link v-for="link in navLinks" :key="link.label" :to="link.path"
-          class="hover:text-slate-800 dark:hover:text-slate-200 transition-colors duration-200">
+          class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200">
           {{ link.label }}
         </router-link>
 
         <a href="https://github.com/your-username" target="_blank" rel="noopener noreferrer"
-          class="hover:text-slate-800 dark:hover:text-slate-200 transition-colors duration-200 flex items-center"
+          class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200 flex items-center"
           aria-label="GitHub">
           <svg viewBox='0 0 24 24' display='inline-block' height='1.2em' width='1.2em' vertical-align='text-bottom'
             xmlns='http://www.w3.org/2000/svg'>
@@ -68,7 +68,7 @@ const navLinks = [
         </a>
 
         <button @click="toggleDark()"
-          class="hover:text-slate-800 dark:hover:text-slate-200 transition-colors duration-200 flex items-center"
+          class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200 flex items-center"
           aria-label="Toggle Dark Mode">
           <svg viewBox='0 0 24 24' display='inline-block' height='1.2em' width='1.2em' vertical-align='text-bottom'
             xmlns='http://www.w3.org/2000/svg'>

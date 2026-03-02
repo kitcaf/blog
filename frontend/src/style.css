@@ -3,21 +3,55 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --color-page-bg: #ffffff;
-  --color-main-text: #111111;
+
+  /* 黑色系 */
+  --color-fg: #555;
+  --color-fg-deep: #222;
+  --color-fg-deeper: #000;
+  /*灰色系 */
+  --color-fg-light: #999;
+  --color-fg-lighter: #ccc;
+  --color-fg-lightest: #eee;
+
+  --color-bg: #ffffff;
+  --color-selection-bg: #000000;
+  --color-selection-fg: #ffffff;
+}
+
+@layer base {
+  @view-transition {
+    navigation: auto;
+  }
+}
+
+/* Customize View Transitions */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+::view-transition-old(search-input),
+::view-transition-new(search-input),
+::view-transition-old(nav-links),
+::view-transition-new(nav-links) {
+  animation-duration: 0.8s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @layer base {
   body {
-    @apply bg-[var(--color-page-bg)] text-[var(--color-main-text)];
+    background-color: var(--color-bg);
+    color: var(--color-fg-deep);
+    font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   ::selection {
-    background-color: #000000;
-    color: #ffffff;
+    background-color: var(--color-selection-bg);
+    color: var(--color-selection-fg);
   }
 
   /* Scrollbar Styles */

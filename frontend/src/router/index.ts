@@ -12,25 +12,7 @@ const routes: RouteRecordRaw[] = [
     path: '/blog',
     name: 'Blog',
     component: () => import('@/views/Blog.vue'),
-    meta: { title: '博客' }
-  },
-  {
-    path: '/blog/:id',
-    name: 'BlogDetail',
-    component: () => import('@/views/BlogDetail.vue'),
-    meta: { title: '文章详情' }
-  },
-  {
-    path: '/project',
-    name: 'Project',
-    component: () => import('@/views/Project.vue'),
-    meta: { title: '项目' }
-  },
-  {
-    path: '/me',
-    name: 'Me',
-    component: () => import('@/views/Me.vue'),
-    meta: { title: '关于我' }
+    meta: { title: 'Blog - kitcaf' }
   },
   {
     path: '/:pathMatch(.*)*',
@@ -52,9 +34,23 @@ const router = createRouter({
   }
 })
 
+// View Transitions API integration for smooth cross-route animations
+router.beforeResolve((to, from, next) => {
+  if (!document.startViewTransition) {
+    next()
+    return
+  }
+
+  document.startViewTransition(() => {
+    next()
+  })
+})
+
 // 路由守卫 - 设置页面标题
 router.beforeEach((to, from, next) => {
-  document.title = `${to.meta.title}`
+  if (to.meta.title) {
+    document.title = `${to.meta.title}`
+  }
   next()
 })
 

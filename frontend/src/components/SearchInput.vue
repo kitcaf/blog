@@ -42,7 +42,7 @@ const handleKeydown = (e: KeyboardEvent) => {
       @focus="handleFocus"
       @blur="handleBlur"
       @keydown="handleKeydown"
-      class="w-full pb-4 text-4xl md:text-5xl font-light bg-transparent text-slate-800 dark:text-slate-200 placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none border-b border-slate-200 dark:border-slate-800 transition-colors duration-300"
+      class="w-full pb-4 text-4xl md:text-5xl font-light bg-transparent text-[var(--color-fg-deep)] placeholder-[var(--color-fg-light)] focus:outline-none border-b border-[var(--color-fg-lightest)] focus:border-[var(--color-fg-light)] transition-colors duration-300"
     />
   </div>
 </template>

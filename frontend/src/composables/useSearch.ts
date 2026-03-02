@@ -1,10 +1,11 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+const query = ref('')
+const isSearching = ref(false)
+
 export function useSearch() {
   const router = useRouter()
-  const query = ref('')
-  const isSearching = ref(false)
 
   const handleSearch = async () => {
     if (!query.value.trim()) {

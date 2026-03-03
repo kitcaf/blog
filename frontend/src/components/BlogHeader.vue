@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useSearch } from '@/composables/useSearch'
+import SearchInput from '@/components/SearchInput.vue'
 
 /**
  * Shared Header Component for Blog Index and Detail pages
@@ -19,8 +20,7 @@ const navLinks = [
     <div class="w-full max-w-xl group relative" style="view-transition-name: search-input">
       <span
         class="absolute -left-6 top-1/2 -translate-y-1/2 text-[var(--color-fg-light)] opacity-0 group-hover:opacity-100 transition-opacity duration-300">›</span>
-      <input v-model="query" type="text" placeholder="Search 【ctrl + p】..."
-        class="w-full bg-transparent text-xl md:text-2xl font-light text-[var(--color-fg-deep)] placeholder-[var(--color-fg-lighter)] focus:outline-none border-b border-transparent focus:border-[var(--color-fg-lightest)] transition-all duration-300 pb-2" />
+      <SearchInput v-model="query" variant="small" placeholder="Search 【ctrl + p】..." />
     </div>
 
     <nav class="flex items-center gap-8 text-sm font-medium" style="view-transition-name: nav-links">

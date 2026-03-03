@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: string
   placeholder?: string
-}>()
+  variant?: 'large' | 'small'
+}>(), {
+  variant: 'large'
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -42,7 +45,12 @@ const handleKeydown = (e: KeyboardEvent) => {
       @focus="handleFocus"
       @blur="handleBlur"
       @keydown="handleKeydown"
-      class="w-full pb-4 text-4xl md:text-5xl font-light bg-transparent text-[var(--color-fg-deep)] placeholder-[var(--color-fg-light)] focus:outline-none border-b border-[var(--color-fg-lightest)] focus:border-[var(--color-fg-light)] transition-colors duration-300"
+      :class="[
+        'w-full font-light bg-transparent text-[var(--color-fg-deep)] focus:outline-none border-b transition-all duration-300',
+        variant === 'large' 
+          ? 'pb-4 text-4xl md:text-5xl placeholder-[var(--color-fg-light)] border-[var(--color-fg-lightest)] focus:border-[var(--color-fg-light)]' 
+          : 'pb-2 text-xl md:text-2xl placeholder-[var(--color-fg-lighter)] border-transparent focus:border-[var(--color-fg-lightest)]'
+      ]"
     />
   </div>
 </template>

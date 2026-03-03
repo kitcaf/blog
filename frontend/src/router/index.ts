@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior(to, from, savedPosition) {
+  scrollBehavior(_to, _from, savedPosition) {
     if (savedPosition) {
       return savedPosition
     } else {
@@ -59,6 +59,13 @@ router.beforeResolve((to, from, next) => {
     next()
     return
   }
+
+  // 关闭从 BlogDetail 返回 Blog 时的 View Transition
+  if (from.name === 'BlogDetail' && to.name === 'Blog') {
+    next()
+    return
+  }
+
   // View Transitions
   document.startViewTransition(() => {
     next()
@@ -66,7 +73,7 @@ router.beforeResolve((to, from, next) => {
 })
 
 // 路由守卫 - 设置页面标题
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   if (to.meta.title) {
     document.title = `${to.meta.title}`
   }

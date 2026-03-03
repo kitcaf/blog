@@ -3,6 +3,8 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BlogHeader from '@/components/BlogHeader.vue'
 
+defineOptions({ name: 'Blog' })
+
 /**
  * Blog Index Page
  * Features category-based filtering and navigation to detailed posts
@@ -28,7 +30,10 @@ const allPosts = [
   { id: '5', date: '06.15', title: 'PostgreSQL Performance Tuning for Analytics', tags: ['DB', 'SQL'], cat: 'Backend' },
   { id: '6', date: '05.30', title: 'Micro-frontends: The Good, The Bad, and The Ugly', tags: ['SCALE', 'TEAM'], cat: 'Vue' },
   { id: '7', date: '04.12', title: 'Implementing a RAG System from Scratch', tags: ['AI', 'LLM'], cat: 'agent' },
-  { id: '8', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' }
+  { id: '8', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
+  { id: '9', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
+  { id: '10', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
+  { id: '11', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
 ]
 
 // Filtering logic
@@ -73,7 +78,7 @@ onMounted(() => {
                     class="w-1 h-1 rounded-full bg-[var(--color-fg-deeper)] animate-pulse"></span>
                   <span
                     :class="{ 'translate-x-4 group-hover:translate-x-5 transition-transform': activeCategory !== cat.label }">{{
-                    cat.label }}</span>
+                      cat.label }}</span>
                 </button>
               </li>
             </ul>
@@ -91,12 +96,10 @@ onMounted(() => {
             <!-- Nested Transition for Category Switching -->
             <Transition name="list-switch" mode="out-in">
               <div :key="activeCategory" class="space-y-1">
-                <article v-for="post in filteredPosts" :key="post.id"
-                  @click="goToDetail(post.id)"
+                <article v-for="post in filteredPosts" :key="post.id" @click="goToDetail(post.id)"
                   class="group flex items-center py-7 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
                   <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
-                  <h2
-                    :style="{ 'view-transition-name': `post-title-${post.id}` }"
+                  <h2 :style="{ 'view-transition-name': `post-title-${post.id}` }"
                     class="flex-1 text-xl font-serif italic text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
                     {{ post.title }}
                   </h2>

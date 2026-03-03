@@ -3,35 +3,35 @@ import type { RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
   {
-    path: '/',
+    path: '',
     name: 'Home',
     component: () => import('@/views/Home.vue'),
     meta: { title: 'kitcaf' }
   },
   {
-    path: '', // Pathless parent route to group views under MainLayout
+    path: '/', // Pathless parent route to group views under MainLayout
     component: () => import('@/layouts/MainLayout.vue'),
     children: [
       {
-        path: '/blog',
+        path: 'blog',
         name: 'Blog',
         component: () => import('@/views/Blog.vue'),
         meta: { title: 'Blog - kitcaf' }
       },
       {
-        path: '/blog/:id',
+        path: 'blog/:id',
         name: 'BlogDetail',
         component: () => import('@/views/BlogDetail.vue'),
         meta: { title: 'Post - kitcaf' }
       },
       {
-        path: '/project',
+        path: 'project',
         name: 'Project',
         component: () => import('@/views/Project.vue'),
         meta: { title: 'Projects - kitcaf' }
       },
       {
-        path: '/me',
+        path: 'me',
         name: 'Me',
         component: () => import('@/views/Me.vue'),
         meta: { title: 'Me - kitcaf' }

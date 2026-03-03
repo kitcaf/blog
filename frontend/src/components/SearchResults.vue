@@ -6,10 +6,6 @@ const { query } = useSearch()
 
 <template>
   <div class="w-full flex-1 max-w-3xl mx-auto py-12">
-    <div class="flex items-center justify-between mb-8 border-b border-[var(--color-fg-lightest)] pb-4 px-2">
-      <span class="text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)]">Search Results for</span>
-      <span class="text-sm font-serif italic text-[var(--color-fg-deep)]">"{{ query || '...' }}"</span>
-    </div>
     
     <div v-if="query" class="space-y-1">
       <!-- Mock results -->

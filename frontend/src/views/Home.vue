@@ -40,31 +40,25 @@ const navLinks = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-[var(--color-bg)] font-sans flex flex-col relative transition-colors duration-300"
-    :class="(query || isSearchFocused) ? '' : 'items-center justify-center'">
+  <div class="min-h-screen bg-[var(--color-bg)] font-sans flex flex-col items-center relative" style="padding-top: 30vh">
 
     <!-- Main Centered Content -->
-    <main class="w-full flex flex-col transition-all duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] px-8"
-      :class="(query || isSearchFocused) ? 'max-w-6xl pt-16 flex-1 items-start' : 'max-w-4xl items-center'">
+    <main class="w-full max-w-4xl px-8 flex flex-col items-center animate-in fade-in duration-1000">
 
       <!-- Search Input -->
-      <div class="w-full transition-all duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)]" 
-        :class="(query || isSearchFocused) ? 'max-w-xl mb-4' : 'mb-6'"
-        style="view-transition-name: search-input">
-        <SearchInput v-model="query" @search="onSearch" :variant="(query || isSearchFocused) ? 'small' : 'large'" placeholder="Search 【ctrl + p】..." />
+      <div class="w-full mb-6" style="view-transition-name: search-input">
+        <SearchInput v-model="query" @search="onSearch" variant="large" placeholder="Search or command..." />
       </div>
 
-      <!-- Content Area -->
-      <div class="relative w-full flex-1 flex flex-col overflow-hidden">
-        <Transition name="fade-slide-up" mode="out-in">
-          <SearchResults v-if="query || isSearchFocused" />
-          <!-- Inline Navigation Links -->
-          <nav v-else class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)] mt-2"
-            style="view-transition-name: nav-links">
-            <router-link v-for="link in navLinks" :key="link.label" :to="link.path"
-              class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200">
-              {{ link.label }}
-            </router-link>
+      <!-- Inline Navigation Links -->
+      <nav
+        class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)]"
+        style="view-transition-name: nav-links"
+      >
+        <router-link v-for="link in navLinks" :key="link.label" :to="link.path"
+          class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200">
+          {{ link.label }}
+        </router-link>
 
         <a href="https://github.com/your-username" target="_blank" rel="noopener noreferrer"
           class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200 flex items-center"
@@ -86,26 +80,39 @@ const navLinks = [
           </svg>
         </button>
       </nav>
-        </Transition>
-      </div>
+
+      <!-- Search Results Area -->
+      <Transition name="results-fade">
+        <div v-if="query || isSearchFocused" class="w-full mt-10 text-left bg-[var(--color-bg)] z-10">
+          <SearchResults />
+        </div>
+      </Transition>
 
     </main>
   </div>
 </template>
 
 <style scoped>
-.fade-slide-up-enter-active,
-.fade-slide-up-leave-active {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+/* ── Search Results fade only, no movement on SearchInput/Nav ──────────── */
+.results-fade-enter-active {
+  transition:
+    opacity  0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.fade-slide-up-enter-from {
-  opacity: 0;
-  transform: translateY(30px);
+.results-fade-leave-active {
+  transition:
+    opacity  0.2s cubic-bezier(0.4, 0, 1, 1),
+    transform 0.2s cubic-bezier(0.4, 0, 1, 1);
 }
 
-.fade-slide-up-leave-to {
+.results-fade-enter-from {
   opacity: 0;
-  transform: translateY(30px);
+  transform: translateY(12px);
+}
+
+.results-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
 }
 </style>

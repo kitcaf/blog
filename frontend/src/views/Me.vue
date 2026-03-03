@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import BlogHeader from '@/components/BlogHeader.vue'
 
 /**
  * Me Page
@@ -33,15 +32,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="min-h-screen bg-[var(--color-bg)] font-sans selection:bg-[var(--color-selection-bg)] selection:text-[var(--color-selection-fg)] flex flex-col">
-    <div class="max-w-6xl mx-auto px-8 pt-16 w-full">
-      <!-- Shared Header -->
-      <BlogHeader />
-    </div>
-
-    <!-- Centered Content Area -->
-    <main class="flex-1 flex items-center justify-center px-8 pb-32">
+  <main class="flex-1 flex items-center justify-center px-8 pb-32 animate-in fade-in duration-1000">
       <div class="max-w-2xl text-center">
         <h1 
           class="text-3xl md:text-4xl font-serif italic text-[var(--color-fg-deep)] leading-relaxed inline"
@@ -54,8 +45,7 @@ onMounted(() => {
           ></span>
         </h1>
       </div>
-    </main>
-  </div>
+  </main>
 </template>
 
 <style scoped>

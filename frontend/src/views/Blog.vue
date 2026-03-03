@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import BlogHeader from '@/components/BlogHeader.vue'
 
 defineOptions({ name: 'Blog' })
 
@@ -58,14 +57,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="min-h-screen bg-[var(--color-bg)] font-sans selection:bg-[var(--color-selection-bg)] selection:text-[var(--color-selection-fg)]">
-    <div class="max-w-6xl mx-auto px-8 pt-16">
-
-      <!-- Header Section -->
-      <BlogHeader />
-
-      <Transition name="content-fade">
+  <Transition name="content-fade" appear>
         <div v-if="!isLoading" class="flex gap-24 items-start" style="view-transition-name: blog-content">
           <!-- Sidebar Navigation -->
           <aside class="w-48 shrink-0">
@@ -120,9 +112,7 @@ onMounted(() => {
             </Transition>
           </main>
         </div>
-      </Transition>
-    </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>

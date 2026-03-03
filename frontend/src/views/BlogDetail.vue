@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import BlogHeader from '@/components/BlogHeader.vue'
 
 /**
  * Blog Detail Page
@@ -36,14 +35,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="min-h-screen bg-[var(--color-bg)] font-sans selection:bg-[var(--color-selection-bg)] selection:text-[var(--color-selection-fg)]">
-    <div class="max-w-6xl mx-auto px-8 pt-16">
-      
-      <!-- Shared Header -->
-      <BlogHeader />
-
-      <main class="max-w-3xl mx-auto pb-24">
+  <main class="max-w-3xl mx-auto pb-24 w-full animate-in fade-in duration-500">
         
         <!-- Back Button Area -->
         <button 
@@ -73,9 +65,7 @@ onMounted(() => {
         <article class="prose prose-neutral dark:prose-invert max-w-none">
           <div class="text-[var(--color-fg-deep)] leading-relaxed font-light text-lg space-y-8" v-html="post.content"></div>
         </article>
-      </main>
-    </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>

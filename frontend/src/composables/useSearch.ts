@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 
 const query = ref('')
 const isSearching = ref(false)
+const isSearchFocused = ref(false)
 
 export function useSearch() {
   const router = useRouter()
@@ -34,6 +35,7 @@ export function useSearch() {
   return {
     query,
     isSearching,
+    isSearchFocused,
     handleSearch,
     clearSearch
   }

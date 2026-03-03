@@ -9,28 +9,34 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'kitcaf' }
   },
   {
-    path: '/blog',
-    name: 'Blog',
-    component: () => import('@/views/Blog.vue'),
-    meta: { title: 'Blog - kitcaf' }
-  },
-  {
-    path: '/blog/:id',
-    name: 'BlogDetail',
-    component: () => import('@/views/BlogDetail.vue'),
-    meta: { title: 'Post - kitcaf' }
-  },
-  {
-    path: '/project',
-    name: 'Project',
-    component: () => import('@/views/Project.vue'),
-    meta: { title: 'Projects - kitcaf' }
-  },
-  {
-    path: '/me',
-    name: 'Me',
-    component: () => import('@/views/Me.vue'),
-    meta: { title: 'Me - kitcaf' }
+    path: '', // Pathless parent route to group views under MainLayout
+    component: () => import('@/layouts/MainLayout.vue'),
+    children: [
+      {
+        path: '/blog',
+        name: 'Blog',
+        component: () => import('@/views/Blog.vue'),
+        meta: { title: 'Blog - kitcaf' }
+      },
+      {
+        path: '/blog/:id',
+        name: 'BlogDetail',
+        component: () => import('@/views/BlogDetail.vue'),
+        meta: { title: 'Post - kitcaf' }
+      },
+      {
+        path: '/project',
+        name: 'Project',
+        component: () => import('@/views/Project.vue'),
+        meta: { title: 'Projects - kitcaf' }
+      },
+      {
+        path: '/me',
+        name: 'Me',
+        component: () => import('@/views/Me.vue'),
+        meta: { title: 'Me - kitcaf' }
+      }
+    ]
   },
   {
     path: '/:pathMatch(.*)*',

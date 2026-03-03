@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useSearch } from '@/composables/useSearch'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -21,12 +22,16 @@ const inputValue = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
+const { isSearchFocused } = useSearch()
+
 const handleFocus = () => {
   isFocused.value = true
+  isSearchFocused.value = true
 }
 
 const handleBlur = () => {
   isFocused.value = false
+  isSearchFocused.value = false
 }
 
 const handleKeydown = (e: KeyboardEvent) => {

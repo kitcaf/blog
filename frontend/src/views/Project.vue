@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import BlogHeader from '@/components/BlogHeader.vue'
 
 /**
  * Project Showcase Page
@@ -57,15 +56,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="min-h-screen bg-[var(--color-bg)] font-sans selection:bg-[var(--color-selection-bg)] selection:text-[var(--color-selection-fg)]">
-    <div class="max-w-6xl mx-auto px-8 pt-16">
-      
-      <!-- Shared Header -->
-      <BlogHeader />
-
-      <Transition name="content-fade">
-        <div v-if="!isLoading" style="view-transition-name: project-content">
+  <Transition name="content-fade" appear>
+    <div v-if="!isLoading" style="view-transition-name: project-content" class="w-full">
           <!-- Grid Layout: 3 columns on desktop -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
             <a 
@@ -117,9 +109,7 @@ onMounted(() => {
             More projects coming soon.
           </div>
         </div>
-      </Transition>
-    </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>

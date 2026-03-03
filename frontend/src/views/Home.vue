@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import SearchInput from '@/components/SearchInput.vue'
+import SearchResults from '@/components/SearchResults.vue'
 import { useSearch } from '@/composables/useSearch'
 import { useKeyboardShortcut } from '@/composables/useKeyboardShortcut'
 import { useDark, useToggle } from '@vueuse/core'
@@ -12,7 +13,7 @@ import { useDark, useToggle } from '@vueuse/core'
 const isDark = useDark()
 const toggleDark = useToggle(isDark)
 
-const { query, handleSearch } = useSearch()
+const { query, isSearchFocused, handleSearch } = useSearch()
 
 const onSearch = () => {
   if (query.value.trim()) {
@@ -39,22 +40,31 @@ const navLinks = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-[var(--color-bg)] font-sans flex flex-col items-center justify-center relative">
+  <div class="min-h-screen bg-[var(--color-bg)] font-sans flex flex-col relative transition-colors duration-300"
+    :class="(query || isSearchFocused) ? '' : 'items-center justify-center'">
 
     <!-- Main Centered Content -->
-    <main class="w-full max-w-4xl px-8 flex flex-col items-center animate-in fade-in duration-1000">
+    <main class="w-full flex flex-col transition-all duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] px-8"
+      :class="(query || isSearchFocused) ? 'max-w-6xl pt-16 flex-1 items-start' : 'max-w-4xl items-center'">
 
       <!-- Search Input -->
-      <div class="w-full mb-6" style="view-transition-name: search-input">
-        <SearchInput v-model="query" @search="onSearch" placeholder="Search 【ctrl + p】..." />
+      <div class="w-full transition-all duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)]" 
+        :class="(query || isSearchFocused) ? 'max-w-xl mb-4' : 'mb-6'"
+        style="view-transition-name: search-input">
+        <SearchInput v-model="query" @search="onSearch" :variant="(query || isSearchFocused) ? 'small' : 'large'" placeholder="Search 【ctrl + p】..." />
       </div>
-      <!-- Inline Navigation Links -->
-      <nav class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)]"
-        style="view-transition-name: nav-links">
-        <router-link v-for="link in navLinks" :key="link.label" :to="link.path"
-          class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200">
-          {{ link.label }}
-        </router-link>
+
+      <!-- Content Area -->
+      <div class="relative w-full flex-1 flex flex-col overflow-hidden">
+        <Transition name="fade-slide-up" mode="out-in">
+          <SearchResults v-if="query || isSearchFocused" />
+          <!-- Inline Navigation Links -->
+          <nav v-else class="w-full flex flex-wrap items-center justify-end gap-6 text-sm font-medium text-[var(--color-fg-light)] mt-2"
+            style="view-transition-name: nav-links">
+            <router-link v-for="link in navLinks" :key="link.label" :to="link.path"
+              class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200">
+              {{ link.label }}
+            </router-link>
 
         <a href="https://github.com/your-username" target="_blank" rel="noopener noreferrer"
           class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200 flex items-center"
@@ -76,11 +86,26 @@ const navLinks = [
           </svg>
         </button>
       </nav>
+        </Transition>
+      </div>
 
     </main>
   </div>
 </template>
 
 <style scoped>
-/* No extra styles needed, Tailwind handles everything */
+.fade-slide-up-enter-active,
+.fade-slide-up-leave-active {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fade-slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(30px);
+}
+
+.fade-slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(30px);
+}
 </style>

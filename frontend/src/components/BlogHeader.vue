@@ -25,7 +25,7 @@ const navLinks = [
 
     <nav class="flex items-center gap-8 text-sm font-medium" style="view-transition-name: nav-links">
       <router-link v-for="link in navLinks" :key="link.label" :to="link.path" class="transition-colors duration-200"
-        :class="link.path === '/blog' ? 'text-[var(--color-fg-deeper)] font-bold' : 'text-[var(--color-fg-light)] hover:text-[var(--color-fg-deeper)]'">
+        :class="$route.path.startsWith(link.path) ? 'text-[var(--color-fg-deeper)] font-bold' : 'text-[var(--color-fg-light)] hover:text-[var(--color-fg-deeper)]'">
         {{ link.label }}
       </router-link>
 

@@ -21,6 +21,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Post - kitcaf' }
   },
   {
+    path: '/project',
+    name: 'Project',
+    component: () => import('@/views/Project.vue'),
+    meta: { title: 'Projects - kitcaf' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFound.vue'),

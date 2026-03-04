@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { nextTick } from 'vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -59,22 +60,27 @@ const router = createRouter({
 })
 
 // View Transitions API integration for smooth cross-route animations
-router.beforeResolve((to, from, next) => {
+router.beforeResolve((_to, _from, next) => {
   // 如果浏览器不支持Transitions API直接跳过
   if (!document.startViewTransition) {
     next()
     return
   }
 
-  // 关闭从 BlogDetail 返回 Blog 时的 View Transition
-  if (from.name === 'BlogDetail' && to.name === 'Blog') {
+  // 完全关闭 Blog ↔ BlogDetail 之间的所有过渡动画（不要淡入淡出），彻底解决频闪问题
+  const isBlogToDetailFlow = 
+    (_from.name === 'Blog' && _to.name === 'BlogDetail') ||
+    (_from.name === 'BlogDetail' && _to.name === 'Blog')
+  
+  if (isBlogToDetailFlow) {
     next()
     return
   }
 
-  // View Transitions
-  document.startViewTransition(() => {
+  // 全局应用 View Transitions，天然提供平滑的 crossfade 过渡
+  document.startViewTransition(async () => {
     next()
+    await nextTick() // 必须等待 Vue 将新组件渲染到 DOM，否则浏览器截取的新快照会是旧页面，导致严重频闪
   })
 })
 

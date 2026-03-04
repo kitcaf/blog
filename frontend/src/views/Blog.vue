@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 defineOptions({ name: 'Blog' })
@@ -10,7 +10,6 @@ defineOptions({ name: 'Blog' })
  */
 
 const router = useRouter()
-const isLoading = ref(true)
 const activeCategory = ref('Timeline')
 
 const categories = ref([
@@ -49,17 +48,11 @@ const goToDetail = (id: string) => {
   router.push(`/blog/${id}`)
 }
 
-onMounted(() => {
-  setTimeout(() => {
-    isLoading.value = false
-  }, 150)
-})
 </script>
 
 <template>
-  <Transition name="content-fade" appear>
-        <div v-if="!isLoading" class="flex gap-24 items-start" style="view-transition-name: blog-content">
-          <!-- Sidebar Navigation -->
+  <div class="flex gap-24 items-start">
+    <!-- Sidebar Navigation -->
           <aside class="w-48 shrink-0">
             <ul class="space-y-6">
               <li v-for="cat in categories" :key="cat.label">
@@ -91,7 +84,7 @@ onMounted(() => {
                 <article v-for="post in filteredPosts" :key="post.id" @click="goToDetail(post.id)"
                   class="group flex items-center py-7 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
                   <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
-                  <h2 :style="{ 'view-transition-name': `post-title-${post.id}` }"
+                  <h2
                     class="flex-1 text-xl font-serif italic text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
                     {{ post.title }}
                   </h2>
@@ -111,23 +104,12 @@ onMounted(() => {
               </div>
             </Transition>
           </main>
-        </div>
-  </Transition>
+  </div>
 </template>
 
 <style scoped>
 .font-serif {
   font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-}
-
-/* Base content entrance */
-.content-fade-enter-active {
-  transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.content-fade-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
 }
 
 /* Category list switching animation */

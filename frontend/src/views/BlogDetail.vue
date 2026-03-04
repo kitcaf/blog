@@ -35,7 +35,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="max-w-3xl mx-auto pb-24 w-full animate-in fade-in duration-500">
+  <main class="max-w-3xl mx-auto pb-24 w-full">
         
         <!-- Back Button Area -->
         <button 
@@ -54,8 +54,7 @@ onMounted(() => {
         </div>
 
         <!-- Blog Title with Transition Support -->
-        <h1 
-          :style="{ 'view-transition-name': `post-title-${id}` }"
+        <h1
           class="text-4xl md:text-5xl font-serif italic text-[var(--color-fg-deeper)] leading-tight mb-16"
         >
           {{ post.title }}

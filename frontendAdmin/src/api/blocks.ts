@@ -16,6 +16,10 @@
 
 import type { DbBlock, Block, BlockType, BlockData, BlockSyncPayload, InlineContent } from '@blog/types';
 import { apiClient } from './client';
+import { initialMockData } from '@/mockData';
+
+/** 环境变量控制：true → mock 模式，false → 真实 API 模式 */
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 一、内部工具：DbBlock → Block (hydrate)
@@ -129,6 +133,14 @@ export async function fetchPageTree(): Promise<{
   flatPages: BlockData[];
   tree: PageTreeNode[];
 }> {
+  if (USE_MOCK) {
+    // Mock 模式：直接从内存数据过滤出 page 类型的块并构树
+    const flatPages = initialMockData.filter((b) => b.type === 'page');
+    // 注意：initialMockData 已经是 BlockData[] 格式，无需 hydrateBlocks
+    const tree = buildPageTree(flatPages as unknown as Block[]);
+    return { flatPages, tree };
+  }
+
   const { data } = await apiClient.get<DbBlock[]>('/api/pages/tree');
   const flatPages = hydrateBlocks(data);
   const tree = buildPageTree(flatPages);
@@ -148,6 +160,11 @@ export async function fetchPageTree(): Promise<{
  * @param pageId - 目标 Page Block 的 UUID
  */
 export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
+  if (USE_MOCK) {
+    // Mock 模式：返回 initialMockData 中所有 parentId 等于 pageId 的子块
+    return initialMockData.filter((b) => b.parentId === pageId);
+  }
+
   const { data } = await apiClient.get<DbBlock[]>(`/api/pages/${pageId}/blocks`);
   return hydrateBlocks(data);
 }
@@ -173,5 +190,9 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
  * @param payload - 由 store.getSyncPayload() 计算得出
  */
 export async function syncBlocks(payload: BlockSyncPayload): Promise<void> {
+  if (USE_MOCK) {
+    console.log('[MockSync] 正在同步变更 (Mock 模式下仅打印日志):', payload);
+    return Promise.resolve();
+  }
   await apiClient.post('/api/blocks/sync', payload);
 }

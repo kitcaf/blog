@@ -38,6 +38,7 @@
 /** 所有支持的 Block 类型，与后端 blocks.type 字段对应 */
 export type BlockType =
   // 容器类
+  | 'folder'             // pure folder for sidebar organization (cannot be opened in the editor)
   | 'page'               // 页面块（既是文章页，也是文件夹节点；侧边栏目录树的最小单元）
   // 文本类
   | 'paragraph'          // 普通段落
@@ -119,6 +120,13 @@ export interface BaseBlockProps {
   textAlignment?: TextAlignment; // 文本对齐方式
 }
 
+/** 文件夹 (Folder) 块的极其精简的专有属性 */
+export interface FolderBlockProps extends BaseBlockProps {
+  title: string;         // 文件夹名称
+  icon?: string;         // 文件夹图标 (如 📁)
+  isExpanded?: boolean;  // 记录用户是否在侧边栏展开了它
+}
+
 /**
  * Page 块（页面/文件夹）的专有属性。
  * Page 在本系统中扮演双重角色：
@@ -126,6 +134,7 @@ export interface BaseBlockProps {
  *  2. 博客文章（通过 isPublished/slug/description 控制发布和 SEO）
  */
 export interface PageBlockProps extends BaseBlockProps {
+
   /** 页面标题，侧边栏直接读取此字段，无需遍历子块 */
   title: string;
   /** 页面图标，支持 Emoji（'📄'）或图片 URL */
@@ -219,6 +228,11 @@ export interface BaseBlock<T extends BlockType, P extends BaseBlockProps = BaseB
 // 六、具体 Block 类型定义
 // ─────────────────────────────────────────────
 
+export interface FolderBlock extends BaseBlock<'folder', FolderBlockProps> {
+  // 强制复写 content 为空数组，因为文件夹绝对不可能有富文本内容！
+  content: [];
+}
+
 export interface PageBlock extends BaseBlock<'page', PageBlockProps> {}
 
 export interface ParagraphBlock extends BaseBlock<'paragraph'> {}
@@ -244,6 +258,7 @@ export interface AdminRecentCommentsBlock extends BaseBlock<'admin-recent-commen
 
 /** 所有 Block 类型的联合类型，前端的核心工作单元 */
 export type Block =
+  | FolderBlock
   | PageBlock
   | ParagraphBlock
   | HeadingBlock

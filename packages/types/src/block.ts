@@ -12,11 +12,12 @@
  * │                   从 DbBlock.properties 中解析出     │
  * │                   强类型的 props + content           │
  * ├─────────────────────────────────────────────────────┤
- * │  数据流：                                            │
- * │    API Response (DbBlock)                           │
- * │      → hydrate()  → Block (前端 Zustand 状态)       │
- * │      → dehydrate() → DbBlock → PATCH /api/blocks   │
- * └─────────────────────────────────────────────────────┘
+ * 
+ *  数据流：                                           
+ *    API Response (DbBlock)  
+ *    React Query (useQuery / useMutation) 负责缓存、重试、乐观更新 DbBlock
+ *      → hydrate()  → Block (前端 Zustand 状态)        
+ *      → dehydrate() → DbBlock → PATCH /api/blocks    
  *
  * 与 Tiptap 内部 JSON 的映射关系（供 hydrate/dehydrate 参考）：
  *
@@ -203,7 +204,7 @@ export interface BaseBlock<T extends BlockType, P extends BaseBlockProps = BaseB
    * 拖拽排序时只需更新父节点的此字段，子块本身无需变动。
    */
   contentIds: string[];
-  /** 块级属性（从 DbBlock.properties 中解析，对应 Tiptap node.attrs） */
+  /** 块级属性（从 DbBlock.properties除去props外的属性对共同中解析，对应 Tiptap node.attrs） */
   props: P;
   /** 内联富文本内容（从 DbBlock.properties.content 解析，对应 Tiptap node.content） */
   content: InlineContent[];
@@ -291,15 +292,12 @@ export type BlockData = Block;
  * ```
  */
 export interface DbBlock {
-  id: string;
-  parent_id: string | null;
-  /** 物化路径，格式：'/root-uuid/parent-uuid/this-uuid/' */
-  path: string;
-  type: BlockType;
-  /** 子块有序 ID 数组，拖拽排序时只需更新父节点的此字段 */
-  content_ids: string[];
-  /** 存储所有动态属性（props + content）的 JSONB 字段 */
-  properties: Record<string, unknown>;
+  id: string; /** 唯一标识，UUID，由前端生成（支持离线编辑） */
+  parent_id: string | null; /** 父块 ID，null 表示根块 */
+  path: string; /** 物化路径，格式：'/root-uuid/parent-uuid/this-uuid/' */
+  type: BlockType; /** 块类型: 'page', 'h1', 'paragraph', 'code_block' 等 */
+  content_ids: string[]; /** 子块有序 ID 数组，拖拽排序时只需更新父节点的此字段 */
+  properties: Record<string, unknown>;   /** 存储所有动态属性（props + content）的 JSONB 字段 */
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

@@ -1,4 +1,7 @@
 /node_modules
 /frontend/node_modules
 /docs
-/.kiro
+/frontendAdmin/.agents
+/frontend/.agents
+/backend/.agents
+/.agents

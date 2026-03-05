@@ -47,6 +47,12 @@
 - **divider**: 分割线
 - **table**: 表格（可选）
 
+### 未来还要有具有数据获取能力的智能 Block
+
+- type: 'admin-stat-card' (数据统计卡片块)
+- type: 'admin-traffic-chart' (流量折线图块)
+- type: 'admin-recent-comments' (最新评论列表块)
+
 ### 1.4 Block 属性 (props)
 
 不同类型的 Block 有不同的属性：

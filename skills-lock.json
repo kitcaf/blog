@@ -6,10 +6,10 @@
       "sourceType": "github",
       "computedHash": "516bd2154eb843a8240e43d5b285229129853114ad7075a5e141e1c08e408c84"
     },
-    "vueuse-functions": {
-      "source": "vueuse/vueuse",
+    "react-best-practices": {
+      "source": "mastra-ai/mastra",
       "sourceType": "github",
-      "computedHash": "406ed1d33038200a334f542750f5f2eded36b72674b3b3b73539ceb7ed0588c0"
+      "computedHash": "fdb5418e4b42cb767f012fc5590003977b29740df728fd7f2d845a2485ab5238"
     }
   }
 }

@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from '@/layouts';
 import { MainContent } from '@/components/MainContent';
 import { useBlockStore } from '@/store/useBlockStore';
-import { selectActions } from '@/store/selectors';
 import { initialMockData } from '@/mockData';
 import './App.css';
 
@@ -13,12 +12,14 @@ import './App.css';
  * 使用独立组件的好处：逻辑与路由/布局树完全解耦。
  */
 function StoreInitializer() {
-  const { hydrate, setActivePage } = useBlockStore(selectActions);
+  // 直接订阅单个 action（稳定引用，不触发 re-render）而不用 selectActions 返回新对象
+  const hydrate = useBlockStore((s) => s.hydrate);
+  const setActivePage = useBlockStore((s) => s.setActivePage);
 
   useEffect(() => {
     hydrate(initialMockData);
 
-    // 找到第一个 page 块作为默认活跃页，若无 page 块则用第一个块的 id 模拟
+    // 找到第一个 page 块作为默认活跃页
     const firstPage = initialMockData.find((b) => b.type === 'page');
     const fallback = initialMockData[0];
     const defaultId = firstPage?.id ?? fallback?.id;

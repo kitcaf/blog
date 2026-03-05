@@ -105,9 +105,21 @@ export const selectPageChildren = (pageId: string) => (state: BlockStore): Block
 
 /**
  * 选取 store 的所有 Action。
- * 将 action 订阅与 state 订阅分离，使 action 调用点不会因 state 变化而 re-render。
  *
- * 用法：const { updateBlockContent, softDeleteBlock } = useBlockStore(selectActions);
+ *   **不要在 React 组件中使用这个 selector！**
+ *
+ * 原因：此函数每次调用都返回新的 `{}` 对象，Zustand 检测到引用变化会强制 re-render，
+ * 最终导致 "Maximum update depth exceeded" 无限循环。
+ *
+ *  正确用法：在组件中直接订阅单个 action（store action 是稳定引用，不触发 re-render）：
+ * ```ts
+ * const replacePage = useBlockStore((s) => s.replacePage);
+ * const hydrate    = useBlockStore((s) => s.hydrate);
+ * ```
+ *
+ * 此函数仅保留供非 React 上下文（如测试、工具函数）使用。
+ *
+ * @deprecated 在 React 组件中请改用单独订阅各 action
  */
 export const selectActions = (state: BlockStore) => ({
   hydrate: state.hydrate,
@@ -121,3 +133,4 @@ export const selectActions = (state: BlockStore) => ({
   clearDirtyState: state.clearDirtyState,
   replacePage: state.replacePage,
 });
+

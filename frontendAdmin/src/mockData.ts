@@ -3,7 +3,7 @@ import type { BlockData } from '@blog/types';
 const ROOT_PAGE_ID = 'page-root';
 
 /**
- * 初始化 Mock 数据
+ * 初始化 Mock 数据，这里只是模拟一个页面的数据
  *
  * 结构说明：
  *  - page-root：顶层 Page（文章页），contentIds 决定子块渲染顺序

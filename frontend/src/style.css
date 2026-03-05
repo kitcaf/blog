@@ -3,7 +3,11 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
 
+/* ──────── Theme Variables ──────── */
+:root {
+  color-scheme: light;
   /* 黑色系 */
   --color-fg: #555;
   --color-fg-deep: #222;
@@ -16,6 +20,24 @@
   --color-bg: #ffffff;
   --color-selection-bg: #000000;
   --color-selection-fg: #ffffff;
+}
+
+:root.dark, .dark {
+  color-scheme: dark;
+  /* 核心文字阶梯 (反转为亮色) */
+  --color-fg: #a1a1aa;
+  --color-fg-deep: #e4e4e7;
+  --color-fg-deeper: #ffffff;
+  
+  /* 边框/次要元素阶梯 (反转为深色) */
+  --color-fg-light: #71717a;
+  --color-fg-lighter: #3f3f46;
+  --color-fg-lightest: #27272a;
+
+  /* 背景与高亮 */
+  --color-bg: #111111; /* 极简的深黑灰色，比纯黑更护眼 */
+  --color-selection-bg: #ffffff;
+  --color-selection-fg: #000000;
 }
 
 @layer base {
@@ -65,11 +87,11 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #e5e5e5;
+    background: var(--color-fg-lightest);
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #cccccc;
+    background: var(--color-fg-lighter);
   }
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import SearchInput from '@/components/SearchInput.vue'
 import { useSearch } from '@/composables/useSearch'
+import { useThemeToggle } from '@/composables/useThemeToggle'
 import { useKeyboardShortcut } from '@/composables/useKeyboardShortcut'
-import { useDark, useToggle } from '@vueuse/core'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -12,8 +12,7 @@ import { useRouter } from 'vue-router'
  * - Searching: inline filtered list replaces the grid
  */
 
-const isDark = useDark()
-const toggleDark = useToggle(isDark)
+const { toggleTheme } = useThemeToggle()
 const router = useRouter()
 
 const { query, isSearchFocused, handleSearch } = useSearch()
@@ -93,7 +92,7 @@ const goTo = (id: string) => router.push(`/blog/${id}`)
           </svg>
         </a>
 
-        <button @click="toggleDark()"
+        <button @click="toggleTheme"
           class="hover:text-[var(--color-fg-deeper)] transition-colors duration-200 flex items-center"
           aria-label="Toggle Dark Mode">
           <svg viewBox="0 0 24 24" height="1.2em" width="1.2em" xmlns="http://www.w3.org/2000/svg">

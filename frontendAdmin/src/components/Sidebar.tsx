@@ -25,8 +25,10 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  PanelLeftClose,
 } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
+import { useSidebarStore } from '@/store/useSidebarStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
 import type { PageTreeNode } from '@/api/blocks';
 
@@ -42,6 +44,9 @@ export function Sidebar() {
   const setActivePage = useBlockStore((s) => s.setActivePage);
   const activePageId = useBlockStore((s) => s.activePageId);
 
+  // 侧边栏状态控制
+  const { isOpen, width, setIsOpen } = useSidebarStore();
+
   useEffect(() => {
     if (flatPages.length === 0) return;
     hydrate(flatPages);
@@ -55,14 +60,33 @@ export function Sidebar() {
   }, [flatPages]); // 仅 flatPages 变化时执行（hydrate/setActivePage 引用稳定）
 
   return (
-    <aside className="w-[240px] h-full bg-app-bg border-r border-border flex flex-col shrink-0 transition-all duration-300">
-      <div className="flex flex-col h-full overflow-y-auto overflow-x-hidden p-2">
-        {/* Workspace Switcher */}
-        <div className="flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer mb-2">
-          <div className="w-5 h-5 bg-app-hover rounded flex items-center justify-center text-xs font-medium text-app-fg-deeper">
-            A
+    <aside 
+      className="h-full bg-app-bg border-r border-border flex flex-col shrink-0 transition-all duration-300 overflow-hidden"
+      style={{ 
+        width: isOpen ? width : 0,
+        opacity: isOpen ? 1 : 0,
+        borderRightWidth: isOpen ? 1 : 0
+      }}
+    >
+      <div 
+        className="flex flex-col h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity"
+        style={{ width: width }} // 保持内部尺寸一致避免挤压文本变乱
+      >
+        {/* Workspace Switcher & Hide Toggle */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer flex-1">
+            <div className="w-5 h-5 bg-app-hover rounded flex items-center justify-center text-xs font-medium text-app-fg-deeper">
+              A
+            </div>
+            <span className="text-sm font-medium truncate text-app-fg-deep">个人工作区</span>
           </div>
-          <span className="text-sm font-medium truncate text-app-fg-deep">个人工作区</span>
+          <button 
+            className="p-1.5 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors shrink-0"
+            onClick={() => setIsOpen(false)}
+            title="隐藏侧边栏"
+          >
+            <PanelLeftClose size={16} />
+          </button>
         </div>
 
         {/* 主导航 */}

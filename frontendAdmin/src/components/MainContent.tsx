@@ -13,14 +13,18 @@
  */
 
 import { useEffect } from 'react';
-import { Loader2, FileText, AlertCircle, RefreshCw } from 'lucide-react';
+import { Loader2, FileText, AlertCircle, RefreshCw, PanelLeftOpen } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
+import { useSidebarStore } from '@/store/useSidebarStore';
 import { TiptapEditor } from './editor/TiptapEditor';
 import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
 
 export function MainContent() {
   const activePageId = useBlockStore((s) => s.activePageId);
   const blocksById = useBlockStore((s) => s.blocksById);
+
+  // 获取侧边栏的开关状态，以及设置方法
+  const { isOpen, setIsOpen } = useSidebarStore();
 
   // 加载当前活跃页面的内容 Blocks
   const { blocks, isLoading, isError, error } = usePageBlocksQuery(activePageId);
@@ -126,7 +130,18 @@ export function MainContent() {
   // ── 正常渲染编辑器 ───────────────────────────────────────────────────────
   return (
     <main className="flex-1 h-full bg-app-bg overflow-y-auto relative">
-      <div className="max-w-[700px] mx-auto px-8 py-16 md:py-24 pb-48">
+      {!isOpen && (
+        <button
+          className="absolute top-4 left-4 z-50 p-2 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors"
+          onClick={() => setIsOpen(true)}
+          title="展开侧边栏"
+        >
+          <PanelLeftOpen size={20} />
+        </button>
+      )}
+
+      {/* 调整最大宽度为百分比，避免硬编码像素 */}
+      <div className="w-full max-w-[85%] mx-auto px-8 py-16 md:py-24 pb-48 transition-all duration-300">
         {/* 页面标题（从 page 块的 props 读取） */}
         {activePage?.type === 'page' && (
           <div className="mb-8">

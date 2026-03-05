@@ -17,7 +17,7 @@
  *  ```
  */
 
-import type { Block, BlockData } from '@blog/types';
+import type { Block } from '@blog/types';
 import type { BlockStore } from './useBlockStore';
 
 // ─────────────────────────────────────────────

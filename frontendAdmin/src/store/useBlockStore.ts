@@ -159,7 +159,6 @@ export const useBlockStore = create<BlockStore>()(
     },
 
     // ── Block CRUD ────────────────────────────
-
     addBlock: (block, afterId) => {
       set((state) => {
         const next = { ...state.blocksById, [block.id]: block };
@@ -176,7 +175,8 @@ export const useBlockStore = create<BlockStore>()(
             block.id,
             ...siblings.slice(insertIdx),
           ];
-          next[parent.id] = { ...parent, contentIds: newContentIds };
+          // as Block：只修改了非判别字段 contentIds，type 判别符不变，断言安全
+          next[parent.id] = { ...parent, contentIds: newContentIds } as Block;
         }
 
         const newDirty = new Set(state.dirtyBlockIds);
@@ -203,7 +203,8 @@ export const useBlockStore = create<BlockStore>()(
         newDirty.add(id);
 
         return {
-          blocksById: { ...state.blocksById, [id]: { ...block, content } },
+          // as Block：只修改了非判别字段 content，断言安全
+          blocksById: { ...state.blocksById, [id]: { ...block, content } as Block },
           dirtyBlockIds: newDirty,
         };
       });
@@ -220,7 +221,8 @@ export const useBlockStore = create<BlockStore>()(
         return {
           blocksById: {
             ...state.blocksById,
-            [id]: { ...block, props: { ...block.props, ...props } },
+            // as Block：props 合并只修改属性值，type 判别符不变，断言安全
+            [id]: { ...block, props: { ...block.props, ...props } } as Block,
           },
           dirtyBlockIds: newDirty,
         };
@@ -239,10 +241,11 @@ export const useBlockStore = create<BlockStore>()(
         if (block.parentId) {
           const parent = state.blocksById[block.parentId];
           if (parent) {
+            // as Block：只修改了非判别字段 contentIds，断言安全
             next[parent.id] = {
               ...parent,
               contentIds: parent.contentIds.filter((cid) => cid !== id),
-            };
+            } as Block;
           }
         }
 
@@ -281,7 +284,8 @@ export const useBlockStore = create<BlockStore>()(
         return {
           blocksById: {
             ...state.blocksById,
-            [parentId]: { ...parent, contentIds: orderedChildIds },
+            // as Block：只修改了非判别字段 contentIds，断言安全
+            [parentId]: { ...parent, contentIds: orderedChildIds } as Block,
           },
           dirtyBlockIds: newDirty,
         };

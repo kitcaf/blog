@@ -115,6 +115,12 @@ interface BlockStoreActions {
 
   /** 成功同步后调用，清除 dirty 状态 */
   clearDirtyState: () => void;
+
+  /**
+   * 整页替换：Tiptap onUpdate 防抖后调用，用 dehydrate 的结果完整替换某个 Page 的子块。
+   * 自动计算 old vs new 的增删集合，精确标记 dirtyBlockIds。
+   */
+  replacePage: (pageId: string, newBlocks: Block[]) => void;
 }
 
 export type BlockStore = BlockStoreState & BlockStoreActions;
@@ -328,6 +334,41 @@ export const useBlockStore = create<BlockStore>()(
 
     clearDirtyState: () => {
       set({ dirtyBlockIds: new Set(), pendingDeleteIds: [] });
+    },
+
+    replacePage: (pageId, newBlocks) => {
+      set((state) => {
+        const page = state.blocksById[pageId];
+        if (!page) return state;
+
+        // 计算旧子块 ID 集合
+        const oldChildIds = new Set(page.contentIds);
+        const newChildIds = newBlocks.map((b) => b.id);
+
+        // 新增或修改的块
+        const newDirty = new Set(state.dirtyBlockIds);
+        newBlocks.forEach((b) => newDirty.add(b.id));
+
+        // 被移除的块加入 pendingDeleteIds
+        const removedIds = [...oldChildIds].filter(
+          (id) => !newBlocks.some((b) => b.id === id),
+        );
+
+        // 构建新的 blocksById：移除旧子块，写入新子块，更新父页面的 contentIds
+        const next = { ...state.blocksById };
+        oldChildIds.forEach((id) => { delete next[id]; });
+        newBlocks.forEach((b) => { next[b.id] = b; });
+        next[pageId] = { ...page, contentIds: newChildIds } as Block;
+
+        // 父页面也标记为 dirty（contentIds 变了）
+        newDirty.add(pageId);
+
+        return {
+          blocksById: next,
+          dirtyBlockIds: newDirty,
+          pendingDeleteIds: [...state.pendingDeleteIds, ...removedIds],
+        };
+      });
     },
   })),
 );

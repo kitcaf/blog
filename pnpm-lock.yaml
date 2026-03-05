@@ -60,9 +60,27 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.21
         version: 5.90.21(react@19.2.4)
+      '@tiptap/core':
+        specifier: ^3.20.0
+        version: 3.20.0(@tiptap/pm@3.20.0)
       '@tiptap/extension-code-block-lowlight':
         specifier: ^3.20.0
         version: 3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extension-code-block@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(highlight.js@11.11.1)(lowlight@3.3.0)
+      '@tiptap/extension-link':
+        specifier: ^3.20.0
+        version: 3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)
+      '@tiptap/extension-placeholder':
+        specifier: ^3.20.0
+        version: 3.20.0(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))
+      '@tiptap/extension-task-item':
+        specifier: ^3.20.0
+        version: 3.20.0(@tiptap/extension-list@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))
+      '@tiptap/extension-task-list':
+        specifier: ^3.20.0
+        version: 3.20.0(@tiptap/extension-list@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))
+      '@tiptap/extension-underline':
+        specifier: ^3.20.0
+        version: 3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))
       '@tiptap/pm':
         specifier: ^3.20.0
         version: 3.20.0
@@ -84,6 +102,9 @@ importers:
       dayjs:
         specifier: ^1.11.19
         version: 1.11.19
+      highlight.js:
+        specifier: ^11.11.1
+        version: 11.11.1
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -1715,10 +1736,25 @@ packages:
     peerDependencies:
       '@tiptap/core': ^3.20.0
 
+  '@tiptap/extension-placeholder@3.20.0':
+    resolution: {integrity: sha512-ZhYD3L5m16ydSe2z8vqz+RdtAG/iOQaFHHedFct70tKRoLqi2ajF5kgpemu8DwpaRTcyiCN4G99J/+MqehKNjQ==, tarball: https://registry.npmmirror.com/@tiptap/extension-placeholder/-/extension-placeholder-3.20.0.tgz}
+    peerDependencies:
+      '@tiptap/extensions': ^3.20.0
+
   '@tiptap/extension-strike@3.20.0':
     resolution: {integrity: sha512-0vcTZRRAiDfon3VM1mHBr9EFmTkkUXMhm0Xtdtn0bGe+sIqufyi+hUYTEw93EQOD9XNsPkrud6jzQNYpX2H3AQ==, tarball: https://registry.npmmirror.com/@tiptap/extension-strike/-/extension-strike-3.20.0.tgz}
     peerDependencies:
       '@tiptap/core': ^3.20.0
+
+  '@tiptap/extension-task-item@3.20.0':
+    resolution: {integrity: sha512-UArl5ffRNKyiOGJYNtjF50+A0qgYF2DXIEFGyMgJsbp1KYQpDj+UrezWvnGOHZfX64eBWDIO6Bum5jS7o32dYQ==, tarball: https://registry.npmmirror.com/@tiptap/extension-task-item/-/extension-task-item-3.20.0.tgz}
+    peerDependencies:
+      '@tiptap/extension-list': ^3.20.0
+
+  '@tiptap/extension-task-list@3.20.0':
+    resolution: {integrity: sha512-Ab2hfun+5xMG6kQhRjL7s16zTe3XaQRXe3/deGo9hnZrAzTQpWVwDN7H36BX8MemrWnAw3PiuwBH5iOrwNRGjA==, tarball: https://registry.npmmirror.com/@tiptap/extension-task-list/-/extension-task-list-3.20.0.tgz}
+    peerDependencies:
+      '@tiptap/extension-list': ^3.20.0
 
   '@tiptap/extension-text@3.20.0':
     resolution: {integrity: sha512-tf8bE8tSaOEWabCzPm71xwiUhyMFKqY9jkP5af3Kr1/F45jzZFIQAYZooHI/+zCHRrgJ99MQHKHe1ZNvODrKHQ==, tarball: https://registry.npmmirror.com/@tiptap/extension-text/-/extension-text-3.20.0.tgz}
@@ -5415,9 +5451,21 @@ snapshots:
     dependencies:
       '@tiptap/core': 3.20.0(@tiptap/pm@3.20.0)
 
+  '@tiptap/extension-placeholder@3.20.0(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))':
+    dependencies:
+      '@tiptap/extensions': 3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)
+
   '@tiptap/extension-strike@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))':
     dependencies:
       '@tiptap/core': 3.20.0(@tiptap/pm@3.20.0)
+
+  '@tiptap/extension-task-item@3.20.0(@tiptap/extension-list@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))':
+    dependencies:
+      '@tiptap/extension-list': 3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)
+
+  '@tiptap/extension-task-list@3.20.0(@tiptap/extension-list@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))':
+    dependencies:
+      '@tiptap/extension-list': 3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)
 
   '@tiptap/extension-text@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))':
     dependencies:

@@ -119,4 +119,5 @@ export const selectActions = (state: BlockStore) => ({
   setActivePage: state.setActivePage,
   getSyncPayload: state.getSyncPayload,
   clearDirtyState: state.clearDirtyState,
+  replacePage: state.replacePage,
 });

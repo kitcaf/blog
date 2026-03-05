@@ -349,10 +349,9 @@ export const useBlockStore = create<BlockStore>()(
         const newDirty = new Set(state.dirtyBlockIds);
         newBlocks.forEach((b) => newDirty.add(b.id));
 
-        // 被移除的块加入 pendingDeleteIds
-        const removedIds = [...oldChildIds].filter(
-          (id) => !newBlocks.some((b) => b.id === id),
-        );
+        // 被移除的块加入 pendingDeleteIds（O(n) 查找）
+        const newBlockIdSet = new Set(newChildIds);
+        const removedIds = [...oldChildIds].filter((id) => !newBlockIdSet.has(id));
 
         // 构建新的 blocksById：移除旧子块，写入新子块，更新父页面的 contentIds
         const next = { ...state.blocksById };

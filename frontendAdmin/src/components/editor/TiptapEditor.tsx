@@ -17,8 +17,8 @@ import { useBlockStore } from '@/store/useBlockStore';
 import { editorExtensions } from './extensions';
 import { hydrateToTiptap, dehydrateFromTiptap } from './converter';
 
-/** 防抖延迟（ms）：用户停止输入后 1.5s 才同步到 Store */
-const DEBOUNCE_MS = 1500;
+/** 防抖延迟（ms）：用户停止输入后 2s 才同步到 Store */
+const DEBOUNCE_MS = 2000;
 
 interface TiptapEditorProps {
   className?: string;

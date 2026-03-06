@@ -134,10 +134,14 @@ export async function fetchPageTree(): Promise<{
   tree: PageTreeNode[];
 }> {
   if (USE_MOCK) {
-    // Mock 模式：直接从内存数据过滤出 page 类型的块并构树
-    const flatPages = initialMockData.filter((b) => b.type === 'page');
-    // 注意：initialMockData 已经是 BlockData[] 格式，无需 hydrateBlocks
-    const tree = buildPageTree(flatPages as unknown as Block[]);
+    // Mock 模式：
+    // flatPages 包含全部 initialMockData（不只是 page 类型），
+    // 这样 Sidebar 调用 hydrate(flatPages) 时，所有内容块也会一并写入 Store，
+    // TiptapEditor 初始化时就能立刻读到完整的 Block 数据，不会出现空编辑器问题。
+    const flatPages = initialMockData;
+    // 树形结构只需要 page 类型的块来渲染侧边栏目录
+    const pages = initialMockData.filter((b) => b.type === 'page');
+    const tree = buildPageTree(pages as unknown as Block[]);
     return { flatPages, tree };
   }
 

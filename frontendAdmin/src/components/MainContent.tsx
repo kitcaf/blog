@@ -141,7 +141,7 @@ export function MainContent() {
       )}
 
       {/* 调整最大宽度为百分比，避免硬编码像素 */}
-      <div className="w-full max-w-[85%] mx-auto px-8 py-16 md:py-24 pb-48 transition-all duration-300">
+      <div className="w-full max-w-[65%] mx-auto px-8 py-16 md:py-24 pb-48 transition-all duration-300">
         {/* 页面标题（从 page 块的 props 读取） */}
         {activePage?.type === 'page' && (
           <div className="mb-8">

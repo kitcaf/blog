@@ -12,7 +12,7 @@
  *  - 展开/折叠状态本地维护（Set<string>），不污染全局 Store
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Search,
   Home,
@@ -45,7 +45,7 @@ export function Sidebar() {
   const activePageId = useBlockStore((s) => s.activePageId);
 
   // 侧边栏状态控制
-  const { isOpen, width, setIsOpen } = useSidebarStore();
+  const { isOpen, width, setIsOpen, isResizing } = useSidebarStore();
 
   useEffect(() => {
     if (flatPages.length === 0) return;
@@ -61,7 +61,7 @@ export function Sidebar() {
 
   return (
     <aside 
-      className="h-full bg-app-bg border-r border-border flex flex-col shrink-0 transition-all duration-300 overflow-hidden"
+      className={`h-full bg-app-bg border-r border-border flex flex-col shrink-0 overflow-hidden ${isResizing ? '' : 'transition-all duration-300'}`}
       style={{ 
         width: isOpen ? width : 0,
         opacity: isOpen ? 1 : 0,
@@ -178,7 +178,7 @@ interface PageTreeItemProps {
   depth: number;
 }
 
-function PageTreeItem({ node, depth }: PageTreeItemProps) {
+const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const hasChildren = node.children.length > 0;
 
@@ -256,7 +256,7 @@ function PageTreeItem({ node, depth }: PageTreeItemProps) {
       )}
     </div>
   );
-}
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 通用导航项

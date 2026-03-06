@@ -28,6 +28,7 @@ import bash from 'highlight.js/lib/languages/bash';
 import { BlockIdExtension } from './BlockIdExtension';
 import { CalloutNode } from './CalloutNode';
 import { ImageBlockNode } from './ImageBlockNode';
+import { DirtyTrackerExtension } from './DirtyTrackerExtension';
 
 // 只注册项目常用语言，减少 bundle 体积（按需注册，而非 import all）
 const lowlight = createLowlight();
@@ -79,4 +80,7 @@ export const editorExtensions = [
     },
     showOnlyWhenEditable: true,
   }),
+
+  // ── 性能更新拦截引擎 ──────────────────────────────────────────
+  DirtyTrackerExtension,
 ];

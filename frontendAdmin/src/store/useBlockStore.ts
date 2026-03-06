@@ -27,6 +27,7 @@ import type {
 
 // ─────────────────────────────────────────────
 // 一、Store 类型定义
+// 全局扁平化缓存池 保存一篇文章的相关 Block 和操作
 // ─────────────────────────────────────────────
 
 interface BlockStoreState {
@@ -45,17 +46,8 @@ interface BlockStoreState {
   /** 当前正在编辑/查看的 Page Block ID */
   activePageId: string | null;
 
-  /**
-   * 自上次同步以来被修改过的 Block ID 集合。
-   * 使用 Set 保证 O(1) 的 has/add/delete 操作。
-   */
-  dirtyBlockIds: Set<string>;
-
-  /**
-   * 待同步的软删除 ID 列表。
-   * 软删除只在本地移除渲染，ID 保留至下次 sync 发给后端。
-   */
-  pendingDeleteIds: string[];
+  dirtySet: Set<string>;
+  deletedSet: Set<string>;
 }
 
 interface BlockStoreActions {
@@ -107,20 +99,35 @@ interface BlockStoreActions {
 
   // ── 同步 ─────────────────────────────────────
 
-  /**
-   * 计算并返回当次同步的 Payload（供 React Query useMutation 调用）。
-   * 纯派生计算，不修改 state。
-   */
+  /** 获取要发给后端的 Payload */
   getSyncPayload: () => BlockSyncPayload;
 
-  /** 成功同步后调用，清除 dirty 状态 */
+  /** 同步成功后清空状态 */
   clearDirtyState: () => void;
 
   /**
-   * 整页替换：Tiptap onUpdate 防抖后调用，用 dehydrate 的结果完整替换某个 Page 的子块。
-   * 自动计算 old vs new 的增删集合，精确标记 dirtyBlockIds。
+   * 1. 标记某个 Block 变脏（仅记录 ID）
+   * 由 DirtyTrackerExtension 在高频打字时调用
    */
-  replacePage: (pageId: string, newBlocks: Block[]) => void;
+  markBlockDirty: (id: string) => void;
+
+  /**
+   * 2. 标记某个 Block 被删除
+   * 由 DirtyTrackerExtension 在检测到退格合并时调用
+   */
+  markBlockDeleted: (id: string) => void;
+
+  /**
+   * 3. 局部按需更新（Lazy Extraction 阶段调用）
+   * 在 debouncedSync 中，从 Tiptap 提取出最新数据后，回写到 Store
+   */
+  updateSingleBlockData: (id: string, content: InlineContent[], props: any) => void;
+
+  /**
+   * 4. 更新父页面的子节点排序
+   * 在 debouncedSync 中调用，用于处理拖拽、新增段落导致的排序变动
+   */
+  updatePageStructure: (pageId: string, newChildIds: string[]) => void;
 }
 
 export type BlockStore = BlockStoreState & BlockStoreActions;
@@ -150,8 +157,8 @@ export const useBlockStore = create<BlockStore>()(
     blocksById: {},
     rootPageIds: [],
     activePageId: null,
-    dirtyBlockIds: new Set(),
-    pendingDeleteIds: [],
+    dirtySet: new Set(),
+    deletedSet: new Set(),
 
     // ── 初始化 ────────────────────────────────
 
@@ -159,8 +166,8 @@ export const useBlockStore = create<BlockStore>()(
       set({
         blocksById: normalizeBlocks(blocks),
         rootPageIds: extractRootPageIds(blocks),
-        dirtyBlockIds: new Set(),
-        pendingDeleteIds: [],
+        dirtySet: new Set(),
+        deletedSet: new Set(),
       });
     },
 
@@ -185,13 +192,13 @@ export const useBlockStore = create<BlockStore>()(
           next[parent.id] = { ...parent, contentIds: newContentIds } as Block;
         }
 
-        const newDirty = new Set(state.dirtyBlockIds);
+        const newDirty = new Set(state.dirtySet);
         newDirty.add(block.id);
         if (block.parentId) newDirty.add(block.parentId);
 
         return {
           blocksById: next,
-          dirtyBlockIds: newDirty,
+          dirtySet: newDirty,
           rootPageIds:
             block.type === 'page' && block.parentId === null
               ? [...state.rootPageIds, block.id]
@@ -205,13 +212,13 @@ export const useBlockStore = create<BlockStore>()(
         const block = state.blocksById[id];
         if (!block) return state;
 
-        const newDirty = new Set(state.dirtyBlockIds);
+        const newDirty = new Set(state.dirtySet);
         newDirty.add(id);
 
         return {
           // as Block：只修改了非判别字段 content，断言安全
           blocksById: { ...state.blocksById, [id]: { ...block, content } as Block },
-          dirtyBlockIds: newDirty,
+          dirtySet: newDirty,
         };
       });
     },
@@ -221,7 +228,7 @@ export const useBlockStore = create<BlockStore>()(
         const block = state.blocksById[id];
         if (!block) return state;
 
-        const newDirty = new Set(state.dirtyBlockIds);
+        const newDirty = new Set(state.dirtySet);
         newDirty.add(id);
 
         return {
@@ -230,7 +237,7 @@ export const useBlockStore = create<BlockStore>()(
             // as Block：props 合并只修改属性值，type 判别符不变，断言安全
             [id]: { ...block, props: { ...block.props, ...props } } as Block,
           },
-          dirtyBlockIds: newDirty,
+          dirtySet: newDirty,
         };
       });
     },
@@ -255,14 +262,16 @@ export const useBlockStore = create<BlockStore>()(
           }
         }
 
-        // 从 dirty 中移除（已删除，无需更新），加入 pendingDeleteIds
-        const newDirty = new Set(state.dirtyBlockIds);
+        // 从 dirty 中移除（已删除，无需更新），加入 deletedSet
+        const newDirty = new Set(state.dirtySet);
         newDirty.delete(id);
+
+        const newDeleted = new Set(state.deletedSet).add(id);
 
         return {
           blocksById: next,
-          dirtyBlockIds: newDirty,
-          pendingDeleteIds: [...state.pendingDeleteIds, id],
+          dirtySet: newDirty,
+          deletedSet: newDeleted,
           rootPageIds:
             block.type === 'page'
               ? state.rootPageIds.filter((pid) => pid !== id)
@@ -275,11 +284,11 @@ export const useBlockStore = create<BlockStore>()(
 
     reorderChildren: (parentId, orderedChildIds) => {
       set((state) => {
-        const newDirty = new Set(state.dirtyBlockIds);
+        const newDirty = new Set(state.dirtySet);
 
         if (parentId === null) {
           // 根级 page 排序
-          return { rootPageIds: orderedChildIds, dirtyBlockIds: newDirty };
+          return { rootPageIds: orderedChildIds, dirtySet: newDirty };
         }
 
         const parent = state.blocksById[parentId];
@@ -293,7 +302,7 @@ export const useBlockStore = create<BlockStore>()(
             // as Block：只修改了非判别字段 contentIds，断言安全
             [parentId]: { ...parent, contentIds: orderedChildIds } as Block,
           },
-          dirtyBlockIds: newDirty,
+          dirtySet: newDirty,
         };
       });
     },
@@ -307,65 +316,95 @@ export const useBlockStore = create<BlockStore>()(
     // ── 同步 ──────────────────────────────────
 
     getSyncPayload: (): BlockSyncPayload => {
-      const { blocksById, dirtyBlockIds, pendingDeleteIds } = get();
+      const { blocksById, dirtySet, deletedSet } = get();
 
-      const updated_blocks: BlockUpdateDelta[] = [...dirtyBlockIds].map((id) => {
-        const block = blocksById[id];
-        // 将前端 Block 脱水为 DbBlock delta 格式
-        return {
-          id,
-          parent_id: block.parentId,
-          path: block.path,
-          type: block.type,
-          content_ids: block.contentIds,
-          // 将 props + content 合并回 properties JSONB
-          properties: {
-            ...block.props,
-            content: block.content,
-          },
-        };
-      });
+      const updated_blocks: BlockUpdateDelta[] = Array.from(dirtySet)
+        .map((id) => {
+          const block = blocksById[id];
+          if (!block) return null; // 保底防御，按理已处理
+          // 将前端 Block 脱水为 DbBlock delta 格式
+          return {
+            id,
+            parent_id: block.parentId,
+            path: block.path,
+            type: block.type,
+            content_ids: block.contentIds,
+            // 将 props + content 合并回 properties JSONB
+            properties: {
+              ...block.props,
+              content: block.content,
+            },
+          };
+        })
+        .filter(Boolean) as BlockUpdateDelta[];
 
       return {
         updated_blocks,
-        deleted_blocks: pendingDeleteIds,
+        deleted_blocks: Array.from(deletedSet),
       };
     },
 
     clearDirtyState: () => {
-      set({ dirtyBlockIds: new Set(), pendingDeleteIds: [] });
+      set({ dirtySet: new Set(), deletedSet: new Set() });
     },
 
-    replacePage: (pageId, newBlocks) => {
+    // ── ⚡️ 极简 Action 实现 ──
+
+    markBlockDirty: (id) => {
+      set((state) => {
+        if (state.dirtySet.has(id)) return state;
+        const newSet = new Set(state.dirtySet);
+        newSet.add(id);
+        return { dirtySet: newSet };
+      });
+    },
+
+    markBlockDeleted: (id) => {
+      set((state) => {
+        const nextBlocks = { ...state.blocksById };
+        delete nextBlocks[id];
+
+        const newDirty = new Set(state.dirtySet);
+        newDirty.delete(id);
+
+        const newDeleted = new Set(state.deletedSet).add(id);
+
+        return {
+          blocksById: nextBlocks,
+          dirtySet: newDirty,
+          deletedSet: newDeleted,
+        };
+      });
+    },
+
+    updateSingleBlockData: (id, content, props) => {
+      set((state) => {
+        const oldBlock = state.blocksById[id];
+        // 如果这是一个刚被回车创建的新块，旧的 blocksById 里可能没有，需兼容处理
+        if (!oldBlock) return state;
+
+        return {
+          blocksById: {
+            ...state.blocksById,
+            [id]: { ...oldBlock, content, props: { ...oldBlock.props, ...props } } as Block,
+          },
+        };
+      });
+    },
+
+    updatePageStructure: (pageId, newChildIds) => {
       set((state) => {
         const page = state.blocksById[pageId];
         if (!page) return state;
 
-        // 计算旧子块 ID 集合
-        const oldChildIds = new Set(page.contentIds);
-        const newChildIds = newBlocks.map((b) => b.id);
-
-        // 新增或修改的块
-        const newDirty = new Set(state.dirtyBlockIds);
-        newBlocks.forEach((b) => newDirty.add(b.id));
-
-        // 被移除的块加入 pendingDeleteIds（O(n) 查找）
-        const newBlockIdSet = new Set(newChildIds);
-        const removedIds = [...oldChildIds].filter((id) => !newBlockIdSet.has(id));
-
-        // 构建新的 blocksById：移除旧子块，写入新子块，更新父页面的 contentIds
-        const next = { ...state.blocksById };
-        oldChildIds.forEach((id) => { delete next[id]; });
-        newBlocks.forEach((b) => { next[b.id] = b; });
-        next[pageId] = { ...page, contentIds: newChildIds } as Block;
-
-        // 父页面也标记为 dirty（contentIds 变了）
-        newDirty.add(pageId);
+        const oldChildIds = page.contentIds;
+        if (oldChildIds.join(',') === newChildIds.join(',')) return state;
 
         return {
-          blocksById: next,
-          dirtyBlockIds: newDirty,
-          pendingDeleteIds: [...state.pendingDeleteIds, ...removedIds],
+          blocksById: {
+            ...state.blocksById,
+            [pageId]: { ...page, contentIds: newChildIds } as Block,
+          },
         };
       });
     },

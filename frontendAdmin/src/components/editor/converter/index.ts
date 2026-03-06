@@ -251,7 +251,6 @@ function styleToMarkNodes(styles?: InlineStyle): TNode[] {
  *  - 保留 attrs.blockId（若存在）以维持脏追踪精确性
  *  - 新节点（blockId 为 null）调用 crypto.randomUUID() 生成 ID
  *  - blockquote > paragraph、listItem > paragraph 等嵌套结构均会被展平
- * 这里后期要进行diff算法，查找不同
  */
 export function dehydrateFromTiptap(
   doc: JSONContent,
@@ -261,6 +260,44 @@ export function dehydrateFromTiptap(
   return (doc.content ?? []).flatMap((node) =>
     tiptapNodeToBlocks(node, parentId, parentPath),
   );
+}
+/**
+ * 局部脱水：仅解析单个 Tiptap JSONContent 的 InlineContent
+ */
+export function parseTiptapNodeToInlineContent(node: JSONContent): InlineContent[] {
+  // blockquote 的文本在它的子节点 paragraph 里
+  if (node.type === 'blockquote' || node.type?.endsWith('List')) {
+     const inner = node.content?.[0]?.content ?? [];
+     return extractInline(inner);
+  }
+  return extractInline(node.content);
+}
+
+/**
+ * 局部脱水：仅解析单个 Tiptap JSONContent 的 Props
+ */
+export function parseTiptapNodeToProps(node: JSONContent): Record<string, any> {
+  const attrs = node.attrs || {};
+  switch (node.type) {
+    case 'heading':
+      return { level: attrs['level'] ?? 1 };
+    case 'codeBlock':
+      return { language: attrs['language'] ?? 'plaintext' };
+    case 'checkListItem':
+    case 'taskItem':
+      return { checked: attrs['checked'] ?? false };
+    case 'callout':
+      return { variant: attrs['variant'] ?? 'info' };
+    case 'imageBlock':
+      return {
+        url: attrs['url'] ?? '',
+        caption: attrs['caption'] ?? undefined,
+        alignment: attrs['alignment'] ?? 'center',
+        width: attrs['width'] ?? 100,
+      };
+    default:
+      return {};
+  }
 }
 
 function tiptapNodeToBlocks(

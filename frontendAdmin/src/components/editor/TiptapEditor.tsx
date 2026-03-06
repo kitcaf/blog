@@ -21,11 +21,10 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { useBlockStore } from '@/store/useBlockStore';
-import { selectIsDirty } from '@/store/selectors';
 import { editorExtensions } from './extensions';
-import { hydrateToTiptap, dehydrateFromTiptap } from './converter';
+import { hydrateToTiptap, parseTiptapNodeToInlineContent, parseTiptapNodeToProps } from './converter';
 import { useBlockSyncMutation } from '@/hooks/useBlocksQuery';
 
 /** 防抖延迟（ms）：用户停止输入后 1.5s 才同步 */
@@ -50,12 +49,6 @@ function getActivePageBlocks() {
 export function TiptapEditor({ className = '' }: TiptapEditorProps) {
   // 只订阅 activePageId（基本类型，=== 比较稳定）
   const activePageId = useBlockStore((s) => s.activePageId);
-  // 只订阅 dirty 状态（布尔型，变化极少）
-  const isDirty = useBlockStore(selectIsDirty);
-
-  // 稳定引用的 actions
-  const replacePage = useBlockStore((s) => s.replacePage);
-  const getSyncPayload = useBlockStore((s) => s.getSyncPayload);
 
   // React Query 批量同步 mutation
   const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(activePageId, {
@@ -77,35 +70,72 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
   const prevPageIdRef = useRef<string | null>(activePageId);
 
   /**
-   * 防抖同步回调：
-   *  1. 将 Tiptap 文档脱水写入 Store（replacePage）
-   *  2. 取出 dirtyBlockIds 打包 → useMutation.sync → POST /api/blocks/sync
-   *
-   * 用 useCallback 确保闭包中 activePageId 始终最新。
+   * 防抖同步回调（三层齿轮架构）：
+   *  醒来后去问 Zustand 谁脏了，然后将最新的真实有效数据抽离并发出请求。
    */
-  const debouncedSync = useCallback(
-    (editorJSON: ReturnType<typeof JSON.parse>) => {
-      if (!activePageId) return;
+  const triggerSync = useCallback(
+    (ed: Editor) => {
+      if (!activePageId || !ed) return;
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
       debounceTimer.current = setTimeout(() => {
-        // Step 1：将 Tiptap 内容写入 Zustand Store
-        const parentPath = `/${activePageId}/`;
-        const newBlocks = dehydrateFromTiptap(editorJSON, activePageId, parentPath);
-        replacePage(activePageId, newBlocks);
+        const store = useBlockStore.getState();
+        const { dirtySet, deletedSet } = store;
 
-        // Step 2：从 Store 取出本次积累的完整 payload → React Query mutation
-        // 注意：replacePage 是同步的，getState() 能立即取到新 dirty 集合
-        const payload = getSyncPayload();
+        // 1. 无脏数据，不必提取也不必请求，直接休息
+        if (dirtySet.size === 0 && deletedSet.size === 0) return;
+
+        // 2. 处理父页面结构变动 (增删移导致排序变了)
+        if (dirtySet.has(activePageId)) {
+          const currentChildIds: string[] = [];
+          // ed.state.doc.forEach 只遍历第一层，O(一级节点数)，极快！
+          ed.state.doc.forEach((node) => {
+            if (node.isBlock && node.attrs?.blockId) {
+              currentChildIds.push(node.attrs.blockId);
+            }
+          });
+          store.updatePageStructure(activePageId, currentChildIds);
+        }
+
+        // 3. 核心：精准提取变脏的具体节点数据！(抛弃 dehydrateFromTiptap)
+        // 只有当存在除父页面以外的真实 block 变脏时才遍历
+        const contentDirtyIds = new Set(dirtySet);
+        contentDirtyIds.delete(activePageId); // 排除掉父页面 ID
+
+        if (contentDirtyIds.size > 0) {
+          // 在 ProseMirror 内存树中进行极速扫描
+          ed.state.doc.descendants((node) => {
+            const id = node.attrs?.blockId;
+            if (node.isBlock && id && contentDirtyIds.has(id)) {
+              
+              // json() 临时转成可读 JSONContent 以复用我们的 parser
+              const jsonNode = node.toJSON();
+              const content = parseTiptapNodeToInlineContent(jsonNode);
+              const props = parseTiptapNodeToProps(jsonNode);
+              
+              // 实时写回 Store
+              store.updateSingleBlockData(id, content, props);
+              
+              // 优化：如果在树中已经找齐了所有脏节点，提前结束树便利
+              contentDirtyIds.delete(id);
+              if (contentDirtyIds.size === 0) return false; 
+            }
+            return true; // 继续遍历子树
+          });
+        }
+
+        // 4. 从 Store 获取组装好的极简 payload 发给后端
+        const payload = store.getSyncPayload();
         const hasChanges =
           payload.updated_blocks.length > 0 || payload.deleted_blocks.length > 0;
 
         if (hasChanges) {
           sync(payload);
+          store.clearDirtyState();
         }
       }, DEBOUNCE_MS);
     },
-    [activePageId, replacePage, getSyncPayload, sync],
+    [activePageId, sync],
   );
 
   const editor = useEditor({
@@ -122,8 +152,8 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
       if (transaction.getMeta('preventUpdate') || transaction.getMeta('isIdInjection')) {
         return;
       }
-      console.log('--- Tiptap JSON Output ---', JSON.stringify(ed.getJSON(), null, 2));
-      debouncedSync(ed.getJSON());
+      console.log('ignore: my test point: --- Tiptap JSON Output ---', JSON.stringify(ed.getJSON(), null, 2));
+      triggerSync(ed as Editor);
     },
   });
 
@@ -156,7 +186,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
   return (
     <div className={`tiptap-editor-shell ${className}`}>
       {/* 同步状态指示器 */}
-      <SyncStatusBar isDirty={isDirty} isSyncing={isSyncing} isSyncError={isSyncError} />
+      <SyncStatusBar isSyncing={isSyncing} isSyncError={isSyncError} />
       <EditorContent editor={editor} />
     </div>
   );
@@ -167,14 +197,13 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface SyncStatusBarProps {
-  isDirty: boolean;
   isSyncing: boolean;
   isSyncError: boolean;
 }
 
-function SyncStatusBar({ isDirty, isSyncing, isSyncError }: SyncStatusBarProps) {
+function SyncStatusBar({ isSyncing, isSyncError }: SyncStatusBarProps) {
   // 全部正常时不渲染（保持 DOM 干净）
-  if (!isDirty && !isSyncing && !isSyncError) return null;
+  if (!isSyncing && !isSyncError) return null;
 
   return (
     <div

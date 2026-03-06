@@ -70,6 +70,13 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
+   * 记录上一次已加载的 activePageId，用于区分：
+   *  - 首次挂载（prevPageId === null）→ 不重复 setContent（useEditor 已用初始内容）
+   *  - 切换页面（prevPageId !== activePageId）→ 需要 setContent 替换文档
+   */
+  const prevPageIdRef = useRef<string | null>(activePageId);
+
+  /**
    * 防抖同步回调：
    *  1. 将 Tiptap 文档脱水写入 Store（replacePage）
    *  2. 取出 dirtyBlockIds 打包 → useMutation.sync → POST /api/blocks/sync
@@ -110,15 +117,26 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
         'data-testid': 'tiptap-editor',
       },
     },
-    onUpdate: ({ editor: ed }) => {
+    onUpdate: ({ editor: ed, transaction }) => {
+      // 忽略由 setContent 或其他不需要触发同步的内部事务
+      if (transaction.getMeta('preventUpdate') || transaction.getMeta('isIdInjection')) {
+        return;
+      }
       console.log('--- Tiptap JSON Output ---', JSON.stringify(ed.getJSON(), null, 2));
       debouncedSync(ed.getJSON());
     },
   });
 
-  // 切换活跃页面时重置编辑器内容（非订阅，一次性读取）
+  // 切换活跃页面时重置编辑器内容
+  // 关键：跳过首次挂载，避免 useEditor 初始化后又立刻 setContent 导致内容闪烁
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
+
+    // 首次挂载：prevPageIdRef 与 activePageId 相同，跳过（useEditor 已加载初始内容）
+    if (prevPageIdRef.current === activePageId) return;
+
+    // 真正切换页面了：替换文档内容
+    prevPageIdRef.current = activePageId;
     const blocks = getActivePageBlocks();
     const newContent = hydrateToTiptap(blocks);
     // emitUpdate: false 防止切换页面触发 onUpdate → 不必要的同步

@@ -47,6 +47,7 @@ export const BlockIdExtension = Extension.create({
    * 监听编辑器事务（Tiptap 内部 ProseMirror 的 API）。
    * 每次文档发生变化后，扫描变动的节点。如果发现原本需要 blockId 的节点没 id，
    * 立刻生成一个 UUID 并通过全新的 Transaction 写回文档。
+   * addProseMirrorPlugins 可以捕获所有的事务，包括 Enter、Backspace 等操作
    */
   addProseMirrorPlugins() {
     const trackedTypes = new Set(TRACKED_NODE_TYPES as readonly string[]);
@@ -60,6 +61,10 @@ export const BlockIdExtension = Extension.create({
             return null;
           }
 
+          // 如果这个 transaction 是由 setContent（或者 hydrate 过程）触发的，
+          // 我们不干预，因为 hydrateToTiptap 已经保证了所有传入的 node 都有正确的 blockId
+          // 在这层级我们可以通过检查 docChanged 等进行简单过滤。
+          
           let tr = newState.tr;
           let modified = false;
 
@@ -70,6 +75,7 @@ export const BlockIdExtension = Extension.create({
               
               if (!currentId) {
                 // 发现一个没有 UUID 的全新节点，生成一个并注入
+                // 使用 setMeta('preventUpdate', true) 防止触发无限循环或者不必要的外部 onUpdate
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
                   blockId: crypto.randomUUID(),
@@ -79,7 +85,12 @@ export const BlockIdExtension = Extension.create({
             }
           });
 
-          return modified ? tr : null;
+          if (modified) {
+             // 打上标记，表示这是系统自动修补 ID 的事务，避免触发外部不必要的重渲染
+             tr.setMeta('isIdInjection', true);
+             return tr;
+          }
+          return null;
         },
       }),
     ];

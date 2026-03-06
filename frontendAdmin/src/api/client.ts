@@ -9,7 +9,7 @@
  *  - 响应拦截：统一把 HTTP 错误转为 JS Error，上层 React Query 自动重试
  */
 
-import axios from 'axios';
+import axios, { type InternalAxiosRequestConfig } from 'axios';
 
 /** 所有 API 请求的根路径，开发时指向 Go 后端，可被 .env 覆盖 */
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
@@ -24,7 +24,7 @@ export const apiClient = axios.create({
 
 // ── 请求拦截器 ──────────────────────────────────────────────────────────────
 
-apiClient.interceptors.request.use((config) => {
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // TODO（阶段七 Auth）：从 localStorage / cookie 读取 JWT，注入 Authorization Header
   // const token = localStorage.getItem('admin_token');
   // if (token) config.headers.Authorization = `Bearer ${token}`;

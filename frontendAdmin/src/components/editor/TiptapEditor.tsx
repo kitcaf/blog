@@ -97,7 +97,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
           store.updatePageStructure(activePageId, currentChildIds);
         }
 
-        // 3. 核心：精准提取变脏的具体节点数据！(抛弃 dehydrateFromTiptap)
+        // 3. 核心：精准提取变脏的具体节点数据
         // 只有当存在除父页面以外的真实 block 变脏时才遍历
         const contentDirtyIds = new Set(dirtySet);
         contentDirtyIds.delete(activePageId); // 排除掉父页面 ID
@@ -126,6 +126,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
 
         // 4. 从 Store 获取组装好的极简 payload 发给后端
         const payload = store.getSyncPayload();
+        console.log("test payload 改变的block数据", payload);
         const hasChanges =
           payload.updated_blocks.length > 0 || payload.deleted_blocks.length > 0;
 
@@ -152,7 +153,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
       if (transaction.getMeta('preventUpdate') || transaction.getMeta('isIdInjection')) {
         return;
       }
-      console.log('ignore: my test point: --- Tiptap JSON Output ---', JSON.stringify(ed.getJSON(), null, 2));
+      //console.log('ignore: my test point: --- Tiptap JSON Output ---', JSON.stringify(ed.getJSON(), null, 2));
       triggerSync(ed as Editor);
     },
   });

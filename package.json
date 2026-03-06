@@ -1,0 +1,25 @@
+{
+  "name": "blog-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:admin": "pnpm --filter frontendadmin dev",
+    "build:frontend": "pnpm --filter frontend build",
+    "build:admin": "pnpm --filter frontendadmin build",
+    "build:all": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "type-check": "pnpm -r type-check"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/node": "^24.10.1",
+    "tailwindcss": "^4.2.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "axios": "^1.13.6"
+  }
+}

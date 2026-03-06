@@ -111,6 +111,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
       },
     },
     onUpdate: ({ editor: ed }) => {
+      console.log('--- Tiptap JSON Output ---', JSON.stringify(ed.getJSON(), null, 2));
       debouncedSync(ed.getJSON());
     },
   });

@@ -251,6 +251,7 @@ function styleToMarkNodes(styles?: InlineStyle): TNode[] {
  *  - 保留 attrs.blockId（若存在）以维持脏追踪精确性
  *  - 新节点（blockId 为 null）调用 crypto.randomUUID() 生成 ID
  *  - blockquote > paragraph、listItem > paragraph 等嵌套结构均会被展平
+ * 这里后期要进行diff算法，查找不同
  */
 export function dehydrateFromTiptap(
   doc: JSONContent,
@@ -267,8 +268,14 @@ function tiptapNodeToBlocks(
   parentId: string,
   parentPath: string,
 ): Block[] {
-  /** 优先用节点携带的 blockId，保证 dirty tracking 精确；新节点生成 UUID */
-  const id = (node.attrs?.['blockId'] as string | undefined) ?? crypto.randomUUID();
+  // 经过 BlockIdExtension 的处理，此时所有 block 级节点理论上都必须有 blockId
+  let id = node.attrs?.['blockId'] as string | undefined;
+  if (!id) {
+    console.warn('[Block Converter] 严重警告: 发现缺失 blockId 的节点，这不应该发生。', node);
+    // 降级保护：如果真出现了意外，生成一个临时的 UUID 以免崩溃
+    id = crypto.randomUUID();
+  }
+  
   const path = `${parentPath}${id}/`;
 
   // 共享 BaseBlock 字段（不用 as const，否则 contentIds 变 readonly 与 Block 不兼容）
@@ -309,7 +316,11 @@ function tiptapNodeToBlocks(
     // ── 列表：展平各 listItem 为独立 Block ──
     case 'bulletList':
       return (node.content ?? []).map((listItemNode): Block => {
-        const itemId = (listItemNode.attrs?.['blockId'] as string | undefined) ?? crypto.randomUUID();
+        let itemId = listItemNode.attrs?.['blockId'] as string | undefined;
+        if (!itemId) {
+          console.warn('[Block Converter] bulletListItem 缺失 blockId', listItemNode);
+          itemId = crypto.randomUUID();
+        }
         const inner = listItemNode.content?.[0]?.content ?? [];
         return {
           id: itemId,
@@ -324,7 +335,11 @@ function tiptapNodeToBlocks(
 
     case 'orderedList':
       return (node.content ?? []).map((listItemNode): Block => {
-        const itemId = (listItemNode.attrs?.['blockId'] as string | undefined) ?? crypto.randomUUID();
+        let itemId = listItemNode.attrs?.['blockId'] as string | undefined;
+        if (!itemId) {
+          console.warn('[Block Converter] numberedListItem 缺失 blockId', listItemNode);
+          itemId = crypto.randomUUID();
+        }
         const inner = listItemNode.content?.[0]?.content ?? [];
         return {
           id: itemId,
@@ -339,7 +354,11 @@ function tiptapNodeToBlocks(
 
     case 'taskList':
       return (node.content ?? []).map((taskItemNode): Block => {
-        const itemId = (taskItemNode.attrs?.['blockId'] as string | undefined) ?? crypto.randomUUID();
+        let itemId = taskItemNode.attrs?.['blockId'] as string | undefined;
+        if (!itemId) {
+          console.warn('[Block Converter] checkListItem 缺失 blockId', taskItemNode);
+          itemId = crypto.randomUUID();
+        }
         const inner = taskItemNode.content?.[0]?.content ?? [];
         return {
           id: itemId,

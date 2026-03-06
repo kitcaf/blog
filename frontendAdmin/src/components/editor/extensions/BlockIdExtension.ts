@@ -8,6 +8,8 @@
  *  - 使用 `addGlobalAttributes` 一次性覆盖所有 block 类型，无需在每个扩展中重复定义。
  */
 import { Extension } from '@tiptap/core';
+import { Plugin, PluginKey, Transaction, EditorState } from '@tiptap/pm/state';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 
 /** 需要追踪 blockId 的 Tiptap 内置 block 节点类型 */
 const TRACKED_NODE_TYPES = [
@@ -38,6 +40,48 @@ export const BlockIdExtension = Extension.create({
           },
         },
       },
+    ];
+  },
+
+  /**
+   * 监听编辑器事务（Tiptap 内部 ProseMirror 的 API）。
+   * 每次文档发生变化后，扫描变动的节点。如果发现原本需要 blockId 的节点没 id，
+   * 立刻生成一个 UUID 并通过全新的 Transaction 写回文档。
+   */
+  addProseMirrorPlugins() {
+    const trackedTypes = new Set(TRACKED_NODE_TYPES as readonly string[]);
+
+    return [
+      new Plugin({
+        key: new PluginKey('blockIdInjector'),
+        appendTransaction: (transactions: readonly Transaction[], _oldState: EditorState, newState: EditorState) => {
+          // 如果没有任何文档变动，直接跳过，节省性能
+          if (!transactions.some((tr) => tr.docChanged)) {
+            return null;
+          }
+
+          let tr = newState.tr;
+          let modified = false;
+
+          // 遍历整个文档（这里可以优化为只遍历变动区域，但全量遍历配合 ProseMirror 快照通常也足够快）
+          newState.doc.descendants((node: ProseMirrorNode, pos: number) => {
+            if (node.isBlock && trackedTypes.has(node.type.name)) {
+              const currentId = node.attrs.blockId;
+              
+              if (!currentId) {
+                // 发现一个没有 UUID 的全新节点，生成一个并注入
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  blockId: crypto.randomUUID(),
+                });
+                modified = true;
+              }
+            }
+          });
+
+          return modified ? tr : null;
+        },
+      }),
     ];
   },
 });

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-
+/**
+ * SideBar栏的一些通用属性
+ */
 interface SidebarStore {
   isOpen: boolean;
   width: number;

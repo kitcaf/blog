@@ -70,7 +70,7 @@ export function MainContent() {
         }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [blocks, activePageId]); // blocks 是稳定数组引用（React Query 管理）
 
   // ── 空状态：未选中页面 ────────────────────────────────────────────────────
@@ -145,12 +145,6 @@ export function MainContent() {
         {/* 页面标题（从 page 块的 props 读取） */}
         {activePage?.type === 'page' && (
           <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-4xl">{(activePage.props as { icon?: string }).icon ?? '📄'}</span>
-            </div>
-            <h1 className="text-3xl font-bold text-app-fg-deeper tracking-tight">
-              {(activePage.props as { title?: string }).title ?? '未命名页面'}
-            </h1>
           </div>
         )}
 

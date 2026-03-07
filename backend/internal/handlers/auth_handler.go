@@ -60,19 +60,44 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, user, err := h.authService.Login(req.Username, req.Password)
+	tokens, user, err := h.authService.Login(req.Username, req.Password)
 	if err != nil {
 		response.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
 	response.Success(c, gin.H{
-		"token": token,
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
 		"user": gin.H{
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
 		},
+	})
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+// RefreshToken 刷新 Access Token
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	var req RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
+		return
+	}
+
+	tokens, err := h.authService.RefreshAccessToken(req.RefreshToken)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
 	})
 }
 
@@ -91,5 +116,15 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 // Logout 退出登录
 func (h *AuthHandler) Logout(c *gin.Context) {
+	// 从请求体获取 refresh token
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err == nil && req.RefreshToken != "" {
+		// 撤销 refresh token
+		_ = h.authService.RevokeRefreshToken(req.RefreshToken)
+	}
+
 	response.Success(c, gin.H{"message": "退出成功"})
 }

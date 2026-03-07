@@ -19,16 +19,19 @@ import {
   Settings,
   Trash,
   Plus,
-  UserPlus,
   ChevronRight,
   FileText,
   Loader2,
   AlertCircle,
   RefreshCw,
   PanelLeftClose,
+  LogOut,
+  User,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useBlockStore } from '@/store/useBlockStore';
 import { useSidebarStore } from '@/store/useSidebarStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
 import type { PageTreeNode } from '@/api/blocks';
 
@@ -37,6 +40,7 @@ import type { PageTreeNode } from '@/api/blocks';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function Sidebar() {
+  const navigate = useNavigate();
   const { tree, flatPages, isLoading, isError, error } = usePageTreeQuery();
 
   // 将 API 加载的 data 注入 Zustand Store（仅 flatPages 变化时执行）
@@ -46,6 +50,28 @@ export function Sidebar() {
 
   // 侧边栏状态控制
   const { isOpen, width, setIsOpen, isResizing } = useSidebarStore();
+
+  // 认证状态
+  const user = useAuthStore((s) => s.user);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+
+  // 退出登录
+  const handleLogout = useCallback(async () => {
+    try {
+      // 调用后端登出接口，撤销 refresh token
+      if (refreshToken) {
+        const { logout } = await import('@/api/auth');
+        await logout(refreshToken);
+      }
+    } catch (error) {
+      // 忽略错误，继续清除本地状态
+      console.error('Logout error:', error);
+    } finally {
+      clearAuth();
+      navigate('/login', { replace: true });
+    }
+  }, [clearAuth, navigate, refreshToken]);
 
   useEffect(() => {
     if (flatPages.length === 0) return;
@@ -155,15 +181,31 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* 邀请按钮 */}
-      <div className="p-2 border-t border-border">
+      {/* 用户信息和退出 */}
+      <div className="p-2 border-t border-border space-y-1">
+        {/* 用户信息 */}
         <div className="flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer">
-          <UserPlus size={16} className="text-app-fg-light" />
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-app-fg-deep">邀请成员</span>
-            <span className="text-xs text-app-fg-light">与团队协作创作。</span>
+          <div className="w-7 h-7 bg-app-hover rounded-full flex items-center justify-center text-xs font-medium text-app-fg-deeper">
+            <User size={14} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-app-fg-deep truncate">
+              {user?.username || '用户'}
+            </div>
+            <div className="text-xs text-app-fg-light truncate">
+              {user?.email || ''}
+            </div>
           </div>
         </div>
+
+        {/* 退出登录 */}
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer text-app-fg hover:text-app-fg-deeper transition-colors"
+        >
+          <LogOut size={16} />
+          <span className="text-sm">退出登录</span>
+        </button>
       </div>
     </aside>
   );
@@ -221,7 +263,7 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
         {/* 展开/折叠箭头 */}
         <span
           className={`
-            flex-shrink-0 w-4 h-4 flex items-center justify-center
+            shrink-0 w-4 h-4 flex items-center justify-center
             transition-transform duration-150
             ${hasChildren ? 'text-app-fg-light hover:text-app-fg-deep' : 'opacity-0 pointer-events-none'}
             ${isExpanded ? 'rotate-90' : ''}
@@ -233,7 +275,7 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
         </span>
 
         {/* 图标 */}
-        <span className="flex-shrink-0 text-[14px] leading-none">
+        <span className="shrink-0 text-[14px] leading-none">
           {node.icon ?? <FileText size={14} className="text-app-fg-light" />}
         </span>
 
@@ -242,7 +284,7 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
 
         {/* 发布状态 */}
         {node.isPublished && (
-          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
+          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
         )}
       </div>
 

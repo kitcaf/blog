@@ -43,8 +43,9 @@ type RedisConfig struct {
 
 // JWTConfig JWT 认证配置
 type JWTConfig struct {
-	Secret      string // JWT 签名密钥（生产环境必须修改）
-	ExpireHours int    // Token 过期时间（小时）
+	Secret              string // JWT 签名密钥（生产环境必须修改）
+	AccessExpireMinutes int    // Access Token 过期时间（分钟）
+	RefreshExpireDays   int    // Refresh Token 过期时间（天）
 }
 
 // CORSConfig 跨域配置
@@ -80,8 +81,9 @@ func Load() *Config {
 			DB:       getEnvInt("REDIS_DB", 0),
 		},
 		JWT: JWTConfig{
-			Secret:      getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-			ExpireHours: getEnvInt("JWT_EXPIRE_HOURS", 24),
+			Secret:              getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+			AccessExpireMinutes: getEnvInt("JWT_ACCESS_EXPIRE_MINUTES", 30),
+			RefreshExpireDays:   getEnvInt("JWT_REFRESH_EXPIRE_DAYS", 7),
 		},
 		CORS: CORSConfig{
 			Origins: strings.Split(getEnv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174"), ","),

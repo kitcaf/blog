@@ -12,28 +12,42 @@ export default function ProtectedRoute() {
   const [isValid, setIsValid] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     const validateAuth = async () => {
       // 如果没有认证信息，直接跳转登录
       if (!isAuthenticated || !accessToken || !refreshToken) {
-        setIsValidating(false);
-        setIsValid(false);
+        if (isMounted) {
+          setIsValidating(false);
+          setIsValid(false);
+        }
         return;
       }
 
       try {
         // 验证 token 有效性（调用 /auth/me）
         await getCurrentUser();
-        setIsValid(true);
+        if (isMounted) {
+          setIsValid(true);
+        }
       } catch {
         // Token 无效，会被 axios 拦截器自动刷新
         // 如果刷新失败，会自动跳转登录
-        setIsValid(false);
+        if (isMounted) {
+          setIsValid(false);
+        }
       } finally {
-        setIsValidating(false);
+        if (isMounted) {
+          setIsValidating(false);
+        }
       }
     };
 
     validateAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isAuthenticated, accessToken, refreshToken]);
 
   // 正在验证中，显示加载状态

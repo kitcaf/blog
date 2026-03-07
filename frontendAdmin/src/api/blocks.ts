@@ -3,9 +3,9 @@
  * @description Block 相关的 3 个核心 API 函数。
  *
  * ┌──────────────────────────────────────────────────────────────────┐
- * │  API 1  GET  /api/pages/tree   → 侧边栏目录树（仅含 page 块）    │
- * │  API 2  GET  /api/pages/:id/blocks → 某篇文章的所有子 Block      │
- * │  API 3  POST /api/blocks/sync  → 防抖后批量提交变更               │
+ * │  API 1  GET  /pages/tree   → 侧边栏目录树（仅含 page 块）        │
+ * │  API 2  GET  /pages/:id/blocks → 某篇文章的所有子 Block          │
+ * │  API 3  POST /blocks/sync  → 防抖后批量提交变更                  │
  * └──────────────────────────────────────────────────────────────────┘
  *
  * 设计原则：
@@ -120,7 +120,7 @@ function buildPageTree(pages: Block[]): PageTreeNode[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /api/pages/tree
+ * GET /pages/tree
  *
  * 后端仅返回 type='page' 的 DbBlock（不含段落、标题等内容块），
  * 前端在内存中组装树，供侧边栏渲染。
@@ -145,7 +145,7 @@ export async function fetchPageTree(): Promise<{
     return { flatPages, tree };
   }
 
-  const { data } = await apiClient.get<DbBlock[]>('/api/pages/tree');
+  const { data } = await apiClient.get<DbBlock[]>('/pages/tree');
   const flatPages = hydrateBlocks(data);
   const tree = buildPageTree(flatPages);
   return { flatPages, tree };
@@ -156,7 +156,7 @@ export async function fetchPageTree(): Promise<{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /api/pages/:pageId/blocks
+ * GET /pages/:pageId/blocks
  *
  * 返回指定 page 下的所有内容块（段落、标题、图片等），
  * 注意：不含 page 块本身，后端只返回其直接/间接子块。
@@ -169,7 +169,7 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
     return initialMockData.filter((b) => b.parentId === pageId);
   }
 
-  const { data } = await apiClient.get<DbBlock[]>(`/api/pages/${pageId}/blocks`);
+  const { data } = await apiClient.get<DbBlock[]>(`/pages/${pageId}/blocks`);
   return hydrateBlocks(data);
 }
 
@@ -178,7 +178,7 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * POST /api/blocks/sync
+ * POST /blocks/sync
  *
  * 将防抖期间积累的变更一次性发送给后端。
  * 这是"本地优先 + 批量同步"方案的核心 API。
@@ -198,5 +198,5 @@ export async function syncBlocks(payload: BlockSyncPayload): Promise<void> {
     console.log('[MockSync] 正在同步变更 (Mock 模式下仅打印日志):', payload);
     return Promise.resolve();
   }
-  await apiClient.post('/api/blocks/sync', payload);
+  await apiClient.post('/blocks/sync', payload);
 }

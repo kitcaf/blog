@@ -37,7 +37,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	blockRepo := repository.NewBlockRepository(db)
 
 	// 初始化 services
-	authService := services.NewAuthService(userRepo, workspaceRepo, cfg, rdb)
+	authService := services.NewAuthService(userRepo, workspaceRepo, cfg, rdb, db)
 	workspaceService := services.NewWorkspaceService(workspaceRepo)
 	blockService := services.NewBlockService(blockRepo, rdb)
 

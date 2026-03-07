@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AuthService struct {
@@ -24,14 +25,16 @@ type AuthService struct {
 	workspaceRepo *repository.WorkspaceRepository
 	cfg           *config.Config
 	rdb           *redis.Client
+	db            *gorm.DB // 添加 db 用于事务
 }
 
-func NewAuthService(userRepo *repository.UserRepository, workspaceRepo *repository.WorkspaceRepository, cfg *config.Config, rdb *redis.Client) *AuthService {
+func NewAuthService(userRepo *repository.UserRepository, workspaceRepo *repository.WorkspaceRepository, cfg *config.Config, rdb *redis.Client, db *gorm.DB) *AuthService {
 	return &AuthService{
 		userRepo:      userRepo,
 		workspaceRepo: workspaceRepo,
 		cfg:           cfg,
 		rdb:           rdb,
+		db:            db,
 	}
 }
 
@@ -62,7 +65,7 @@ func (s *AuthService) Login(username, password string) (*TokenPair, *models.User
 	return tokens, user, nil
 }
 
-// Register 用户注册并创建默认工作空间
+// Register 用户注册并创建默认工作空间（使用事务）
 func (s *AuthService) Register(username, email, password string) (*models.User, *models.Workspace, error) {
 	// 检查用户名是否已存在
 	if _, err := s.userRepo.FindByUsername(username); err == nil {
@@ -80,35 +83,45 @@ func (s *AuthService) Register(username, email, password string) (*models.User, 
 		return nil, nil, err
 	}
 
-	user := &models.User{
-		Username:     username,
-		Email:        email,
-		PasswordHash: string(hashedPassword),
-	}
+	var user *models.User
+	var workspace *models.Workspace
 
-	if err := s.userRepo.Create(user); err != nil {
+	// 开启数据库事务：要么全成功，要么全失败回滚
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// 1. 创建新用户
+		user = &models.User{
+			Username:     username,
+			Email:        email,
+			PasswordHash: string(hashedPassword),
+		}
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+
+		// 2. 🚀 自动为该用户创建一个默认的专属工作区（站点）
+		workspace = &models.Workspace{
+			Name:    username + " 的专属空间",
+			OwnerID: user.ID,
+		}
+		if err := tx.Create(workspace).Error; err != nil {
+			return err
+		}
+
+		// 3. 🚀 将用户与工作区绑定，并赋予最高权限 owner
+		member := &models.WorkspaceMember{
+			WorkspaceID: workspace.ID,
+			UserID:      user.ID,
+			Role:        "owner",
+		}
+		if err := tx.Create(member).Error; err != nil {
+			return err
+		}
+
+		return nil // 提交事务
+	})
+
+	if err != nil {
 		return nil, nil, err
-	}
-
-	// 创建默认工作空间
-	workspace := &models.Workspace{
-		Name:    username + " 的工作空间",
-		OwnerID: user.ID,
-	}
-
-	if err := s.workspaceRepo.Create(workspace); err != nil {
-		return user, nil, fmt.Errorf("failed to create default workspace: %w", err)
-	}
-
-	// 创建工作空间成员关系（所有者）
-	member := &models.WorkspaceMember{
-		WorkspaceID: workspace.ID,
-		UserID:      user.ID,
-		Role:        "owner",
-	}
-
-	if err := s.workspaceRepo.AddMember(member); err != nil {
-		return user, workspace, fmt.Errorf("failed to add workspace member: %w", err)
 	}
 
 	return user, workspace, nil

@@ -40,7 +40,7 @@ export default function Login() {
           username: formData.username,
           password: formData.password,
         });
-        setAuth(response.access_token, response.refresh_token, response.user);
+        setAuth(response.access_token, response.refresh_token, response.user, response.workspace);
         
         // 跳转到之前访问的页面或首页
         const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
@@ -52,12 +52,13 @@ export default function Login() {
           email: formData.email,
           password: formData.password,
         });
+        
         // 注册成功后自动登录
         const loginResponse = await login({
           username: formData.username,
           password: formData.password,
         });
-        setAuth(loginResponse.access_token, loginResponse.refresh_token, loginResponse.user);
+        setAuth(loginResponse.access_token, loginResponse.refresh_token, loginResponse.user, loginResponse.workspace);
         
         // 跳转到首页
         navigate('/', { replace: true });

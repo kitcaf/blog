@@ -45,21 +45,21 @@ CREATE TABLE blocks (
     -- 数据隔离墙：所有查询必须带上它，防止租户数据越权
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     
-    -- 父级指针：顶层文章(Page)的 parent_id 为 NULL
+    -- 父级指针：真正的顶层节点：parent_id IS NULL
     parent_id UUID REFERENCES blocks(id) ON DELETE SET NULL,
     
-    -- 🚀 核心优化：物化路径 (Materialized Path)
+    -- 核心优化：物化路径 (Materialized Path)
     -- 格式: '/{page_id}/{parent_id}/{id}/'
     -- 作用: 破除递归查询诅咒！使用 `path LIKE '/page_id/%'` 即可 O(1) 捞出整篇文章所有嵌套区块
     path VARCHAR(1000) NOT NULL,
     
-    -- 区块类型标识：'page', 'paragraph', 'imageBlock', 'codeBlock' 等
+    -- 区块类型标识：'folder' 'page', 'paragraph', 'imageBlock', 'codeBlock' 等
     type VARCHAR(100) NOT NULL,
     
-    -- 子节点排序数组：["uuid-1", "uuid-2"]，拖拽排序时仅更新父节点的此字段
+    -- 第一层子节点排序数组：["uuid-1", "uuid-2"]，拖拽排序时仅更新父节点的此字段, 只是排序作用，不要用来查询避免并发查询错误
     content_ids JSONB DEFAULT '[]'::jsonb,
     
-    -- 🚀 核心动态数据载体 (无模式设计)
+    -- 核心动态数据载体 (无模式设计)
     -- Page块存: {"title": "新文章", "slug": "my-post", "is_published": true, "cover": "url"}
     -- 文本块存: {"content": [{"text": "Hello", "styles": {"bold": true}}], "textAlign": "left"}
     properties JSONB DEFAULT '{}'::jsonb,

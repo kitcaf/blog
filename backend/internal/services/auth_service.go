@@ -20,16 +20,18 @@ import (
 )
 
 type AuthService struct {
-	userRepo *repository.UserRepository
-	cfg      *config.Config
-	rdb      *redis.Client
+	userRepo      *repository.UserRepository
+	workspaceRepo *repository.WorkspaceRepository
+	cfg           *config.Config
+	rdb           *redis.Client
 }
 
-func NewAuthService(userRepo *repository.UserRepository, cfg *config.Config, rdb *redis.Client) *AuthService {
+func NewAuthService(userRepo *repository.UserRepository, workspaceRepo *repository.WorkspaceRepository, cfg *config.Config, rdb *redis.Client) *AuthService {
 	return &AuthService{
-		userRepo: userRepo,
-		cfg:      cfg,
-		rdb:      rdb,
+		userRepo:      userRepo,
+		workspaceRepo: workspaceRepo,
+		cfg:           cfg,
+		rdb:           rdb,
 	}
 }
 
@@ -60,22 +62,22 @@ func (s *AuthService) Login(username, password string) (*TokenPair, *models.User
 	return tokens, user, nil
 }
 
-// Register 用户注册
-func (s *AuthService) Register(username, email, password string) (*models.User, error) {
+// Register 用户注册并创建默认工作空间
+func (s *AuthService) Register(username, email, password string) (*models.User, *models.Workspace, error) {
 	// 检查用户名是否已存在
 	if _, err := s.userRepo.FindByUsername(username); err == nil {
-		return nil, errors.New("username already exists")
+		return nil, nil, errors.New("username already exists")
 	}
 
 	// 检查邮箱是否已存在
 	if _, err := s.userRepo.FindByEmail(email); err == nil {
-		return nil, errors.New("email already exists")
+		return nil, nil, errors.New("email already exists")
 	}
 
 	// 哈希密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	user := &models.User{
@@ -85,10 +87,31 @@ func (s *AuthService) Register(username, email, password string) (*models.User, 
 	}
 
 	if err := s.userRepo.Create(user); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return user, nil
+	// 创建默认工作空间
+	workspace := &models.Workspace{
+		Name:    username + " 的工作空间",
+		OwnerID: user.ID,
+	}
+
+	if err := s.workspaceRepo.Create(workspace); err != nil {
+		return user, nil, fmt.Errorf("failed to create default workspace: %w", err)
+	}
+
+	// 创建工作空间成员关系（所有者）
+	member := &models.WorkspaceMember{
+		WorkspaceID: workspace.ID,
+		UserID:      user.ID,
+		Role:        "owner",
+	}
+
+	if err := s.workspaceRepo.AddMember(member); err != nil {
+		return user, workspace, fmt.Errorf("failed to add workspace member: %w", err)
+	}
+
+	return user, workspace, nil
 }
 
 // GetUserByID 根据 ID 获取用户

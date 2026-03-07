@@ -32,7 +32,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.Register(req.Username, req.Email, req.Password)
+	user, workspace, err := h.authService.Register(req.Username, req.Email, req.Password)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -43,6 +43,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
+		},
+		"workspace": gin.H{
+			"id":   workspace.ID,
+			"name": workspace.Name,
 		},
 	})
 }

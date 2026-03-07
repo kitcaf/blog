@@ -1,11 +1,10 @@
 package middleware
 
 import (
-	"net/http"
-	"strings"
-
 	"blog-backend/internal/config"
+	"blog-backend/pkg/errors"
 	"blog-backend/pkg/response"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -17,7 +16,7 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			response.Error(c, http.StatusUnauthorized, "Missing authorization header")
+			response.ErrorWithCode(c, errors.New(errors.ErrUnauthorized, "missing authorization header"))
 			c.Abort()
 			return
 		}
@@ -25,7 +24,7 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		// 解析 Bearer Token
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			response.Error(c, http.StatusUnauthorized, "Invalid authorization header format")
+			response.ErrorWithCode(c, errors.New(errors.ErrUnauthorized, "invalid authorization header format"))
 			c.Abort()
 			return
 		}
@@ -36,14 +35,14 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
-			response.Error(c, http.StatusUnauthorized, "Invalid or expired token")
+			response.ErrorWithCode(c, errors.New(errors.ErrUnauthorized, "invalid or expired token"))
 			c.Abort()
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			response.Error(c, http.StatusUnauthorized, "Invalid token claims")
+			response.ErrorWithCode(c, errors.New(errors.ErrUnauthorized, "invalid token claims"))
 			c.Abort()
 			return
 		}
@@ -51,7 +50,7 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		// 提取用户信息
 		userID, err := uuid.Parse(claims["user_id"].(string))
 		if err != nil {
-			response.Error(c, http.StatusUnauthorized, "Invalid user ID in token")
+			response.ErrorWithCode(c, errors.New(errors.ErrUnauthorized, "invalid user ID in token"))
 			c.Abort()
 			return
 		}
@@ -70,27 +69,27 @@ func WorkspaceMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
 		if !exists {
-			response.Error(c, http.StatusUnauthorized, "User not authenticated")
+			response.ErrorWithCode(c, errors.New(errors.ErrUnauthorized, "user not authenticated"))
 			c.Abort()
 			return
 		}
 
-		// 从 URL 参数获取 workspace_id
-		workspaceIDStr := c.Param("workspace_id")
+		// 从 URL 参数获取 workspace_id（路由中的 :id 参数）
+		workspaceIDStr := c.Param("id")
 		if workspaceIDStr == "" {
-			// 从查询参数获取
+			// 尝试从查询参数获取
 			workspaceIDStr = c.Query("workspace_id")
 		}
 
 		if workspaceIDStr == "" {
-			response.Error(c, http.StatusBadRequest, "Missing workspace_id")
+			response.ErrorWithCode(c, errors.New(errors.ErrMissingRequired, "missing workspace_id parameter"))
 			c.Abort()
 			return
 		}
 
 		workspaceID, err := uuid.Parse(workspaceIDStr)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, "Invalid workspace_id")
+			response.ErrorWithCode(c, errors.New(errors.ErrInvalidInput, "invalid workspace_id format"))
 			c.Abort()
 			return
 		}

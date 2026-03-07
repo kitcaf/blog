@@ -1,9 +1,9 @@
 /**
  * @file blocks.ts
- * @description Block 相关的 3 个核心 API 函数。
+ * @description Block 相关的核心 API 函数。
  *
  * ┌──────────────────────────────────────────────────────────────────┐
- * │  API 1  GET  /pages/tree   → 侧边栏目录树（仅含 page 块）        │
+ * │  API 1  GET  /blocks/children   → 侧边栏目录树（懒加载）         │
  * │  API 2  GET  /pages/:id/blocks → 某篇文章的所有子 Block          │
  * │  API 3  POST /blocks/sync  → 防抖后批量提交变更                  │
  * └──────────────────────────────────────────────────────────────────┘
@@ -17,9 +17,16 @@
 import type { DbBlock, Block, BlockType, BlockData, BlockSyncPayload, InlineContent } from '@blog/types';
 import { apiClient } from './client';
 import { initialMockData } from '@/mockData';
+import { useAuthStore } from '@/store/useAuthStore';
 
 /** 环境变量控制：true → mock 模式，false → 真实 API 模式 */
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
+
+// 获取当前工作空间 ID
+const getWorkspaceId = () => {
+  const workspace = useAuthStore.getState().workspace;
+  return workspace?.id || 'temp-workspace-id';
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 一、内部工具：DbBlock → Block (hydrate)
@@ -63,35 +70,35 @@ function hydrateBlocks(dbBlocks: DbBlock[]): Block[] {
 
 /**
  * 侧边栏渲染所需的树节点结构。
- * 后端返回扁平的 page DbBlock 列表（仅查 type='page'），
- * 前端在内存中通过 parent_id 组装成树，O(n) 复杂度。
  */
 export interface PageTreeNode {
   id: string;
   parentId: string | null;
+  type: 'page' | 'folder';
   title: string;
   icon?: string;
   isPublished?: boolean;
+  contentIds: string[];
   children: PageTreeNode[];
 }
 
 /**
- * 将扁平的 page Block 数组组装成嵌套树结构（O(n)）。
- * 利用 Map 做 id → node 的快速查找，避免嵌套循环。
+ * 将扁平的 Block 数组组装成嵌套树结构（O(n)）。
  */
-function buildPageTree(pages: Block[]): PageTreeNode[] {
-  // 过滤确保只处理 page 类型
+function buildPageTree(blocks: Block[]): PageTreeNode[] {
   const nodeMap = new Map<string, PageTreeNode>();
 
-  for (const page of pages) {
+  for (const block of blocks) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const props = page.props as any;
-    nodeMap.set(page.id, {
-      id: page.id,
-      parentId: page.parentId,
-      title: props?.title ?? '未命名页面',
+    const props = block.props as any;
+    nodeMap.set(block.id, {
+      id: block.id,
+      parentId: block.parentId,
+      type: block.type as 'page' | 'folder',
+      title: props?.title ?? '未命名',
       icon: props?.icon,
       isPublished: props?.isPublished,
+      contentIds: block.contentIds,
       children: [],
     });
   }
@@ -106,7 +113,6 @@ function buildPageTree(pages: Block[]): PageTreeNode[] {
       if (parent) {
         parent.children.push(node);
       } else {
-        // 孤立节点（父页面不在响应中，降级为根节点）
         roots.push(node);
       }
     }
@@ -116,39 +122,49 @@ function buildPageTree(pages: Block[]): PageTreeNode[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 三、API 1：侧边栏目录树
+// 三、API 1：侧边栏目录树（懒加载）
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /pages/tree
+ * GET /admin/workspaces/:workspace_id/blocks/children
  *
- * 后端仅返回 type='page' 的 DbBlock（不含段落、标题等内容块），
- * 前端在内存中组装树，供侧边栏渲染。
- *
- * 对应 SQL（极快，命中物化路径索引）：
- *   SELECT id, parent_id, properties FROM blocks
- *   WHERE type = 'page' AND deleted_at IS NULL;
+ * 获取某个节点的直接子节点（第一层）
+ * @param parentId - 父节点 ID，不传或传 null 返回根节点
+ */
+export async function fetchChildren(parentId?: string | null): Promise<{
+  children: BlockData[];
+  tree: PageTreeNode[];
+}> {
+  if (USE_MOCK) {
+    // Mock 模式：过滤出对应的子节点
+    const children = initialMockData.filter((b) => 
+      (parentId ? b.parentId === parentId : b.parentId === null) &&
+      (b.type === 'page' || b.type === 'folder')
+    );
+    const tree = buildPageTree(children as unknown as Block[]);
+    return { children, tree };
+  }
+
+  const params = parentId ? { parent_id: parentId } : {};
+  const { data } = await apiClient.get<DbBlock[]>(
+    `/admin/workspaces/${getWorkspaceId()}/blocks/children`,
+    { params }
+  );
+  
+  const children = hydrateBlocks(data);
+  const tree = buildPageTree(children);
+  return { children, tree };
+}
+
+/**
+ * 兼容旧接口：获取完整目录树
  */
 export async function fetchPageTree(): Promise<{
   flatPages: BlockData[];
   tree: PageTreeNode[];
 }> {
-  if (USE_MOCK) {
-    // Mock 模式：
-    // flatPages 包含全部 initialMockData（不只是 page 类型），
-    // 这样 Sidebar 调用 hydrate(flatPages) 时，所有内容块也会一并写入 Store，
-    // TiptapEditor 初始化时就能立刻读到完整的 Block 数据，不会出现空编辑器问题。
-    const flatPages = initialMockData;
-    // 树形结构只需要 page 类型的块来渲染侧边栏目录
-    const pages = initialMockData.filter((b) => b.type === 'page');
-    const tree = buildPageTree(pages as unknown as Block[]);
-    return { flatPages, tree };
-  }
-
-  const { data } = await apiClient.get<DbBlock[]>('/pages/tree');
-  const flatPages = hydrateBlocks(data);
-  const tree = buildPageTree(flatPages);
-  return { flatPages, tree };
+  const { children, tree } = await fetchChildren(null);
+  return { flatPages: children, tree };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

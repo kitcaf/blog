@@ -63,3 +63,30 @@ func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 		"deleted_count": len(req.DeletedBlocks),
 	})
 }
+
+// GetChildren 获取某个节点的直接子节点（侧边栏目录树）
+func (h *BlockHandler) GetChildren(c *gin.Context) {
+	workspaceID := c.MustGet("workspace_id").(uuid.UUID)
+
+	// 获取 parent_id 参数（可选）
+	parentIDStr := c.Query("parent_id")
+	var parentID *uuid.UUID
+
+	if parentIDStr != "" && parentIDStr != "null" {
+		parsed, err := uuid.Parse(parentIDStr)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, "Invalid parent_id")
+			return
+		}
+		parentID = &parsed
+	}
+
+	// 查询子节点
+	children, err := h.blockService.GetChildren(workspaceID, parentID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get children: "+err.Error())
+		return
+	}
+
+	response.Success(c, children)
+}

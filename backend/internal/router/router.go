@@ -37,7 +37,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	blockRepo := repository.NewBlockRepository(db)
 
 	// 初始化 services
-	authService := services.NewAuthService(userRepo, cfg, rdb)
+	authService := services.NewAuthService(userRepo, workspaceRepo, cfg, rdb)
 	workspaceService := services.NewWorkspaceService(workspaceRepo)
 	blockService := services.NewBlockService(blockRepo, rdb)
 
@@ -98,8 +98,9 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		blocks := admin.Group("/workspaces/:id/blocks")
 		blocks.Use(middleware.WorkspaceMiddleware())
 		{
-			blocks.GET("/:page_id", blockHandler.GetBlocks) // 获取指定页面下的所有内容区块
-			blocks.POST("/sync", blockHandler.SyncBlocks)   // 批量同步（增量更新/删除）区块数据
+			blocks.GET("/children", blockHandler.GetChildren) // 获取某个节点的直接子节点（侧边栏目录树）
+			blocks.GET("/:page_id", blockHandler.GetBlocks)   // 获取指定页面下的所有内容区块
+			blocks.POST("/sync", blockHandler.SyncBlocks)     // 批量同步（增量更新/删除）区块数据
 		}
 	}
 

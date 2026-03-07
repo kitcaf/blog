@@ -93,3 +93,22 @@ func (r *BlockRepository) SoftDeleteByPath(workspaceID uuid.UUID, path string) e
 		Where("workspace_id = ? AND (path LIKE ? OR path = ?)", workspaceID, path+"%", path).
 		Update("deleted_at", now).Error
 }
+
+// FindChildren 查询某个节点的直接子节点（第一层）
+// parentID 为 nil 时查询根节点
+func (r *BlockRepository) FindChildren(workspaceID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
+	var blocks []models.Block
+	query := r.db.Where("workspace_id = ? AND deleted_at IS NULL", workspaceID).
+		Where("type IN ?", []string{"page", "folder"})
+
+	if parentID == nil {
+		// 查询根节点（parent_id IS NULL）
+		query = query.Where("parent_id IS NULL")
+	} else {
+		// 查询指定父节点的子节点
+		query = query.Where("parent_id = ?", *parentID)
+	}
+
+	err := query.Order("created_at ASC").Find(&blocks).Error
+	return blocks, err
+}

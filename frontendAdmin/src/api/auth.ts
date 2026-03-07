@@ -19,6 +19,10 @@ export interface AuthResponse {
     username: string;
     email: string;
   };
+  workspace?: {
+    id: string;
+    name: string;
+  };
 }
 
 export interface RefreshResponse {

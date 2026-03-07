@@ -133,3 +133,9 @@ func (s *BlockService) SyncBlocks(workspaceID uuid.UUID, updatedBlocks []models.
 
 	return nil
 }
+
+// GetChildren 获取某个节点的直接子节点（侧边栏使用）
+// parentID 为 nil 时返回根节点
+func (s *BlockService) GetChildren(workspaceID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
+	return s.blockRepo.FindChildren(workspaceID, parentID)
+}

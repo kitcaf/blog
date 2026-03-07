@@ -68,3 +68,8 @@ func (r *WorkspaceRepository) CheckUserAccess(workspaceID, userID uuid.UUID) (bo
 
 	return false, "", nil
 }
+
+// AddMember 添加工作空间成员
+func (r *WorkspaceRepository) AddMember(member *models.WorkspaceMember) error {
+	return r.db.Create(member).Error
+}

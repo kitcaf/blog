@@ -210,3 +210,92 @@ export async function syncBlocks(payload: BlockSyncPayload): Promise<void> {
   }
   await apiClient.put('/admin/blocks', payload);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 六、创建文件夹和页面
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreateFolderParams {
+  title: string;
+  parentId?: string | null;
+  icon?: string;
+}
+
+export interface CreatePageParams {
+  title: string;
+  parentId?: string | null;
+  icon?: string;
+}
+
+/**
+ * 创建新文件夹
+ * 
+ * @param params - 文件夹参数
+ * @returns 创建的文件夹 Block
+ */
+export async function createFolder(params: CreateFolderParams): Promise<BlockData> {
+  const id = crypto.randomUUID();
+  // 计算 path：如果有 parentId，需要先获取父节点的 path
+  // 简化版本：假设根节点，实际应该查询父节点
+  const path = params.parentId ? `/${params.parentId}/${id}/` : `/${id}/`;
+
+  const folderBlock: DbBlock = {
+    id,
+    parent_id: params.parentId || null,
+    path,
+    type: 'folder',
+    content_ids: [],
+    properties: {
+      title: params.title,
+      icon: params.icon,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  };
+
+  if (USE_MOCK) {
+    console.log('[MockCreate] 创建文件夹 (Mock 模式):', folderBlock);
+    return hydrateBlock(folderBlock);
+  }
+
+  const { data } = await apiClient.post<DbBlock>('/admin/pages', folderBlock);
+  return hydrateBlock(data);
+}
+
+/**
+ * 创建新页面
+ * 
+ * @param params - 页面参数
+ * @returns 创建的页面 Block
+ */
+export async function createPage(params: CreatePageParams): Promise<BlockData> {
+  const id = crypto.randomUUID();
+  // 计算 path：如果有 parentId，需要先获取父节点的 path
+  // 简化版本：假设根节点，实际应该查询父节点
+  const path = params.parentId ? `/${params.parentId}/${id}/` : `/${id}/`;
+
+  const pageBlock: DbBlock = {
+    id,
+    parent_id: params.parentId || null,
+    path,
+    type: 'page',
+    content_ids: [],
+    properties: {
+      title: params.title,
+      icon: params.icon,
+      isPublished: false,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  };
+
+  if (USE_MOCK) {
+    console.log('[MockCreate] 创建页面 (Mock 模式):', pageBlock);
+    return hydrateBlock(pageBlock);
+  }
+
+  const { data } = await apiClient.post<DbBlock>('/admin/pages', pageBlock);
+  return hydrateBlock(data);
+}

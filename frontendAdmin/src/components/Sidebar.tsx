@@ -18,7 +18,6 @@ import {
   Home,
   Settings,
   Trash,
-  Plus,
   ChevronRight,
   FileText,
   Loader2,
@@ -27,12 +26,16 @@ import {
   PanelLeftClose,
   LogOut,
   User,
+  Folder,
+  File,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useBlockStore } from '@/store/useBlockStore';
 import { useSidebarStore } from '@/store/useSidebarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
+import { createFolder, createPage } from '@/api/blocks';
+import { CreateItemDialog } from './CreateItemDialog';
 import type { PageTreeNode } from '@/api/blocks';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,7 +44,7 @@ import type { PageTreeNode } from '@/api/blocks';
 
 export function Sidebar() {
   const navigate = useNavigate();
-  const { tree, flatPages, isLoading, isError, error } = usePageTreeQuery();
+  const { tree, flatPages, isLoading, isError, error, refetch } = usePageTreeQuery();
 
   // 将 API 加载的 data 注入 Zustand Store（仅 flatPages 变化时执行）
   const hydrate = useBlockStore((s) => s.hydrate);
@@ -55,6 +58,20 @@ export function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+
+  // 创建对话框状态
+  const [createDialog, setCreateDialog] = useState<{
+    isOpen: boolean;
+    type: 'folder' | 'page';
+    parentId?: string | null;
+    parentTitle?: string;
+  }>({
+    isOpen: false,
+    type: 'folder',
+  });
+
+  // 创建中状态
+  const [isCreating, setIsCreating] = useState(false);
 
   // 退出登录
   const handleLogout = useCallback(async () => {
@@ -73,6 +90,46 @@ export function Sidebar() {
     }
   }, [clearAuth, navigate, refreshToken]);
 
+  // 打开创建对话框
+  const handleOpenCreateDialog = useCallback((type: 'folder' | 'page') => {
+    setCreateDialog({
+      isOpen: true,
+      type,
+      parentId: null,
+      parentTitle: '根目录',
+    });
+  }, []);
+
+  // 创建文件夹或页面
+  const handleCreate = useCallback(async (title: string) => {
+    if (isCreating) return;
+
+    setIsCreating(true);
+    try {
+      if (createDialog.type === 'folder') {
+        await createFolder({
+          title,
+          parentId: createDialog.parentId,
+        });
+      } else {
+        const newPage = await createPage({
+          title,
+          parentId: createDialog.parentId,
+        });
+        // 创建页面后自动激活
+        setActivePage(newPage.id);
+      }
+
+      // 刷新目录树
+      refetch();
+    } catch (error) {
+      console.error('创建失败:', error);
+      // TODO: 显示错误提示
+    } finally {
+      setIsCreating(false);
+    }
+  }, [createDialog, isCreating, refetch, setActivePage]);
+
   useEffect(() => {
     if (flatPages.length === 0) return;
     hydrate(flatPages);
@@ -86,15 +143,15 @@ export function Sidebar() {
   }, [flatPages]); // 仅 flatPages 变化时执行（hydrate/setActivePage 引用稳定）
 
   return (
-    <aside 
+    <aside
       className={`h-full bg-app-bg border-r border-border flex flex-col shrink-0 overflow-hidden ${isResizing ? '' : 'transition-all duration-300'}`}
-      style={{ 
+      style={{
         width: isOpen ? width : 0,
         opacity: isOpen ? 1 : 0,
         borderRightWidth: isOpen ? 1 : 0
       }}
     >
-      <div 
+      <div
         className="flex flex-col h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity"
         style={{ width: width }} // 保持内部尺寸一致避免挤压文本变乱
       >
@@ -106,7 +163,7 @@ export function Sidebar() {
             </div>
             <span className="text-sm font-medium truncate text-app-fg-deep">个人工作区</span>
           </div>
-          <button 
+          <button
             className="p-1.5 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors shrink-0"
             onClick={() => setIsOpen(false)}
             title="隐藏侧边栏"
@@ -121,17 +178,28 @@ export function Sidebar() {
           <SidebarNavItem icon={<Home size={16} />} label="主页" active />
         </nav>
 
-        {/* 页面目录树 */}
+        {/* 我的空间目录树 */}
         <div className="mt-6 flex flex-col gap-1">
-          <div className="mb-1 px-2 text-xs font-medium text-app-fg-light flex justify-between items-center group cursor-pointer">
-            <span className="group-hover:text-app-fg-deep transition-colors">页面</span>
-            <button
-              className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-app-fg-deeper"
-              aria-label="新建页面"
-              title="新建页面"
-            >
-              <Plus size={14} />
-            </button>
+          <div className="mb-1 px-2 text-xs font-medium text-app-fg-light flex justify-between items-center group">
+            <span className="group-hover:text-app-fg-deep transition-colors">空间</span>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => handleOpenCreateDialog('folder')}
+                className="p-1 hover:bg-app-hover rounded transition-colors"
+                aria-label="新建文件夹"
+                title="新建文件夹"
+              >
+                <Folder size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
+              </button>
+              <button
+                onClick={() => handleOpenCreateDialog('page')}
+                className="p-1 hover:bg-app-hover rounded transition-colors"
+                aria-label="新建页面"
+                title="新建页面"
+              >
+                <File size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
+              </button>
+            </div>
           </div>
 
           {/* 加载中 */}
@@ -207,6 +275,15 @@ export function Sidebar() {
           <span className="text-sm">退出登录</span>
         </button>
       </div>
+
+      {/* 创建对话框 */}
+      <CreateItemDialog
+        isOpen={createDialog.isOpen}
+        type={createDialog.type}
+        parentTitle={createDialog.parentTitle}
+        onClose={() => setCreateDialog({ ...createDialog, isOpen: false })}
+        onConfirm={handleCreate}
+      />
     </aside>
   );
 }

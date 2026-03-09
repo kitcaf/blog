@@ -59,10 +59,13 @@ CREATE INDEX idx_blocks_type ON blocks(type);
 -- varchar_pattern_ops 是 PG 特有的，专门用于优化 LIKE 'prefix%' 前缀匹配查询
 CREATE INDEX idx_blocks_path ON blocks USING btree (path varchar_pattern_ops);
 
+-- 🚀 Slug 唯一索引：确保每个 slug 全局唯一，用于 SEO 友好的 URL
+-- 例如：/blog/my-first-post-a3f2
+CREATE UNIQUE INDEX idx_blocks_slug_unique ON blocks (slug) WHERE slug IS NOT NULL;
+
 -- 🚀 博客前台拉取文章列表的专属索引 (基于 JSONB 内部字段提取)
 -- 让博客前台瞬间查出已发布且 slug 匹配的 Page
 CREATE INDEX idx_blocks_page_published ON blocks ((properties->>'is_published')) WHERE type = 'page';
-CREATE INDEX idx_blocks_page_slug ON blocks (slug) WHERE type = 'page';
 
 -- 审计字段索引
 CREATE INDEX idx_blocks_created_by ON blocks(created_by);
@@ -96,12 +99,25 @@ CREATE INDEX idx_blocks_deleted_at ON blocks(deleted_at);
 
 ### 4. JSONB 灵活存储
 - **properties 字段**：存储块的动态属性
-  - Page: `{title, slug, is_published, cover, description}`
+  - Page: `{title, icon, isPublished, description}`
   - 文本块: `{content: [{text, styles}], textAlign}`
   - 图片块: `{url, caption, width, height}`
 - **无需预定义 schema**：适应不同类型块的不同属性需求
 
-### 5. 软删除机制
+### 5. Slug 设计（SEO 友好的 URL）
+- **唯一性约束**：使用 UNIQUE INDEX 确保全局唯一
+- **格式**：`标题转换-随机哈希`（例如：`my-first-post-a3f2`）
+- **生成规则**：
+  1. 标题转小写
+  2. 特殊字符替换为连字符
+  3. 限制长度（50字符）
+  4. 添加4位随机哈希避免冲突
+- **使用场景**：
+  - 博客前台 URL：`/blog/my-first-post-a3f2`
+  - 公开 API：`GET /api/public/pages/:slug/blocks`
+- **部分索引**：只对非 NULL 的 slug 创建唯一约束（folder 类型不需要 slug）
+
+### 6. 软删除机制
 - 使用 `deleted_at` 字段标记删除
 - 保留历史数据，支持恢复和审计
 - 增量同步时只标记删除，不物理删除

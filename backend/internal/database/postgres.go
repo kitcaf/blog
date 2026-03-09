@@ -66,6 +66,14 @@ func createCustomIndexes(db *gorm.DB) {
 		ON blocks USING btree (path varchar_pattern_ops)
 	`)
 
+	// Slug 唯一索引（确保每个 slug 全局唯一，用于 SEO 友好的 URL）
+	// 使用部分索引：只对非 NULL 的 slug 创建唯一约束
+	db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_slug_unique 
+		ON blocks (slug) 
+		WHERE slug IS NOT NULL
+	`)
+
 	// 已发布页面索引（优化博客前台查询）
 	db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_blocks_page_published 

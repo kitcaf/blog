@@ -79,7 +79,7 @@ func (h *PageHandler) GetPageBySlug(c *gin.Context) {
 	})
 }
 
-// CreatePage 创建页面
+// CreatePage 创建页面或文件夹
 func (h *PageHandler) CreatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -89,8 +89,24 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 		return
 	}
 
+	// 设置审计字段
 	block.CreatedBy = &userID
 	block.LastEditedBy = &userID
+
+	// 计算正确的物化路径
+	if block.ParentID == nil {
+		// 根节点：path = /{id}/
+		block.Path = "/" + block.ID.String() + "/"
+	} else {
+		// 子节点：需要查询父节点的 path
+		parent, err := h.blockService.GetPageByID(userID, *block.ParentID)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, "Parent not found")
+			return
+		}
+		// path = {parent.path}{id}/
+		block.Path = parent.Path + block.ID.String() + "/"
+	}
 
 	if err := h.blockService.CreatePage(&block); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to create page")

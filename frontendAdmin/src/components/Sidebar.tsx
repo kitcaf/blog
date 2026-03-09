@@ -1,34 +1,21 @@
 /**
  * @file Sidebar.tsx
- * @description 侧边栏组件，接入 React Query 加载页面目录树。
+ * @description 侧边栏主组件，组合各个子组件
  *
  * 数据流：
- *   usePageTreeQuery → GET /api/pages/tree → buildPageTree()（在 API 层）
- *   → PageTreeNode[] → Zustand hydrate（部分） → 渲染目录树
+ *   usePageTreeQuery → GET /api/pages/tree → buildPageTree()
+ *   → PageTreeNode[] → Zustand hydrate → 渲染目录树
  *
- * 性能：
- *  - 目录树 staleTime=5min，切换路由不重复请求
- *  - PageTreeItem 订阅单个 pageId 的标题，精确 re-render
- *  - 展开/折叠状态本地维护（Set<string>），不污染全局 Store
+ * 组件结构：
+ *   Sidebar (容器)
+ *   ├── SidebarHeader (顶部)
+ *   ├── SidebarNav (主导航)
+ *   ├── PageTreeSection (目录树)
+ *   ├── SidebarBottomNav (底部导航)
+ *   └── SidebarFooter (用户信息)
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import {
-  Search,
-  Home,
-  Settings,
-  Trash,
-  ChevronRight,
-  FileText,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
-  PanelLeftClose,
-  LogOut,
-  User,
-  Folder,
-  File,
-} from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBlockStore } from '@/store/useBlockStore';
 import { useSidebarStore } from '@/store/useSidebarStore';
@@ -36,28 +23,24 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
 import { createFolder, createPage } from '@/api/blocks';
 import { CreateItemDialog } from './CreateItemDialog';
-import type { PageTreeNode } from '@/api/blocks';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 主侧边栏
-// ─────────────────────────────────────────────────────────────────────────────
+import {
+  SidebarHeader,
+  SidebarNav,
+  SidebarBottomNav,
+  PageTreeSection,
+  SidebarFooter,
+} from './sidebar/index';
 
 export function Sidebar() {
   const navigate = useNavigate();
   const { tree, flatPages, isLoading, isError, error, refetch } = usePageTreeQuery();
 
-  // 将 API 加载的 data 注入 Zustand Store（仅 flatPages 变化时执行）
+  // Store
   const hydrate = useBlockStore((s) => s.hydrate);
   const setActivePage = useBlockStore((s) => s.setActivePage);
   const activePageId = useBlockStore((s) => s.activePageId);
-
-  // 侧边栏状态控制
   const { isOpen, width, setIsOpen, isResizing } = useSidebarStore();
-
-  // 认证状态
-  const user = useAuthStore((s) => s.user);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
-  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const { user, refreshToken, clearAuth } = useAuthStore();
 
   // 创建对话框状态
   const [createDialog, setCreateDialog] = useState<{
@@ -70,19 +53,16 @@ export function Sidebar() {
     type: 'folder',
   });
 
-  // 创建中状态
   const [isCreating, setIsCreating] = useState(false);
 
   // 退出登录
   const handleLogout = useCallback(async () => {
     try {
-      // 调用后端登出接口，撤销 refresh token
       if (refreshToken) {
         const { logout } = await import('@/api/auth');
         await logout(refreshToken);
       }
     } catch (error) {
-      // 忽略错误，继续清除本地状态
       console.error('Logout error:', error);
     } finally {
       clearAuth();
@@ -91,12 +71,12 @@ export function Sidebar() {
   }, [clearAuth, navigate, refreshToken]);
 
   // 打开创建对话框
-  const handleOpenCreateDialog = useCallback((type: 'folder' | 'page') => {
+  const handleOpenCreateDialog = useCallback((type: 'folder' | 'page', parentId?: string | null) => {
     setCreateDialog({
       isOpen: true,
       type,
-      parentId: null,
-      parentTitle: '根目录',
+      parentId: parentId ?? null,
+      parentTitle: parentId ? '子目录' : '根目录',
     });
   }, []);
 
@@ -116,167 +96,65 @@ export function Sidebar() {
           title,
           parentId: createDialog.parentId,
         });
-        // 创建页面后自动激活
         setActivePage(newPage.id);
       }
-
-      // 刷新目录树
       refetch();
     } catch (error) {
       console.error('创建失败:', error);
-      // TODO: 显示错误提示
     } finally {
       setIsCreating(false);
     }
   }, [createDialog, isCreating, refetch, setActivePage]);
 
+  // 水合数据到 Store
   useEffect(() => {
     if (flatPages.length === 0) return;
     hydrate(flatPages);
 
-    // 若当前没有激活的页面，默认激活第一个根级 page
     if (!activePageId) {
       const firstPage = flatPages.find((b) => b.type === 'page' && b.parentId === null);
       if (firstPage) setActivePage(firstPage.id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flatPages]); // 仅 flatPages 变化时执行（hydrate/setActivePage 引用稳定）
+  }, [flatPages, hydrate, activePageId, setActivePage]);
 
   return (
     <aside
-      className={`h-full bg-app-bg border-r border-border flex flex-col shrink-0 overflow-hidden ${isResizing ? '' : 'transition-all duration-300'}`}
+      className={`h-full bg-app-bg border-r border-border flex flex-col shrink-0 overflow-hidden ${
+        isResizing ? '' : 'transition-all duration-300'
+      }`}
       style={{
         width: isOpen ? width : 0,
         opacity: isOpen ? 1 : 0,
-        borderRightWidth: isOpen ? 1 : 0
+        borderRightWidth: isOpen ? 1 : 0,
       }}
     >
       <div
         className="flex flex-col h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity"
-        style={{ width: width }} // 保持内部尺寸一致避免挤压文本变乱
+        style={{ width: width }}
       >
-        {/* Workspace Switcher & Hide Toggle */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer flex-1">
-            <div className="w-5 h-5 bg-app-hover rounded flex items-center justify-center text-xs font-medium text-app-fg-deeper">
-              A
-            </div>
-            <span className="text-sm font-medium truncate text-app-fg-deep">个人工作区</span>
-          </div>
-          <button
-            className="p-1.5 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors shrink-0"
-            onClick={() => setIsOpen(false)}
-            title="隐藏侧边栏"
-          >
-            <PanelLeftClose size={16} />
-          </button>
-        </div>
+        <SidebarHeader onHide={() => setIsOpen(false)} />
+        
+        <SidebarNav />
 
-        {/* 主导航 */}
-        <nav className="space-y-0.5">
-          <SidebarNavItem icon={<Search size={16} />} label="搜索" />
-          <SidebarNavItem icon={<Home size={16} />} label="主页" active />
-        </nav>
+        <PageTreeSection
+          tree={tree}
+          isLoading={isLoading}
+          isError={isError}
+          error={error}
+          onCreateFolder={() => handleOpenCreateDialog('folder')}
+          onCreatePage={() => handleOpenCreateDialog('page')}
+          onRetry={() => window.location.reload()}
+        />
 
-        {/* 我的空间目录树 */}
-        <div className="mt-6 flex flex-col gap-1">
-          <div className="mb-1 px-2 text-xs font-medium text-app-fg-light flex justify-between items-center group">
-            <span className="group-hover:text-app-fg-deep transition-colors">空间</span>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={() => handleOpenCreateDialog('folder')}
-                className="p-1 hover:bg-app-hover rounded transition-colors"
-                aria-label="新建文件夹"
-                title="新建文件夹"
-              >
-                <Folder size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
-              </button>
-              <button
-                onClick={() => handleOpenCreateDialog('page')}
-                className="p-1 hover:bg-app-hover rounded transition-colors"
-                aria-label="新建页面"
-                title="新建页面"
-              >
-                <File size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
-              </button>
-            </div>
-          </div>
-
-          {/* 加载中 */}
-          {isLoading && (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-app-fg-light">
-              <Loader2 size={13} className="animate-spin" />
-              <span>加载中...</span>
-            </div>
-          )}
-
-          {/* 加载出错 */}
-          {isError && (
-            <div className="mx-2 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2">
-              <div className="flex items-center gap-1.5 text-xs text-red-400 mb-1">
-                <AlertCircle size={12} />
-                <span>加载失败</span>
-              </div>
-              <p className="text-[11px] text-app-fg-light leading-snug">
-                {error?.message ?? '无法连接到服务器'}
-              </p>
-              <button
-                className="mt-1.5 flex items-center gap-1 text-[11px] text-app-fg hover:text-app-fg-deep transition-colors"
-                onClick={() => window.location.reload()}
-              >
-                <RefreshCw size={10} />
-                重试
-              </button>
-            </div>
-          )}
-
-          {/* 目录树节点 */}
-          {!isLoading && !isError && tree.length === 0 && (
-            <div className="px-3 py-2 text-xs text-app-fg-light">暂无页面</div>
-          )}
-
-          {!isLoading &&
-            !isError &&
-            tree.map((node) => (
-              <PageTreeItem key={node.id} node={node} depth={0} />
-            ))}
-        </div>
-
-        {/* 底部导航 */}
-        <div className="mt-auto pt-4 space-y-0.5">
-          <SidebarNavItem icon={<Settings size={16} />} label="设置" />
-          <SidebarNavItem icon={<Trash size={16} />} label="回收站" />
-        </div>
+        <SidebarBottomNav />
       </div>
 
-      {/* 用户信息和退出 */}
-      <div className="p-2 border-t border-border space-y-1">
-        {/* 用户信息 */}
-        <div className="flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer">
-          <div className="w-7 h-7 bg-app-hover rounded-full flex items-center justify-center text-xs font-medium text-app-fg-deeper">
-            <User size={14} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-app-fg-deep truncate">
-              {user?.username || '用户'}
-            </div>
-            <div className="text-xs text-app-fg-light truncate">
-              {user?.email || ''}
-            </div>
-          </div>
-        </div>
+      <SidebarFooter
+        username={user?.username}
+        email={user?.email}
+        onLogout={handleLogout}
+      />
 
-        {/* 退出登录 */}
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-2 p-2 hover:bg-app-hover rounded-md cursor-pointer text-app-fg hover:text-app-fg-deeper transition-colors"
-        >
-          <LogOut size={16} />
-          <span className="text-sm">退出登录</span>
-        </button>
-      </div>
-
-      {/* 创建对话框 */}
       <CreateItemDialog
         isOpen={createDialog.isOpen}
         type={createDialog.type}
@@ -285,118 +163,5 @@ export function Sidebar() {
         onConfirm={handleCreate}
       />
     </aside>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 目录树节点（递归）
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface PageTreeItemProps {
-  node: PageTreeNode;
-  depth: number;
-}
-
-const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hasChildren = node.children.length > 0;
-
-  const activePageId = useBlockStore((s) => s.activePageId);
-  const setActivePage = useBlockStore((s) => s.setActivePage);
-  const isActive = activePageId === node.id;
-
-  const handleClick = useCallback(() => {
-    setActivePage(node.id);
-    if (hasChildren) setIsExpanded((prev) => !prev);
-  }, [node.id, hasChildren, setActivePage]);
-
-  const handleChevronClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      setIsExpanded((prev) => !prev);
-    },
-    [],
-  );
-
-  return (
-    <div>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleClick}
-        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
-        className={`
-          group flex items-center gap-1 px-2 py-[5px] rounded-md cursor-pointer
-          text-sm transition-colors select-none
-          ${isActive
-            ? 'bg-app-hover text-app-fg-deeper'
-            : 'text-app-fg hover:bg-app-hover hover:text-app-fg-deeper'
-          }
-        `}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        aria-expanded={hasChildren ? isExpanded : undefined}
-        aria-current={isActive ? 'page' : undefined}
-      >
-        {/* 展开/折叠箭头 */}
-        <span
-          className={`
-            shrink-0 w-4 h-4 flex items-center justify-center
-            transition-transform duration-150
-            ${hasChildren ? 'text-app-fg-light hover:text-app-fg-deep' : 'opacity-0 pointer-events-none'}
-            ${isExpanded ? 'rotate-90' : ''}
-          `}
-          onClick={hasChildren ? handleChevronClick : undefined}
-          aria-hidden="true"
-        >
-          <ChevronRight size={12} />
-        </span>
-
-        {/* 图标 */}
-        <span className="shrink-0 text-[14px] leading-none">
-          {node.icon ?? <FileText size={14} className="text-app-fg-light" />}
-        </span>
-
-        {/* 标题 */}
-        <span className="flex-1 truncate text-[13px]">{node.title}</span>
-
-        {/* 发布状态 */}
-        {node.isPublished && (
-          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
-        )}
-      </div>
-
-      {/* 子节点（展开时渲染） */}
-      {hasChildren && isExpanded && (
-        <div>
-          {node.children.map((child) => (
-            <PageTreeItem key={child.id} node={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 通用导航项
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SidebarNavItem({
-  icon,
-  label,
-  active = false,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm font-medium transition-colors
-        ${active ? 'bg-app-hover text-app-fg-deeper' : 'text-app-fg hover:bg-app-hover hover:text-app-fg-deeper'}`}
-    >
-      {icon}
-      <span>{label}</span>
-    </div>
   );
 }

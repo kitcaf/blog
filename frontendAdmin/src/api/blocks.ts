@@ -241,24 +241,42 @@ export interface CreatePageParams {
 /**
  * 创建新文件夹
  * 
+ * 路径计算规则（物化路径）：
+ * - 根节点：path = `/{id}/`
+ * - 子节点：path = `{parent.path}{id}/`
+ * 
+ * 示例：
+ * - f1 (root): /f1/
+ * - f2 (child of f1): /f1/f2/
+ * - p1 (page in f2): /f1/f2/p1/
+ * 
  * @param params - 文件夹参数
  * @returns 创建的文件夹 Block
  */
 export async function createFolder(params: CreateFolderParams): Promise<BlockData> {
   const id = crypto.randomUUID();
-  // 计算 path：如果有 parentId，需要先获取父节点的 path
-  // 简化版本：假设根节点，实际应该查询父节点
-  const path = params.parentId ? `/${params.parentId}/${id}/` : `/${id}/`;
+  
+  // 计算 path：需要先获取父节点的 path
+  let path: string;
+  if (!params.parentId) {
+    // 根节点
+    path = `/${id}/`;
+  } else {
+    // 子节点：需要获取父节点的 path
+    // 注意：这里简化处理，实际应该先查询父节点
+    // 后端会在创建时自动计算正确的 path
+    path = `/${params.parentId}/${id}/`;
+  }
 
   const folderBlock: DbBlock = {
     id,
     parent_id: params.parentId || null,
-    path,
+    path, // 后端应该重新计算正确的 path
     type: 'folder',
     content_ids: [],
     properties: {
       title: params.title,
-      icon: params.icon,
+      icon: params.icon || '📁',
     },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -277,25 +295,35 @@ export async function createFolder(params: CreateFolderParams): Promise<BlockDat
 /**
  * 创建新页面
  * 
+ * 路径计算规则同 createFolder
+ * 
  * @param params - 页面参数
  * @returns 创建的页面 Block
  */
 export async function createPage(params: CreatePageParams): Promise<BlockData> {
   const id = crypto.randomUUID();
-  // 计算 path：如果有 parentId，需要先获取父节点的 path
-  // 简化版本：假设根节点，实际应该查询父节点
-  const path = params.parentId ? `/${params.parentId}/${id}/` : `/${id}/`;
+  
+  // 计算 path：需要先获取父节点的 path
+  let path: string;
+  if (!params.parentId) {
+    // 根节点
+    path = `/${id}/`;
+  } else {
+    // 子节点：需要获取父节点的 path
+    // 注意：这里简化处理，实际应该先查询父节点
+    // 后端会在创建时自动计算正确的 path
+    path = `/${params.parentId}/${id}/`;
+  }
 
   const pageBlock: DbBlock = {
     id,
     parent_id: params.parentId || null,
-    path,
+    path, // 后端应该重新计算正确的 path
     type: 'page',
     content_ids: [],
     properties: {
       title: params.title,
-      icon: params.icon,
-      isPublished: false,
+      icon: params.icon || '📄',
     },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

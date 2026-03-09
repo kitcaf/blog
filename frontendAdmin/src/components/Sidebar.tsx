@@ -72,13 +72,16 @@ export function Sidebar() {
 
   // 打开创建对话框
   const handleOpenCreateDialog = useCallback((type: 'folder' | 'page', parentId?: string | null) => {
+    const parentNode = parentId ? flatPages.find(p => p.id === parentId) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parentTitle = parentNode ? `${(parentNode.props as any)?.title || '未命名'}` : '根目录';
     setCreateDialog({
       isOpen: true,
       type,
       parentId: parentId ?? null,
-      parentTitle: parentId ? '子目录' : '根目录',
+      parentTitle,
     });
-  }, []);
+  }, [flatPages]);
 
   // 创建文件夹或页面
   const handleCreate = useCallback(async (title: string) => {

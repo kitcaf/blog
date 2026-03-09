@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { Folder, Plus, Loader2, AlertCircle, RefreshCw, ChevronRight, FolderIcon, FileText } from 'lucide-react';
+import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
+import { SidebarItem } from './SidebarItem';
 import type { PageTreeNode } from '@/api/blocks';
 
 interface PageTreeSectionProps {
@@ -13,8 +14,8 @@ interface PageTreeSectionProps {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
-  onCreateFolder: () => void;
-  onCreatePage: () => void;
+  onCreateFolder: (parentId?: string | null) => void;
+  onCreatePage: (parentId?: string | null) => void;
   onRetry: () => void;
 }
 
@@ -34,7 +35,7 @@ export function PageTreeSection({
         <span className="text-xs font-medium text-app-fg-light">空间</span>
         <div className="flex gap-1">
           <button
-            onClick={onCreateFolder}
+            onClick={() => onCreateFolder(null)}
             className="p-1 hover:bg-app-hover rounded transition-colors"
             aria-label="新建文件夹"
             title="新建文件夹"
@@ -42,7 +43,7 @@ export function PageTreeSection({
             <Folder size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
           </button>
           <button
-            onClick={onCreatePage}
+            onClick={() => onCreatePage(null)}
             className="p-1 hover:bg-app-hover rounded transition-colors"
             aria-label="新建页面"
             title="新建页面"
@@ -65,7 +66,13 @@ export function PageTreeSection({
       {!isLoading && !isError && tree.length > 0 && (
         <div>
           {tree.map((node) => (
-            <PageTreeItem key={node.id} node={node} depth={0} />
+            <PageTreeItem 
+              key={node.id} 
+              node={node} 
+              depth={0}
+              onCreateFolder={onCreateFolder}
+              onCreatePage={onCreatePage}
+            />
           ))}
         </div>
       )}
@@ -122,10 +129,18 @@ function EmptyState() {
 interface PageTreeItemProps {
   node: PageTreeNode;
   depth: number;
+  onCreateFolder: (parentId?: string | null) => void;
+  onCreatePage: (parentId?: string | null) => void;
 }
 
-const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeItemProps) {
+const PageTreeItem = React.memo(function PageTreeItem({ 
+  node, 
+  depth,
+  onCreateFolder,
+  onCreatePage,
+}: PageTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const hasChildren = node.children.length > 0;
 
   const activePageId = useBlockStore((s) => s.activePageId);
@@ -151,67 +166,85 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
     [],
   );
 
-  // 获取默认图标（统一尺寸 14px）
+  const handleCreateFolder = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onCreateFolder(node.id);
+    },
+    [node.id, onCreateFolder],
+  );
+
+  const handleCreatePage = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onCreatePage(node.id);
+    },
+    [node.id, onCreatePage],
+  );
+
+  // 获取默认图标（统一尺寸 16px）
   const getDefaultIcon = () => {
     if (node.type === 'folder') {
-      return <FolderIcon size={14} className="text-app-fg-light shrink-0" />;
+      return <FolderIcon size={16} className="text-app-fg-light" />;
     }
-    return <FileText size={14} className="text-app-fg-light shrink-0" />;
+    return <FileText size={16} className="text-app-fg-light" />;
   };
+
+  // 悬停操作按钮（仅文件夹显示）
+  const hoverActions = node.type === 'folder' && isHovered ? (
+    <div className="flex items-center gap-0.5">
+      <button
+        onClick={handleCreateFolder}
+        className="p-0.5 hover:bg-app-hover rounded transition-colors"
+        aria-label="新建子文件夹"
+        title="新建子文件夹"
+      >
+        <Folder size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
+      </button>
+      <button
+        onClick={handleCreatePage}
+        className="p-0.5 hover:bg-app-hover rounded transition-colors"
+        aria-label="新建子页面"
+        title="新建子页面"
+      >
+        <Plus size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
+      </button>
+    </div>
+  ) : undefined;
+
+  // 右侧状态指示器（仅 page 类型显示发布状态）
+  const rightIndicator = node.type === 'page' && node.isPublished ? (
+    <span className="w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
+  ) : undefined;
 
   return (
     <div>
-      <div
-        role="button"
-        tabIndex={0}
+      <SidebarItem
+        icon={node.icon || getDefaultIcon()}
+        label={node.title}
+        active={isActive}
+        depth={depth}
+        hasChildren={hasChildren}
+        isExpanded={isExpanded}
+        hoverActions={hoverActions}
+        rightIndicator={rightIndicator}
         onClick={handleClick}
-        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
-        className={`
-          group flex items-center gap-1.5 px-2 py-[5px] rounded-md cursor-pointer
-          text-sm transition-colors select-none
-          ${isActive
-            ? 'bg-app-hover text-app-fg-deeper'
-            : 'text-app-fg hover:bg-app-hover hover:text-app-fg-deeper'
-          }
-        `}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        aria-expanded={hasChildren ? isExpanded : undefined}
-        aria-current={isActive ? 'page' : undefined}
-      >
-        {/* 展开/折叠箭头 */}
-        <span
-          className={`
-            shrink-0 w-4 h-4 flex items-center justify-center
-            transition-transform duration-150
-            ${hasChildren ? 'text-app-fg-light hover:text-app-fg-deep' : 'opacity-0 pointer-events-none'}
-            ${isExpanded ? 'rotate-90' : ''}
-          `}
-          onClick={hasChildren ? handleChevronClick : undefined}
-          aria-hidden="true"
-        >
-          <ChevronRight size={12} />
-        </span>
-
-        {/* 图标：优先使用自定义图标，否则使用默认图标 */}
-        {/* 统一容器尺寸确保对齐 */}
-        <span className="shrink-0 w-[14px] h-[14px] flex items-center justify-center text-[14px] leading-none">
-          {node.icon ? node.icon : getDefaultIcon()}
-        </span>
-
-        {/* 标题：使用 truncate 防止文字过长 */}
-        <span className="flex-1 truncate text-[13px] min-w-0">{node.title}</span>
-
-        {/* 发布状态（仅 page 类型显示） */}
-        {node.type === 'page' && node.isPublished && (
-          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
-        )}
-      </div>
+        onChevronClick={handleChevronClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      />
 
       {/* 子节点（展开时渲染） */}
       {hasChildren && isExpanded && (
         <div>
           {node.children.map((child) => (
-            <PageTreeItem key={child.id} node={child} depth={depth + 1} />
+            <PageTreeItem 
+              key={child.id} 
+              node={child} 
+              depth={depth + 1}
+              onCreateFolder={onCreateFolder}
+              onCreatePage={onCreatePage}
+            />
           ))}
         </div>
       )}

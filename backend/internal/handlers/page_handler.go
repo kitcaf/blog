@@ -21,9 +21,10 @@ func NewPageHandler(blockService *services.BlockService) *PageHandler {
 
 // GetAdminPages 获取管理端页面列表
 func (h *PageHandler) GetAdminPages(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
 	includeUnpublished := c.DefaultQuery("include_unpublished", "true") == "true"
 
-	pages, err := h.blockService.GetPages(includeUnpublished)
+	pages, err := h.blockService.GetPages(userID, includeUnpublished)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get pages")
 		return
@@ -32,9 +33,28 @@ func (h *PageHandler) GetAdminPages(c *gin.Context) {
 	response.Success(c, pages)
 }
 
+// GetPage 获取单个页面详情
+func (h *PageHandler) GetPage(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid page ID")
+		return
+	}
+
+	page, err := h.blockService.GetPageByID(userID, id)
+	if err != nil {
+		response.Error(c, http.StatusNotFound, "Page not found")
+		return
+	}
+
+	response.Success(c, page)
+}
+
 // GetPublicPages 获取公开页面列表
 func (h *PageHandler) GetPublicPages(c *gin.Context) {
-	pages, err := h.blockService.GetPages(false)
+	pages, err := h.blockService.GetPublicPages()
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get pages")
 		return
@@ -84,7 +104,7 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 func (h *PageHandler) UpdatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
-	id, err := uuid.Parse(c.Param("page_id"))
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
@@ -99,7 +119,7 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 	block.ID = id
 	block.LastEditedBy = &userID
 
-	if err := h.blockService.UpdatePage(&block); err != nil {
+	if err := h.blockService.UpdatePage(userID, &block); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to update page")
 		return
 	}
@@ -109,13 +129,15 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 
 // DeletePage 删除页面
 func (h *PageHandler) DeletePage(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("page_id"))
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
 	}
 
-	if err := h.blockService.DeletePage(id); err != nil {
+	if err := h.blockService.DeletePage(userID, id); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to delete page")
 		return
 	}

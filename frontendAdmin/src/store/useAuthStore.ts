@@ -8,22 +8,15 @@ interface User {
   avatar_url?: string;
 }
 
-interface Workspace {
-  id: string;
-  name: string;
-}
-
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   user: User | null;
-  workspace: Workspace | null;
   isAuthenticated: boolean;
   
   // Actions
-  setAuth: (accessToken: string, refreshToken: string, user: User, workspace?: Workspace) => void;
+  setAuth: (accessToken: string, refreshToken: string, user: User) => void;
   setAccessToken: (accessToken: string) => void;
-  setWorkspace: (workspace: Workspace) => void;
   clearAuth: () => void;
   updateUser: (user: Partial<User>) => void;
 }
@@ -34,11 +27,10 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       user: null,
-      workspace: null,
       isAuthenticated: false,
 
-      setAuth: (accessToken, refreshToken, user, workspace) => {
-        set({ accessToken, refreshToken, user, workspace, isAuthenticated: true });
+      setAuth: (accessToken, refreshToken, user) => {
+        set({ accessToken, refreshToken, user, isAuthenticated: true });
         if (typeof window !== 'undefined') {
           localStorage.setItem('access_token', accessToken);
           localStorage.setItem('refresh_token', refreshToken);
@@ -52,12 +44,8 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      setWorkspace: (workspace) => {
-        set({ workspace });
-      },
-
       clearAuth: () => {
-        set({ accessToken: null, refreshToken: null, user: null, workspace: null, isAuthenticated: false });
+        set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false });
         if (typeof window !== 'undefined') {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
@@ -77,7 +65,6 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         user: state.user,
-        workspace: state.workspace,
         isAuthenticated: state.isAuthenticated,
       }),
       // 从 localStorage 恢复后，验证 token 是否存在
@@ -90,7 +77,6 @@ export const useAuthStore = create<AuthState>()(
             state.accessToken = null;
             state.refreshToken = null;
             state.user = null;
-            state.workspace = null;
           }
         }
       },

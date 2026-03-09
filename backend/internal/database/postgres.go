@@ -46,9 +46,6 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	// 自动迁移表结构
 	if err := db.AutoMigrate(
 		&models.User{},
-		&models.Workspace{},
-		&models.WorkspaceMember{},
-		&models.APIKey{},
 		&models.Block{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)

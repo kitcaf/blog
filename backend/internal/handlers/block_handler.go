@@ -21,13 +21,15 @@ func NewBlockHandler(blockService *services.BlockService) *BlockHandler {
 
 // GetBlocks 获取页面的所有 Block
 func (h *BlockHandler) GetBlocks(c *gin.Context) {
-	pageID, err := uuid.Parse(c.Param("page_id"))
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	pageID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
 	}
 
-	blocks, err := h.blockService.GetBlocksByPageID(pageID)
+	blocks, err := h.blockService.GetBlocksByPageID(userID, pageID)
 	if err != nil {
 		response.Error(c, http.StatusNotFound, "Page not found")
 		return
@@ -41,15 +43,17 @@ type SyncRequest struct {
 	DeletedBlocks []uuid.UUID    `json:"deleted_blocks"`
 }
 
-// SyncBlocks 增量同步 Block 数据
+// SyncBlocks 批量更新 Block 数据（RESTful PUT 方式）
 func (h *BlockHandler) SyncBlocks(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
 	var req SyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
 		return
 	}
 
-	if err := h.blockService.SyncBlocks(req.UpdatedBlocks, req.DeletedBlocks); err != nil {
+	if err := h.blockService.SyncBlocks(userID, req.UpdatedBlocks, req.DeletedBlocks); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Sync failed: "+err.Error())
 		return
 	}
@@ -60,8 +64,10 @@ func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 	})
 }
 
-// GetChildren 获取某个节点的直接子节点（侧边栏目录树）
-func (h *BlockHandler) GetChildren(c *gin.Context) {
+// GetTree 获取目录树（侧边栏）
+func (h *BlockHandler) GetTree(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
 	// 获取 parent_id 参数（可选）
 	parentIDStr := c.Query("parent_id")
 	var parentID *uuid.UUID
@@ -76,9 +82,9 @@ func (h *BlockHandler) GetChildren(c *gin.Context) {
 	}
 
 	// 查询子节点
-	children, err := h.blockService.GetChildren(parentID)
+	children, err := h.blockService.GetChildren(userID, parentID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get children: "+err.Error())
+		response.Error(c, http.StatusInternalServerError, "Failed to get tree: "+err.Error())
 		return
 	}
 

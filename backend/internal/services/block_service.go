@@ -24,17 +24,22 @@ func NewBlockService(blockRepo *repository.BlockRepository, rdb *redis.Client) *
 	}
 }
 
-// GetBlocksByPageID 获取页面的所有 Block
-func (s *BlockService) GetBlocksByPageID(pageID uuid.UUID) ([]models.Block, error) {
-	page, err := s.blockRepo.FindByID(pageID)
+// GetBlocksByPageID 获取页面的所有 Block（带用户隔离）
+func (s *BlockService) GetBlocksByPageID(userID, pageID uuid.UUID) ([]models.Block, error) {
+	page, err := s.blockRepo.FindByID(userID, pageID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.blockRepo.FindByPath(page.Path)
+	return s.blockRepo.FindByPath(userID, page.Path)
 }
 
-// GetPageBySlug 根据 slug 获取页面及其内容
+// GetPageByID 获取单个页面详情（带用户隔离）
+func (s *BlockService) GetPageByID(userID, pageID uuid.UUID) (*models.Block, error) {
+	return s.blockRepo.FindByID(userID, pageID)
+}
+
+// GetPageBySlug 根据 slug 获取页面及其内容（公开接口）
 func (s *BlockService) GetPageBySlug(slug string) (*models.Block, []models.Block, error) {
 	// 尝试从缓存获取
 	if s.rdb != nil {
@@ -57,7 +62,8 @@ func (s *BlockService) GetPageBySlug(slug string) (*models.Block, []models.Block
 		return nil, nil, err
 	}
 
-	blocks, err := s.blockRepo.FindByPath(page.Path)
+	// 获取页面的所有 blocks（使用页面创建者的 ID）
+	blocks, err := s.blockRepo.FindByPath(*page.CreatedBy, page.Path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -75,9 +81,14 @@ func (s *BlockService) GetPageBySlug(slug string) (*models.Block, []models.Block
 	return page, blocks, nil
 }
 
-// GetPages 获取页面列表
-func (s *BlockService) GetPages(includeUnpublished bool) ([]models.Block, error) {
-	return s.blockRepo.FindPages(includeUnpublished)
+// GetPages 获取页面列表（带用户隔离）
+func (s *BlockService) GetPages(userID uuid.UUID, includeUnpublished bool) ([]models.Block, error) {
+	return s.blockRepo.FindPages(userID, includeUnpublished)
+}
+
+// GetPublicPages 获取所有已发布的页面（公开接口）
+func (s *BlockService) GetPublicPages() ([]models.Block, error) {
+	return s.blockRepo.FindPublicPages()
 }
 
 // CreatePage 创建页面
@@ -85,33 +96,33 @@ func (s *BlockService) CreatePage(block *models.Block) error {
 	return s.blockRepo.Create(block)
 }
 
-// UpdatePage 更新页面
-func (s *BlockService) UpdatePage(block *models.Block) error {
-	return s.blockRepo.Update(block)
+// UpdatePage 更新页面（带用户隔离）
+func (s *BlockService) UpdatePage(userID uuid.UUID, block *models.Block) error {
+	return s.blockRepo.Update(userID, block)
 }
 
-// DeletePage 删除页面（软删除）
-func (s *BlockService) DeletePage(pageID uuid.UUID) error {
-	block, err := s.blockRepo.FindByID(pageID)
+// DeletePage 删除页面（软删除，带用户隔离）
+func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
+	block, err := s.blockRepo.FindByID(userID, pageID)
 	if err != nil {
 		return err
 	}
 
-	return s.blockRepo.SoftDeleteByPath(block.Path)
+	return s.blockRepo.SoftDeleteByPath(userID, block.Path)
 }
 
-// SyncBlocks 增量同步 Block 数据
-func (s *BlockService) SyncBlocks(updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
+// SyncBlocks 增量同步 Block 数据（带用户隔离）
+func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
 	// 批量 UPSERT
 	if len(updatedBlocks) > 0 {
-		if err := s.blockRepo.Upsert(updatedBlocks); err != nil {
+		if err := s.blockRepo.Upsert(userID, updatedBlocks); err != nil {
 			return err
 		}
 	}
 
 	// 软删除
 	if len(deletedIDs) > 0 {
-		if err := s.blockRepo.SoftDelete(deletedIDs); err != nil {
+		if err := s.blockRepo.SoftDelete(userID, deletedIDs); err != nil {
 			return err
 		}
 	}
@@ -130,8 +141,8 @@ func (s *BlockService) SyncBlocks(updatedBlocks []models.Block, deletedIDs []uui
 	return nil
 }
 
-// GetChildren 获取某个节点的直接子节点（侧边栏使用）
+// GetChildren 获取某个节点的直接子节点（侧边栏使用，带用户隔离）
 // parentID 为 nil 时返回根节点
-func (s *BlockService) GetChildren(parentID *uuid.UUID) ([]models.Block, error) {
-	return s.blockRepo.FindChildren(parentID)
+func (s *BlockService) GetChildren(userID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
+	return s.blockRepo.FindChildren(userID, parentID)
 }

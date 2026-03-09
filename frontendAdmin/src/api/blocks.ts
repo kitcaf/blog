@@ -3,30 +3,24 @@
  * @description Block 相关的核心 API 函数。
  *
  * ┌──────────────────────────────────────────────────────────────────┐
- * │  API 1  GET  /blocks/children   → 侧边栏目录树（懒加载）         │
- * │  API 2  GET  /pages/:id/blocks → 某篇文章的所有子 Block          │
- * │  API 3  POST /blocks/sync  → 防抖后批量提交变更                  │
+ * │  API 1  GET  /admin/blocks/tree?parent_id=xxx → 侧边栏目录树     │
+ * │  API 2  GET  /admin/pages/:id/blocks → 某篇文章的所有子 Block    │
+ * │  API 3  PUT  /admin/blocks → 防抖后批量提交变更（RESTful）       │
  * └──────────────────────────────────────────────────────────────────┘
  *
  * 设计原则：
  *  - 函数只负责网络请求与原始数据转换（DbBlock → Block）
  *  - 不依赖任何 Zustand Store，保证单向数据流
  *  - 数据 hydrate 逻辑封装在此文件，与 Store 解耦
+ *  - 所有数据通过 JWT 中间件自动隔离，无需传递 workspace_id
  */
 
 import type { DbBlock, Block, BlockType, BlockData, BlockSyncPayload, InlineContent } from '@blog/types';
 import { apiClient } from './client';
 import { initialMockData } from '@/mockData';
-import { useAuthStore } from '@/store/useAuthStore';
 
 /** 环境变量控制：true → mock 模式，false → 真实 API 模式 */
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
-
-// 获取当前工作空间 ID
-const getWorkspaceId = () => {
-  const workspace = useAuthStore.getState().workspace;
-  return workspace?.id || 'temp-workspace-id';
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 一、内部工具：DbBlock → Block (hydrate)
@@ -126,7 +120,7 @@ function buildPageTree(blocks: Block[]): PageTreeNode[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /admin/workspaces/:workspace_id/blocks/children
+ * GET /admin/blocks/tree?parent_id=xxx
  *
  * 获取某个节点的直接子节点（第一层）
  * @param parentId - 父节点 ID，不传或传 null 返回根节点
@@ -147,7 +141,7 @@ export async function fetchChildren(parentId?: string | null): Promise<{
 
   const params = parentId ? { parent_id: parentId } : {};
   const { data } = await apiClient.get<DbBlock[]>(
-    `/admin/workspaces/${getWorkspaceId()}/blocks/children`,
+    `/admin/blocks/tree`,
     { params }
   );
   
@@ -172,7 +166,7 @@ export async function fetchPageTree(): Promise<{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /pages/:pageId/blocks
+ * GET /admin/pages/:pageId/blocks
  *
  * 返回指定 page 下的所有内容块（段落、标题、图片等），
  * 注意：不含 page 块本身，后端只返回其直接/间接子块。
@@ -185,7 +179,7 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
     return initialMockData.filter((b) => b.parentId === pageId);
   }
 
-  const { data } = await apiClient.get<DbBlock[]>(`/pages/${pageId}/blocks`);
+  const { data } = await apiClient.get<DbBlock[]>(`/admin/pages/${pageId}/blocks`);
   return hydrateBlocks(data);
 }
 
@@ -194,7 +188,7 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * POST /blocks/sync
+ * PUT /admin/blocks
  *
  * 将防抖期间积累的变更一次性发送给后端。
  * 这是"本地优先 + 批量同步"方案的核心 API。
@@ -214,5 +208,5 @@ export async function syncBlocks(payload: BlockSyncPayload): Promise<void> {
     console.log('[MockSync] 正在同步变更 (Mock 模式下仅打印日志):', payload);
     return Promise.resolve();
   }
-  await apiClient.post('/blocks/sync', payload);
+  await apiClient.put('/admin/blocks', payload);
 }

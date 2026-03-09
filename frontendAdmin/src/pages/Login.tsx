@@ -40,7 +40,7 @@ export default function Login() {
           username: formData.username,
           password: formData.password,
         });
-        setAuth(response.access_token, response.refresh_token, response.user, response.workspace);
+        setAuth(response.access_token, response.refresh_token, response.user);
         
         // 跳转到之前访问的页面或首页
         const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
@@ -58,7 +58,7 @@ export default function Login() {
           username: formData.username,
           password: formData.password,
         });
-        setAuth(loginResponse.access_token, loginResponse.refresh_token, loginResponse.user, loginResponse.workspace);
+        setAuth(loginResponse.access_token, loginResponse.refresh_token, loginResponse.user);
         
         // 跳转到首页
         navigate('/', { replace: true });
@@ -87,7 +87,7 @@ export default function Login() {
             {isLogin ? '欢迎回来' : '创建账号'}
           </h1>
           <p className="text-app-fg-light">
-            {isLogin ? '登录到你的工作空间' : '开始你的创作之旅'}
+            {isLogin ? '登录到你的账号' : '开始你的创作之旅'}
           </p>
         </div>
 

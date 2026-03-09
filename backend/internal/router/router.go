@@ -74,18 +74,19 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		// 页面管理
 		pages := admin.Group("/pages")
 		{
-			pages.GET("", pageHandler.GetAdminPages)          // 获取所有页面（包含未发布）
-			pages.POST("", pageHandler.CreatePage)            // 创建新页面
-			pages.PUT("/:page_id", pageHandler.UpdatePage)    // 更新页面
-			pages.DELETE("/:page_id", pageHandler.DeletePage) // 删除页面
+			pages.GET("", pageHandler.GetAdminPages)         // 获取所有页面（包含未发布）
+			pages.POST("", pageHandler.CreatePage)           // 创建新页面
+			pages.GET("/:id", pageHandler.GetPage)           // 获取单个页面详情
+			pages.PUT("/:id", pageHandler.UpdatePage)        // 更新页面
+			pages.DELETE("/:id", pageHandler.DeletePage)     // 删除页面
+			pages.GET("/:id/blocks", blockHandler.GetBlocks) // 获取页面的所有 Block
 		}
 
 		// Block 管理
 		blocks := admin.Group("/blocks")
 		{
-			blocks.GET("", blockHandler.GetChildren)              // 获取目录树（?parent_id=xxx）
-			blocks.GET("/pages/:page_id", blockHandler.GetBlocks) // 获取页面的所有 Block
-			blocks.POST("/sync", blockHandler.SyncBlocks)         // 批量同步 Block
+			blocks.GET("/tree", blockHandler.GetTree) // 获取目录树（?parent_id=xxx）
+			blocks.PUT("", blockHandler.SyncBlocks)   // 批量更新 Block（RESTful 方式）
 		}
 	}
 

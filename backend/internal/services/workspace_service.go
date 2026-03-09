@@ -3,7 +3,7 @@ package services
 import (
 	"blog-backend/internal/models"
 	"blog-backend/internal/repository"
-	"errors"
+	"blog-backend/pkg/errors"
 
 	"github.com/google/uuid"
 )
@@ -52,14 +52,18 @@ func (s *WorkspaceService) DeleteWorkspace(id, userID uuid.UUID) error {
 	// 检查权限
 	workspace, err := s.workspaceRepo.FindByID(id)
 	if err != nil {
-		return err
+		return errors.Wrap(errors.ErrWorkspaceNotFound, err)
 	}
 
 	if workspace.OwnerID != userID {
-		return errors.New("only workspace owner can delete it")
+		return errors.New(errors.ErrNotWorkspaceOwner, "user is not owner")
 	}
 
-	return s.workspaceRepo.Delete(id)
+	if err := s.workspaceRepo.Delete(id); err != nil {
+		return errors.Wrap(errors.ErrDatabaseDelete, err)
+	}
+
+	return nil
 }
 
 // CheckUserAccess 检查用户是否有权访问工作空间

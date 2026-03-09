@@ -5,13 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"blog-backend/internal/config"
 	"blog-backend/internal/models"
 	"blog-backend/internal/repository"
+	"blog-backend/pkg/errors"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -48,18 +48,18 @@ type TokenPair struct {
 func (s *AuthService) Login(username, password string) (*TokenPair, *models.User, error) {
 	user, err := s.userRepo.FindByUsername(username)
 	if err != nil {
-		return nil, nil, errors.New("invalid username or password")
+		return nil, nil, errors.New(errors.ErrInvalidCredentials, "user not found")
 	}
 
 	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, nil, errors.New("invalid username or password")
+		return nil, nil, errors.New(errors.ErrInvalidCredentials, "password mismatch")
 	}
 
 	// 生成双 Token
 	tokens, err := s.generateTokenPair(user)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(errors.ErrInternalServer, err)
 	}
 
 	return tokens, user, nil
@@ -69,18 +69,18 @@ func (s *AuthService) Login(username, password string) (*TokenPair, *models.User
 func (s *AuthService) Register(username, email, password string) (*models.User, *models.Workspace, error) {
 	// 检查用户名是否已存在
 	if _, err := s.userRepo.FindByUsername(username); err == nil {
-		return nil, nil, errors.New("username already exists")
+		return nil, nil, errors.New(errors.ErrUserAlreadyExists, "username: "+username)
 	}
 
 	// 检查邮箱是否已存在
 	if _, err := s.userRepo.FindByEmail(email); err == nil {
-		return nil, nil, errors.New("email already exists")
+		return nil, nil, errors.New(errors.ErrEmailAlreadyExists, "email: "+email)
 	}
 
 	// 哈希密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(errors.ErrInternalServer, err)
 	}
 
 	var user *models.User
@@ -121,7 +121,7 @@ func (s *AuthService) Register(username, email, password string) (*models.User, 
 	})
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(errors.ErrDatabaseTransaction, err)
 	}
 
 	return user, workspace, nil
@@ -140,34 +140,34 @@ func (s *AuthService) RefreshAccessToken(refreshToken string) (*TokenPair, error
 
 	data, err := s.rdb.Get(ctx, key).Result()
 	if err == redis.Nil {
-		return nil, errors.New("invalid or expired refresh token")
+		return nil, errors.New(errors.ErrInvalidToken, "refresh token not found in cache")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+		return nil, errors.Wrap(errors.ErrCacheGet, err)
 	}
 
 	// 解析 Refresh Token 数据
 	var rt models.RefreshToken
 	if err := json.Unmarshal([]byte(data), &rt); err != nil {
-		return nil, fmt.Errorf("failed to parse refresh token: %w", err)
+		return nil, errors.WrapWithDetail(errors.ErrInternalServer, err, "failed to parse refresh token")
 	}
 
 	// 检查是否过期
 	if time.Now().After(rt.ExpiresAt) {
 		s.rdb.Del(ctx, key) // 删除过期的 token
-		return nil, errors.New("refresh token expired")
+		return nil, errors.New(errors.ErrTokenExpired, "refresh token expired")
 	}
 
 	// 获取用户信息
 	user, err := s.userRepo.FindByID(rt.UserID)
 	if err != nil {
-		return nil, errors.New("user not found")
+		return nil, errors.New(errors.ErrUserNotFound, "user id: "+rt.UserID.String())
 	}
 
 	// 生成新的双 Token
 	tokens, err := s.generateTokenPair(user)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrInternalServer, err)
 	}
 
 	// 删除旧的 Refresh Token
@@ -225,7 +225,7 @@ func (s *AuthService) generateRefreshToken(user *models.User) (string, error) {
 	// 生成随机 token
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", errors.Wrap(errors.ErrInternalServer, err)
 	}
 	token := base64.URLEncoding.EncodeToString(b)
 
@@ -243,12 +243,12 @@ func (s *AuthService) generateRefreshToken(user *models.User) (string, error) {
 	key := fmt.Sprintf("refresh_token:%s", token)
 	data, err := json.Marshal(rt)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(errors.ErrInternalServer, err)
 	}
 
 	ttl := time.Until(expiresAt)
 	if err := s.rdb.Set(ctx, key, data, ttl).Err(); err != nil {
-		return "", fmt.Errorf("failed to store refresh token: %w", err)
+		return "", errors.Wrap(errors.ErrCacheSet, err)
 	}
 
 	return token, nil

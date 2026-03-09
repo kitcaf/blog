@@ -25,8 +25,7 @@ func (u *User) TableName() string {
 type Workspace struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Name      string    `gorm:"type:varchar(255);not null" json:"name"`
-	OwnerID   uuid.UUID `gorm:"type:uuid;not null" json:"owner_id"`
-	Owner     *User     `gorm:"foreignKey:OwnerID;constraint:OnDelete:CASCADE" json:"owner,omitempty"`
+	OwnerID   uuid.UUID `gorm:"type:uuid;not null;index" json:"owner_id"` // 移除外键，添加索引
 	CreatedAt time.Time `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
@@ -37,13 +36,11 @@ func (w *Workspace) TableName() string {
 
 // WorkspaceMember 协作成员表：RBAC 权限控制
 type WorkspaceMember struct {
-	ID          uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	WorkspaceID uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex:idx_workspace_user" json:"workspace_id"`
-	UserID      uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex:idx_workspace_user" json:"user_id"`
-	Role        string     `gorm:"type:varchar(50);not null;default:'viewer'" json:"role"` // owner, admin, editor, viewer
-	Workspace   *Workspace `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:CASCADE" json:"workspace,omitempty"`
-	User        *User      `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user,omitempty"`
-	CreatedAt   time.Time  `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"created_at"`
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	WorkspaceID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_workspace_user;index" json:"workspace_id"`
+	UserID      uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_workspace_user;index" json:"user_id"`
+	Role        string    `gorm:"type:varchar(50);not null;default:'viewer'" json:"role"` // owner, admin, editor, viewer
+	CreatedAt   time.Time `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 func (wm *WorkspaceMember) TableName() string {
@@ -52,12 +49,11 @@ func (wm *WorkspaceMember) TableName() string {
 
 // APIKey API 密钥表：Headless CMS 的钥匙
 type APIKey struct {
-	ID          uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	WorkspaceID uuid.UUID  `gorm:"type:uuid;not null" json:"workspace_id"`
-	KeyString   string     `gorm:"type:varchar(100);uniqueIndex;not null" json:"key_string"`
-	Name        string     `gorm:"type:varchar(255);not null" json:"name"`
-	Workspace   *Workspace `gorm:"foreignKey:WorkspaceID;constraint:OnDelete:CASCADE" json:"workspace,omitempty"`
-	CreatedAt   time.Time  `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"created_at"`
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	WorkspaceID uuid.UUID `gorm:"type:uuid;not null;index" json:"workspace_id"` // 移除外键，添加索引
+	KeyString   string    `gorm:"type:varchar(100);uniqueIndex;not null" json:"key_string"`
+	Name        string    `gorm:"type:varchar(255);not null" json:"name"`
+	CreatedAt   time.Time `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 func (ak *APIKey) TableName() string {

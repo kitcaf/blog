@@ -30,6 +30,8 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
  * 将后端原始 DbBlock 解析为前端强类型 Block。
  * properties JSONB 字段中同时存储了 props（块属性）和 content（内联内容），
  * 此函数负责将二者拆分。
+ * 
+ * 注意：slug 和 published_at 是数据库独立字段，直接映射到 Block 顶层。
  */
 function hydrateBlock(db: DbBlock): Block {
   const { content, ...restProps } = db.properties as {
@@ -47,6 +49,13 @@ function hydrateBlock(db: DbBlock): Block {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     props: (restProps ?? {}) as any,
     content: content ?? [],
+    // 数据库独立字段
+    slug: db.slug ?? undefined,
+    publishedAt: db.published_at ?? undefined,
+    // 审计字段
+    createdBy: db.created_by,
+    lastEditedBy: db.last_edited_by,
+    // 时间戳
     createdAt: db.created_at,
     updatedAt: db.updated_at,
     deletedAt: db.deleted_at,
@@ -72,6 +81,7 @@ export interface PageTreeNode {
   title: string;
   icon?: string;
   isPublished?: boolean;
+  slug?: string;
   contentIds: string[];
   children: PageTreeNode[];
 }
@@ -91,7 +101,8 @@ function buildPageTree(blocks: Block[]): PageTreeNode[] {
       type: block.type as 'page' | 'folder',
       title: props?.title ?? '未命名',
       icon: props?.icon,
-      isPublished: props?.isPublished,
+      isPublished: block.publishedAt != null, // 根据 publishedAt 判断是否已发布
+      slug: block.slug ?? undefined,
       contentIds: block.contentIds,
       children: [],
     });

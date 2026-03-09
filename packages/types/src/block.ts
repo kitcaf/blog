@@ -131,22 +131,22 @@ export interface FolderBlockProps extends BaseBlockProps {
  * Page 块（页面/文件夹）的专有属性。
  * Page 在本系统中扮演双重角色：
  *  1. 侧边栏目录树的节点（通过 title/icon 展示）
- *  2. 博客文章（通过 isPublished/slug/description 控制发布和 SEO）
+ *  2. 博客文章（通过 isPublished 控制发布状态）
+ * 
+ * 注意：slug 和 published_at 是数据库独立字段，不在 properties 中！
+ * 它们在 DbBlock 和 BaseBlock 的顶层字段中。
  */
 export interface PageBlockProps extends BaseBlockProps {
-
   /** 页面标题，侧边栏直接读取此字段，无需遍历子块 */
   title: string;
   /** 页面图标，支持 Emoji（'📄'）或图片 URL */
   icon?: string;
   /** 封面图 URL */
   coverImage?: string;
-  /** 是否作为博客文章对外发布，默认 false */
-  isPublished?: boolean;
-  /** 文章的自定义 URL slug，例如: 'my-first-post'（对应访问路径 /blog/my-first-post） */
-  slug?: string;
   /** 文章摘要，用于 SEO meta description 和列表页卡片预览 */
   description?: string;
+  /** 文章标签，用于分类和搜索 */
+  tags?: string[];
 }
 
 /** Heading 块的专有属性（对应 Tiptap HeadingNode 的 attrs.level） */
@@ -192,6 +192,8 @@ export interface CalloutBlockProps extends BaseBlockProps {
  *  contentIds  → blocks.content_ids (子块有序 ID 数组，拖拽排序只改此字段)
  *  props       → blocks.properties  (JSONB 拆解为强类型)
  *  content     → blocks.properties.content
+ *  slug        → blocks.slug        (独立字段，仅 Page 类型使用)
+ *  publishedAt → blocks.published_at (独立字段，NULL = 草稿)
  *  createdAt   → blocks.created_at
  *  updatedAt   → blocks.updated_at
  *  deletedAt   → blocks.deleted_at  (null = 未删除)
@@ -213,12 +215,30 @@ export interface BaseBlock<T extends BlockType, P extends BaseBlockProps = BaseB
    * 拖拽排序时只需更新父节点的此字段，子块本身无需变动。
    */
   contentIds: string[];
-  /** 块级属性（从 DbBlock.properties除去props外的属性对共同中解析，对应 Tiptap node.attrs） */
+  /** 块级属性（从 DbBlock.properties 中解析，对应 Tiptap node.attrs） */
   props: P;
   /** 内联富文本内容（从 DbBlock.properties.content 解析，对应 Tiptap node.content） */
   content: InlineContent[];
-  // 服务端时间戳，API 响应中携带，前端只读
+  
+  // ── 以下是数据库独立字段（不在 properties 中）──
+  
+  /** 路由别名（仅 Page 类型使用，全局唯一），例如：'my-first-post-a3f2' */
+  slug?: string | null;
+  /** 发布时间，NULL 表示草稿，非 NULL 表示已发布 */
+  publishedAt?: string | null;
+  
+  // ── 审计字段（管理端可见，公开端不可见）──
+  
+  /** 创建者 ID（管理端可见） */
+  createdBy?: string;
+  /** 最后编辑者 ID（管理端可见） */
+  lastEditedBy?: string;
+  
+  // ── 时间戳 ──
+  
+  /** 创建时间（服务端时间戳，API 响应中携带，前端只读） */
   createdAt?: string;
+  /** 更新时间（服务端时间戳，API 响应中携带，前端只读） */
   updatedAt?: string;
   /** null 表示正常，有值表示已软删除 */
   deletedAt?: string | null;
@@ -296,6 +316,7 @@ export type BlockData = Block;
  * ```json
  * {
  *   "title": "My Page",          // PageBlock 专有
+ *   "icon": "📄",                // PageBlock/FolderBlock 专有
  *   "level": 1,                  // HeadingBlock 专有
  *   "language": "typescript",    // CodeBlock 专有
  *   "checked": false,            // CheckListItem 专有
@@ -305,16 +326,42 @@ export type BlockData = Block;
  *   ]
  * }
  * ```
+ * 
+ * 注意：slug 和 published_at 是数据库独立字段，不在 properties 中！
  */
 export interface DbBlock {
-  id: string; /** 唯一标识，UUID，由前端生成（支持离线编辑） */
-  parent_id: string | null; /** 父块 ID，null 表示根块 */
-  path: string; /** 物化路径，格式：'/root-uuid/parent-uuid/this-uuid/' */
-  type: BlockType; /** 块类型: 'page', 'h1', 'paragraph', 'code_block' 等 */
-  content_ids: string[]; /** 子块有序 ID 数组，拖拽排序时只需更新父节点的此字段 */
-  properties: Record<string, unknown>;   /** 存储所有动态属性（props + content）的 JSONB 字段 */
+  /** 唯一标识，UUID，由前端生成（支持离线编辑） */
+  id: string;
+  /** 父块 ID，null 表示根块 */
+  parent_id: string | null;
+  /** 物化路径，格式：'/root-uuid/parent-uuid/this-uuid/' */
+  path: string;
+  /** 块类型: 'folder', 'page', 'paragraph', 'heading', 'code' 等 */
+  type: BlockType;
+  /** 子块有序 ID 数组，拖拽排序时只需更新父节点的此字段 */
+  content_ids: string[];
+  /** 存储所有动态属性（props + content）的 JSONB 字段 */
+  properties: Record<string, unknown>;
+  
+  // ── 以下是数据库独立字段（不在 properties 中）──
+  
+  /** 路由别名（仅 Page 类型使用，全局唯一），例如：'my-first-post-a3f2' */
+  slug?: string | null;
+  /** 发布时间，NULL 表示草稿，非 NULL 表示已发布 */
+  published_at?: string | null;
+  
+  // ── 审计字段（管理端可见，公开端不可见）──
+  
+  /** 创建者 ID */
+  created_by?: string;
+  /** 最后编辑者 ID */
+  last_edited_by?: string;
+  
+  // ── 时间戳 ──
+  
   created_at: string;
   updated_at: string;
+  /** null 表示正常，有值表示已软删除 */
   deleted_at: string | null;
 }
 

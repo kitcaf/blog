@@ -27,28 +27,33 @@ type Block struct {
 
 	// 核心动态数据载体（无模式设计）
 	/**
-			比如：
-			// Type: "folder"
-			{
-			  "title": "前端架构设计",   // 文件夹名称
-			  "icon": "📁",            // emoji图标 或 iconfont class
-			  "color": "blue",         // 文件夹颜色标识（可选）
-			  "is_expanded": false     // 侧边栏是否默认展开（前端UI状态，可选存库）
-			}
-			  // Type: "page"
-		{
-		  "title": "2024年React性能优化指南",
-		  "icon": "🚀",
-		  "cover_url": "https://cdn.example.com/images/react-cover.png", // 顶部封面图
-		  "description": "这是一篇关于 React 性能优化的深度好文...",     // 文章摘要 (用于SEO description或列表页预览)
-		  "tags": ["React", "Performance", "Frontend"]                   // 文章标签
-		}
-	内容块 (Content Blocks) 的 Properties 预设：它们的数据结构必须严格契合 Tiptap (ProseMirror) 的 JSON 输出格式
-		  // Type: "paragraph" 或 "heading"
+	容器类 (Folder/Page) 的 Properties 预设：
+	// Type: "folder"
 	{
-	  "level": 2, // 仅 heading 类型有此字段 (H1, H2, H3)
-	  "textAlign": "left", // 对齐方式: left, center, right
-	  "content": [         // Tiptap 原生的 content 数组
+	  "title": "前端架构设计",   // 文件夹名称
+	  "icon": "📁",            // emoji图标 或 iconfont class
+	  "color": "blue"          // 文件夹颜色标识（可选）
+	}
+
+	// Type: "page"
+	{
+	  "title": "2024年React性能优化指南",
+	  "icon": "🚀",
+	  "cover_url": "https://cdn.example.com/images/react-cover.png", // 顶部封面图
+	  "description": "这是一篇关于 React 性能优化的深度好文...",     // 文章摘要 (用于SEO description或列表页预览)
+	  "tags": ["React", "Performance", "Frontend"]                   // 文章标签
+	}
+
+	注意：slug 和 published_at 是数据库独立字段，不在 properties 中！
+
+	内容块 (Content Blocks) 的 Properties 预设：
+	它们的数据结构必须严格契合 Tiptap (ProseMirror) 的 JSON 输出格式
+
+	// Type: "paragraph" 或 "heading"
+	{
+	  "level": 2,              // 仅 heading 类型有此字段 (1=H1, 2=H2, 3=H3)
+	  "textAlign": "left",     // 对齐方式: left, center, right
+	  "content": [             // Tiptap 原生的 content 数组
 	    {
 	      "type": "text",
 	      "text": "Hello "
@@ -63,7 +68,23 @@ type Block struct {
 	    }
 	  ]
 	}
-			**/
+
+	// Type: "code"
+	{
+	  "language": "typescript", // 语法高亮语言
+	  "content": [
+	    { "type": "text", "text": "const x = 1;" }
+	  ]
+	}
+
+	// Type: "image"
+	{
+	  "url": "https://example.com/image.png",
+	  "caption": "图片说明",
+	  "width": 100,            // 宽度百分比
+	  "alignment": "center"    // left, center, right, full
+	}
+	**/
 	Properties json.RawMessage `gorm:"type:jsonb;default:'{}'::jsonb" json:"properties"`
 
 	// 路由别名（仅 Page 类型使用，必须全局唯一）

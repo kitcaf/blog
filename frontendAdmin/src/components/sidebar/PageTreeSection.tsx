@@ -151,12 +151,12 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
     [],
   );
 
-  // 获取默认图标
+  // 获取默认图标（统一尺寸 14px）
   const getDefaultIcon = () => {
     if (node.type === 'folder') {
-      return <FolderIcon size={14} className="text-app-fg-light" />;
+      return <FolderIcon size={14} className="text-app-fg-light shrink-0" />;
     }
-    return <FileText size={14} className="text-app-fg-light" />;
+    return <FileText size={14} className="text-app-fg-light shrink-0" />;
   };
 
   return (
@@ -167,7 +167,7 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
         onClick={handleClick}
         onKeyDown={(e) => e.key === 'Enter' && handleClick()}
         className={`
-          group flex items-center gap-1 px-2 py-[5px] rounded-md cursor-pointer
+          group flex items-center gap-1.5 px-2 py-[5px] rounded-md cursor-pointer
           text-sm transition-colors select-none
           ${isActive
             ? 'bg-app-hover text-app-fg-deeper'
@@ -193,12 +193,13 @@ const PageTreeItem = React.memo(function PageTreeItem({ node, depth }: PageTreeI
         </span>
 
         {/* 图标：优先使用自定义图标，否则使用默认图标 */}
-        <span className="shrink-0 text-[14px] leading-none">
+        {/* 统一容器尺寸确保对齐 */}
+        <span className="shrink-0 w-[14px] h-[14px] flex items-center justify-center text-[14px] leading-none">
           {node.icon ? node.icon : getDefaultIcon()}
         </span>
 
-        {/* 标题 */}
-        <span className="flex-1 truncate text-[13px]">{node.title}</span>
+        {/* 标题：使用 truncate 防止文字过长 */}
+        <span className="flex-1 truncate text-[13px] min-w-0">{node.title}</span>
 
         {/* 发布状态（仅 page 类型显示） */}
         {node.type === 'page' && node.isPublished && (

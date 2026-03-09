@@ -17,24 +17,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type AuthService struct {
-	userRepo      *repository.UserRepository
-	workspaceRepo *repository.WorkspaceRepository
-	cfg           *config.Config
-	rdb           *redis.Client
-	db            *gorm.DB // 添加 db 用于事务
+	userRepo *repository.UserRepository
+	cfg      *config.Config
+	rdb      *redis.Client
 }
 
-func NewAuthService(userRepo *repository.UserRepository, workspaceRepo *repository.WorkspaceRepository, cfg *config.Config, rdb *redis.Client, db *gorm.DB) *AuthService {
+func NewAuthService(userRepo *repository.UserRepository, cfg *config.Config, rdb *redis.Client) *AuthService {
 	return &AuthService{
-		userRepo:      userRepo,
-		workspaceRepo: workspaceRepo,
-		cfg:           cfg,
-		rdb:           rdb,
-		db:            db,
+		userRepo: userRepo,
+		cfg:      cfg,
+		rdb:      rdb,
 	}
 }
 
@@ -65,66 +60,36 @@ func (s *AuthService) Login(username, password string) (*TokenPair, *models.User
 	return tokens, user, nil
 }
 
-// Register 用户注册并创建默认工作空间（使用事务）
-func (s *AuthService) Register(username, email, password string) (*models.User, *models.Workspace, error) {
+// Register 用户注册
+func (s *AuthService) Register(username, email, password string) (*models.User, error) {
 	// 检查用户名是否已存在
 	if _, err := s.userRepo.FindByUsername(username); err == nil {
-		return nil, nil, errors.New(errors.ErrUserAlreadyExists, "username: "+username)
+		return nil, errors.New(errors.ErrUserAlreadyExists, "username: "+username)
 	}
 
 	// 检查邮箱是否已存在
 	if _, err := s.userRepo.FindByEmail(email); err == nil {
-		return nil, nil, errors.New(errors.ErrEmailAlreadyExists, "email: "+email)
+		return nil, errors.New(errors.ErrEmailAlreadyExists, "email: "+email)
 	}
 
 	// 哈希密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, nil, errors.Wrap(errors.ErrInternalServer, err)
+		return nil, errors.Wrap(errors.ErrInternalServer, err)
 	}
 
-	var user *models.User
-	var workspace *models.Workspace
-
-	// 开启数据库事务：要么全成功，要么全失败回滚
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 1. 创建新用户
-		user = &models.User{
-			Username:     username,
-			Email:        email,
-			PasswordHash: string(hashedPassword),
-		}
-		if err := tx.Create(user).Error; err != nil {
-			return err
-		}
-
-		// 2. 🚀 自动为该用户创建一个默认的专属工作区（站点）
-		workspace = &models.Workspace{
-			Name:    username + " 的专属空间",
-			OwnerID: user.ID,
-		}
-		if err := tx.Create(workspace).Error; err != nil {
-			return err
-		}
-
-		// 3. 🚀 将用户与工作区绑定，并赋予最高权限 owner
-		member := &models.WorkspaceMember{
-			WorkspaceID: workspace.ID,
-			UserID:      user.ID,
-			Role:        "owner",
-		}
-		if err := tx.Create(member).Error; err != nil {
-			return err
-		}
-
-		return nil // 提交事务
-	})
-
-	if err != nil {
-		return nil, nil, errors.Wrap(errors.ErrDatabaseTransaction, err)
+	// 创建新用户
+	user := &models.User{
+		Username:     username,
+		Email:        email,
+		PasswordHash: string(hashedPassword),
 	}
 
-	return user, workspace, nil
+	if err := s.userRepo.Create(user); err != nil {
+		return nil, errors.Wrap(errors.ErrDatabaseInsert, err)
+	}
+
+	return user, nil
 }
 
 // GetUserByID 根据 ID 获取用户

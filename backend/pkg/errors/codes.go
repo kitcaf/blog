@@ -65,10 +65,10 @@ const (
 	ErrInvalidToken       ErrorCode = 6004 // Token 无效（内部）
 	ErrTokenExpired       ErrorCode = 6005 // Token 过期（内部）
 
-	// 工作空间业务 (6100-6199)
-	ErrWorkspaceNotFound     ErrorCode = 6101 // 工作空间不存在（内部）
-	ErrWorkspaceAccessDenied ErrorCode = 6102 // 无权访问工作空间（内部）
-	ErrNotWorkspaceOwner     ErrorCode = 6103 // 不是工作空间所有者（内部）
+	// 工作空间业务 (6100-6199) - 已删除
+	// ErrWorkspaceNotFound     ErrorCode = 6101
+	// ErrWorkspaceAccessDenied ErrorCode = 6102
+	// ErrNotWorkspaceOwner     ErrorCode = 6103
 
 	// 页面业务 (6200-6299)
 	ErrPageNotFoundInternal ErrorCode = 6201 // 页面不存在（内部）
@@ -142,7 +142,7 @@ func (e ErrorCode) GetHTTPStatus() int {
 	case e >= 6000 && e < 6100:
 		return 400 // 用户业务错误
 	case e >= 6100 && e < 6200:
-		return 403 // 工作空间业务错误
+		return 403 // 工作空间业务错误（已删除，保留范围）
 	case e >= 6200:
 		return 404 // 页面/Block 业务错误
 	default:
@@ -207,10 +207,10 @@ var internalMessages = map[ErrorCode]string{
 	ErrInvalidToken:       "Invalid token",
 	ErrTokenExpired:       "Token expired",
 
-	// 工作空间业务
-	ErrWorkspaceNotFound:     "Workspace not found",
-	ErrWorkspaceAccessDenied: "Workspace access denied",
-	ErrNotWorkspaceOwner:     "Not workspace owner",
+	// 工作空间业务 - 已删除
+	// ErrWorkspaceNotFound:     "Workspace not found",
+	// ErrWorkspaceAccessDenied: "Workspace access denied",
+	// ErrNotWorkspaceOwner:     "Not workspace owner",
 
 	// 页面业务
 	ErrPageNotFoundInternal: "Page not found",
@@ -237,8 +237,8 @@ func getBusinessErrorUserMessage(code ErrorCode) string {
 			return "用户信息错误"
 		}
 	case code >= 6100 && code < 6200:
-		// 工作空间相关业务错误
-		return "无权访问该工作空间"
+		// 工作空间相关业务错误（已删除）
+		return "操作失败"
 	case code >= 6200 && code < 6300:
 		// 页面相关业务错误
 		return "页面不存在或已被删除"

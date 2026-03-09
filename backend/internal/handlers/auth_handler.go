@@ -32,9 +32,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, workspace, err := h.authService.Register(req.Username, req.Email, req.Password)
+	user, err := h.authService.Register(req.Username, req.Email, req.Password)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.HandleError(c, err)
 		return
 	}
 
@@ -43,10 +43,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-		},
-		"workspace": gin.H{
-			"id":   workspace.ID,
-			"name": workspace.Name,
 		},
 	})
 }
@@ -66,7 +62,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	tokens, user, err := h.authService.Login(req.Username, req.Password)
 	if err != nil {
-		response.Error(c, http.StatusUnauthorized, err.Error())
+		response.HandleError(c, err)
 		return
 	}
 
@@ -95,7 +91,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	tokens, err := h.authService.RefreshAccessToken(req.RefreshToken)
 	if err != nil {
-		response.Error(c, http.StatusUnauthorized, err.Error())
+		response.HandleError(c, err)
 		return
 	}
 

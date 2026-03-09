@@ -21,10 +21,9 @@ func NewPageHandler(blockService *services.BlockService) *PageHandler {
 
 // GetAdminPages 获取管理端页面列表
 func (h *PageHandler) GetAdminPages(c *gin.Context) {
-	workspaceID := c.MustGet("workspace_id").(uuid.UUID)
 	includeUnpublished := c.DefaultQuery("include_unpublished", "true") == "true"
 
-	pages, err := h.blockService.GetPages(workspaceID, includeUnpublished)
+	pages, err := h.blockService.GetPages(includeUnpublished)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get pages")
 		return
@@ -35,13 +34,7 @@ func (h *PageHandler) GetAdminPages(c *gin.Context) {
 
 // GetPublicPages 获取公开页面列表
 func (h *PageHandler) GetPublicPages(c *gin.Context) {
-	workspaceID, err := uuid.Parse(c.Param("workspace_id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid workspace ID")
-		return
-	}
-
-	pages, err := h.blockService.GetPages(workspaceID, false)
+	pages, err := h.blockService.GetPages(false)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get pages")
 		return
@@ -52,15 +45,9 @@ func (h *PageHandler) GetPublicPages(c *gin.Context) {
 
 // GetPageBySlug 根据 slug 获取页面内容
 func (h *PageHandler) GetPageBySlug(c *gin.Context) {
-	workspaceID, err := uuid.Parse(c.Param("workspace_id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid workspace ID")
-		return
-	}
-
 	slug := c.Param("slug")
 
-	page, blocks, err := h.blockService.GetPageBySlug(workspaceID, slug)
+	page, blocks, err := h.blockService.GetPageBySlug(slug)
 	if err != nil {
 		response.Error(c, http.StatusNotFound, "Page not found")
 		return
@@ -74,7 +61,6 @@ func (h *PageHandler) GetPageBySlug(c *gin.Context) {
 
 // CreatePage 创建页面
 func (h *PageHandler) CreatePage(c *gin.Context) {
-	workspaceID := c.MustGet("workspace_id").(uuid.UUID)
 	userID := c.MustGet("user_id").(uuid.UUID)
 
 	var block models.Block
@@ -83,7 +69,6 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 		return
 	}
 
-	block.WorkspaceID = workspaceID
 	block.CreatedBy = &userID
 	block.LastEditedBy = &userID
 
@@ -97,10 +82,9 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 
 // UpdatePage 更新页面
 func (h *PageHandler) UpdatePage(c *gin.Context) {
-	workspaceID := c.MustGet("workspace_id").(uuid.UUID)
 	userID := c.MustGet("user_id").(uuid.UUID)
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := uuid.Parse(c.Param("page_id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
@@ -113,7 +97,6 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 	}
 
 	block.ID = id
-	block.WorkspaceID = workspaceID
 	block.LastEditedBy = &userID
 
 	if err := h.blockService.UpdatePage(&block); err != nil {
@@ -126,15 +109,13 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 
 // DeletePage 删除页面
 func (h *PageHandler) DeletePage(c *gin.Context) {
-	workspaceID := c.MustGet("workspace_id").(uuid.UUID)
-
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := uuid.Parse(c.Param("page_id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
 	}
 
-	if err := h.blockService.DeletePage(workspaceID, id); err != nil {
+	if err := h.blockService.DeletePage(id); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to delete page")
 		return
 	}

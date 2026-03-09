@@ -33,31 +33,28 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 
 	// 初始化 repositories
 	userRepo := repository.NewUserRepository(db)
-	workspaceRepo := repository.NewWorkspaceRepository(db)
 	blockRepo := repository.NewBlockRepository(db)
 
 	// 初始化 services
-	authService := services.NewAuthService(userRepo, workspaceRepo, cfg, rdb, db)
-	workspaceService := services.NewWorkspaceService(workspaceRepo)
+	authService := services.NewAuthService(userRepo, cfg, rdb)
 	blockService := services.NewBlockService(blockRepo, rdb)
 
 	// 初始化 handlers
 	authHandler := handlers.NewAuthHandler(authService)
-	workspaceHandler := handlers.NewWorkspaceHandler(workspaceService)
 	blockHandler := handlers.NewBlockHandler(blockService)
 	pageHandler := handlers.NewPageHandler(blockService)
 
 	// 健康检查和版本信息
-	r.GET("/api/health", handlers.HealthCheck(db, rdb)) // 健康检查接口，检查数据库和Redis是否正常
-	r.GET("/api/version", handlers.Version)             // 版本信息接口，返回当前后端的版本号
+	r.GET("/api/health", handlers.HealthCheck(db, rdb))
+	r.GET("/api/version", handlers.Version)
 
 	// 公开接口（无需认证）
 	public := r.Group("/api/public")
 	{
-		// 按工作空间 ID 获取所有已发布的页面
-		public.GET("/workspaces/:workspace_id/pages", pageHandler.GetPublicPages)
+		// 获取所有已发布的页面
+		public.GET("/pages", pageHandler.GetPublicPages)
 		// 根据 URL slug 获取指定公开页面的内容（包含其区块）
-		public.GET("/workspaces/:workspace_id/pages/:slug/blocks", pageHandler.GetPageBySlug)
+		public.GET("/pages/:slug/blocks", pageHandler.GetPageBySlug)
 	}
 
 	// 认证接口
@@ -74,33 +71,21 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	admin := r.Group("/api/admin")
 	admin.Use(middleware.AuthMiddleware(cfg))
 	{
-		// 工作空间管理
-		workspaces := admin.Group("/workspaces")
+		// 页面管理
+		pages := admin.Group("/pages")
 		{
-			workspaces.GET("", workspaceHandler.GetWorkspaces)          // 获取当前用户所属的所有工作空间列表
-			workspaces.POST("", workspaceHandler.CreateWorkspace)       // 创建新的工作空间
-			workspaces.GET("/:id", workspaceHandler.GetWorkspace)       // 获取特定工作空间的详细信息
-			workspaces.PUT("/:id", workspaceHandler.UpdateWorkspace)    // 更新特定工作空间的信息
-			workspaces.DELETE("/:id", workspaceHandler.DeleteWorkspace) // 删除特定的工作空间
+			pages.GET("", pageHandler.GetAdminPages)          // 获取所有页面（包含未发布）
+			pages.POST("", pageHandler.CreatePage)            // 创建新页面
+			pages.PUT("/:page_id", pageHandler.UpdatePage)    // 更新页面
+			pages.DELETE("/:page_id", pageHandler.DeletePage) // 删除页面
 		}
 
-		// 页面管理（这里的 :id 对应原先的 :workspace_id，解决路由冲突）
-		pages := admin.Group("/workspaces/:id/pages")
-		pages.Use(middleware.WorkspaceMiddleware())
+		// Block 管理
+		blocks := admin.Group("/blocks")
 		{
-			pages.GET("", pageHandler.GetAdminPages)     // 获取工作空间下所有页面（包含未发布的页面）
-			pages.POST("", pageHandler.CreatePage)       // 在指定工作空间下创建新页面
-			pages.PUT("/:id", pageHandler.UpdatePage)    // 更新指定页面（此处的 :id 为页面 ID）
-			pages.DELETE("/:id", pageHandler.DeletePage) // 删除指定页面（此处的 :id 为页面 ID）
-		}
-
-		// Block 管理（这里的 :id 对应原先的 :workspace_id，解决路由冲突）
-		blocks := admin.Group("/workspaces/:id/blocks")
-		blocks.Use(middleware.WorkspaceMiddleware())
-		{
-			blocks.GET("/children", blockHandler.GetChildren) // 获取某个节点的直接子节点（侧边栏目录树）
-			blocks.GET("/:page_id", blockHandler.GetBlocks)   // 获取指定页面下的所有内容区块
-			blocks.POST("/sync", blockHandler.SyncBlocks)     // 批量同步（增量更新/删除）区块数据
+			blocks.GET("", blockHandler.GetChildren)              // 获取目录树（?parent_id=xxx）
+			blocks.GET("/pages/:page_id", blockHandler.GetBlocks) // 获取页面的所有 Block
+			blocks.POST("/sync", blockHandler.SyncBlocks)         // 批量同步 Block
 		}
 	}
 

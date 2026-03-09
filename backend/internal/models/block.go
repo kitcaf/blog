@@ -11,18 +11,15 @@ type Block struct {
 	// 身份锚点：由前端 Tiptap 生成的 UUID
 	ID uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 
-	// 数据隔离墙：所有查询必须带上它，防止租户数据越权
-	WorkspaceID uuid.UUID `gorm:"type:uuid;not null;index:idx_blocks_workspace_id" json:"workspace_id"` // 移除外键，保留索引
-
 	// 父级指针：顶层文章(Page)的 parent_id 为 NULL
-	ParentID *uuid.UUID `gorm:"type:uuid;index:idx_blocks_parent_id" json:"parent_id,omitempty"` // 移除外键，保留索引
+	ParentID *uuid.UUID `gorm:"type:uuid;index:idx_blocks_parent_id" json:"parent_id,omitempty"`
 
 	// 物化路径：格式 '/{page_id}/{parent_id}/{id}/'
 	// 使用 `path LIKE '/page_id/%'` 即可 O(1) 捞出整篇文章所有嵌套区块
 	Path string `gorm:"type:varchar(1000);not null;index:idx_blocks_path,type:btree,option:varchar_pattern_ops" json:"path"`
 
 	// 区块类型：'page', 'paragraph', 'heading', 'imageBlock', 'codeBlock' 等
-	Type string `gorm:"type:varchar(100);not null;index" json:"type"` // 添加索引优化查询
+	Type string `gorm:"type:varchar(100);not null;index" json:"type"`
 
 	// 子节点排序数组：拖拽排序时仅更新父节点的此字段
 	ContentIDs []byte `gorm:"type:jsonb;default:'[]'::jsonb" json:"content_ids"`
@@ -36,16 +33,16 @@ type Block struct {
 	Slug *string `gorm:"type:varchar(255);index:idx_blocks_page_slug" json:"slug,omitempty"`
 
 	// 发布时间控制：NULL 表示草稿，非 NULL 表示已发布
-	PublishedAt *time.Time `gorm:"type:timestamptz;index" json:"published_at,omitempty"` // 添加索引优化查询
+	PublishedAt *time.Time `gorm:"type:timestamptz;index" json:"published_at,omitempty"`
 
-	// 审计字段：记录追踪（移除外键）
+	// 审计字段：记录追踪
 	CreatedBy    *uuid.UUID `gorm:"type:uuid;index" json:"created_by,omitempty"`
 	LastEditedBy *uuid.UUID `gorm:"type:uuid;index" json:"last_edited_by,omitempty"`
 
 	// 时间戳与软删除
 	CreatedAt time.Time  `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP;index" json:"created_at"`
 	UpdatedAt time.Time  `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"updated_at"`
-	DeletedAt *time.Time `gorm:"type:timestamptz;index" json:"deleted_at,omitempty"` // 添加索引优化软删除查询
+	DeletedAt *time.Time `gorm:"type:timestamptz;index" json:"deleted_at,omitempty"`
 }
 
 func (b *Block) TableName() string {

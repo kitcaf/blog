@@ -25,20 +25,20 @@ func NewBlockService(blockRepo *repository.BlockRepository, rdb *redis.Client) *
 }
 
 // GetBlocksByPageID 获取页面的所有 Block
-func (s *BlockService) GetBlocksByPageID(workspaceID, pageID uuid.UUID) ([]models.Block, error) {
-	page, err := s.blockRepo.FindByID(workspaceID, pageID)
+func (s *BlockService) GetBlocksByPageID(pageID uuid.UUID) ([]models.Block, error) {
+	page, err := s.blockRepo.FindByID(pageID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.blockRepo.FindByPath(workspaceID, page.Path)
+	return s.blockRepo.FindByPath(page.Path)
 }
 
 // GetPageBySlug 根据 slug 获取页面及其内容
-func (s *BlockService) GetPageBySlug(workspaceID uuid.UUID, slug string) (*models.Block, []models.Block, error) {
+func (s *BlockService) GetPageBySlug(slug string) (*models.Block, []models.Block, error) {
 	// 尝试从缓存获取
 	if s.rdb != nil {
-		cacheKey := "page:blocks:" + workspaceID.String() + ":" + slug
+		cacheKey := "page:blocks:" + slug
 		cached, err := s.rdb.Get(context.Background(), cacheKey).Result()
 		if err == nil {
 			var result struct {
@@ -52,19 +52,19 @@ func (s *BlockService) GetPageBySlug(workspaceID uuid.UUID, slug string) (*model
 	}
 
 	// 从数据库查询
-	page, err := s.blockRepo.FindPageBySlug(workspaceID, slug)
+	page, err := s.blockRepo.FindPageBySlug(slug)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	blocks, err := s.blockRepo.FindByPath(workspaceID, page.Path)
+	blocks, err := s.blockRepo.FindByPath(page.Path)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// 缓存结果
 	if s.rdb != nil {
-		cacheKey := "page:blocks:" + workspaceID.String() + ":" + slug
+		cacheKey := "page:blocks:" + slug
 		data, _ := json.Marshal(map[string]interface{}{
 			"page":   page,
 			"blocks": blocks,
@@ -76,8 +76,8 @@ func (s *BlockService) GetPageBySlug(workspaceID uuid.UUID, slug string) (*model
 }
 
 // GetPages 获取页面列表
-func (s *BlockService) GetPages(workspaceID uuid.UUID, includeUnpublished bool) ([]models.Block, error) {
-	return s.blockRepo.FindPages(workspaceID, includeUnpublished)
+func (s *BlockService) GetPages(includeUnpublished bool) ([]models.Block, error) {
+	return s.blockRepo.FindPages(includeUnpublished)
 }
 
 // CreatePage 创建页面
@@ -91,23 +91,19 @@ func (s *BlockService) UpdatePage(block *models.Block) error {
 }
 
 // DeletePage 删除页面（软删除）
-func (s *BlockService) DeletePage(workspaceID, pageID uuid.UUID) error {
-	block, err := s.blockRepo.FindByID(workspaceID, pageID)
+func (s *BlockService) DeletePage(pageID uuid.UUID) error {
+	block, err := s.blockRepo.FindByID(pageID)
 	if err != nil {
 		return err
 	}
 
-	return s.blockRepo.SoftDeleteByPath(workspaceID, block.Path)
+	return s.blockRepo.SoftDeleteByPath(block.Path)
 }
 
 // SyncBlocks 增量同步 Block 数据
-func (s *BlockService) SyncBlocks(workspaceID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
+func (s *BlockService) SyncBlocks(updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
 	// 批量 UPSERT
 	if len(updatedBlocks) > 0 {
-		// 确保所有 Block 都属于正确的 workspace
-		for i := range updatedBlocks {
-			updatedBlocks[i].WorkspaceID = workspaceID
-		}
 		if err := s.blockRepo.Upsert(updatedBlocks); err != nil {
 			return err
 		}
@@ -115,7 +111,7 @@ func (s *BlockService) SyncBlocks(workspaceID uuid.UUID, updatedBlocks []models.
 
 	// 软删除
 	if len(deletedIDs) > 0 {
-		if err := s.blockRepo.SoftDelete(workspaceID, deletedIDs); err != nil {
+		if err := s.blockRepo.SoftDelete(deletedIDs); err != nil {
 			return err
 		}
 	}
@@ -125,7 +121,7 @@ func (s *BlockService) SyncBlocks(workspaceID uuid.UUID, updatedBlocks []models.
 		ctx := context.Background()
 		for _, block := range updatedBlocks {
 			if block.Type == "page" && block.Slug != nil {
-				cacheKey := "page:blocks:" + workspaceID.String() + ":" + *block.Slug
+				cacheKey := "page:blocks:" + *block.Slug
 				s.rdb.Del(ctx, cacheKey)
 			}
 		}
@@ -136,6 +132,6 @@ func (s *BlockService) SyncBlocks(workspaceID uuid.UUID, updatedBlocks []models.
 
 // GetChildren 获取某个节点的直接子节点（侧边栏使用）
 // parentID 为 nil 时返回根节点
-func (s *BlockService) GetChildren(workspaceID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
-	return s.blockRepo.FindChildren(workspaceID, parentID)
+func (s *BlockService) GetChildren(parentID *uuid.UUID) ([]models.Block, error) {
+	return s.blockRepo.FindChildren(parentID)
 }

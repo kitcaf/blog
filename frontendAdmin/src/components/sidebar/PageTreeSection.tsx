@@ -8,6 +8,7 @@ import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText, Ch
 import { useBlockStore } from '@/store/useBlockStore';
 import { SidebarItem } from './SidebarItem';
 import type { PageTreeNode } from '@/api/blocks';
+import { ActionMenuIcons, type ActionMenuItem } from '@/components/ui/ActionMenu';
 
 interface PageTreeSectionProps {
   tree: PageTreeNode[];
@@ -228,27 +229,65 @@ const PageTreeItem = React.memo(function PageTreeItem({
     return <FileText size={16} className="text-app-fg-light" />;
   };
 
-  // 悬停操作按钮（文件夹显示新建按钮）
-  const hoverActions = node.type === 'folder' && isHovered ? (
-    <div className="flex items-center gap-0.5">
-      <button
-        onClick={handleCreateFolder}
-        className="p-0.5 hover:bg-app-hover rounded transition-colors"
-        aria-label="新建子文件夹"
-        title="新建子文件夹"
-      >
-        <Folder size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
-      </button>
-      <button
-        onClick={handleCreatePage}
-        className="p-0.5 hover:bg-app-hover rounded transition-colors"
-        aria-label="新建子页面"
-        title="新建子页面"
-      >
-        <Plus size={12} className="text-app-fg-light hover:text-app-fg-deeper" />
-      </button>
-    </div>
-  ) : undefined;
+  // 构建操作菜单项
+  const actionItems: ActionMenuItem[] = React.useMemo(() => {
+    const items: ActionMenuItem[] = [];
+
+    // 对于文件夹，支持新建子项
+    if (node.type === 'folder') {
+      items.push({
+        id: 'create-folder',
+        label: '新建文件夹',
+        icon: ActionMenuIcons.createFolder,
+        onClick: handleCreateFolder,
+      });
+      items.push({
+        id: 'create-page',
+        label: '新建页面',
+        icon: ActionMenuIcons.createPage,
+        onClick: handleCreatePage,
+      });
+    }
+
+    // 通用操作：重命名
+    items.push({
+      id: 'rename',
+      label: '重命名',
+      icon: ActionMenuIcons.rename,
+      shortcut: 'F2',
+      divided: node.type === 'folder', // 如果上面有新建按钮，这里加上分割线
+      onClick: () => {
+        // TODO: Implement rename
+        console.log('Rename clicked for', node.id);
+      },
+    });
+
+    // 通用操作：复制链接
+    items.push({
+      id: 'copy-link',
+      label: '复制链接',
+      icon: ActionMenuIcons.copyLink,
+      onClick: () => {
+        // TODO: Implement copy link
+        console.log('Copy link clicked for', node.id);
+      },
+    });
+
+    // 通用操作：删除
+    items.push({
+      id: 'delete',
+      label: '删除',
+      icon: ActionMenuIcons.trash,
+      destructive: true,
+      divided: true,
+      onClick: () => {
+        // TODO: Implement delete
+        console.log('Delete clicked for', node.id);
+      },
+    });
+
+    return items;
+  }, [node.type, node.id, handleCreateFolder, handleCreatePage]);
 
   // 右侧状态指示器（仅 page 类型显示发布状态）
   const rightIndicator = node.type === 'page' && node.isPublished ? (
@@ -264,7 +303,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
         depth={depth}
         hasChildren={hasChildren}
         isExpanded={isExpanded}
-        hoverActions={hoverActions}
+        actionItems={actionItems}
         rightIndicator={rightIndicator}
         onClick={handleClick}
         onChevronClick={handleChevronClick}

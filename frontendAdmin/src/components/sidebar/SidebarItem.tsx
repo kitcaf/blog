@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
+import { ActionMenu, type ActionMenuItem } from '@/components/ui/ActionMenu';
 
 interface SidebarItemProps {
   /** 图标（React 节点或 emoji） */
@@ -26,8 +27,8 @@ interface SidebarItemProps {
   hasChildren?: boolean;
   /** 是否展开 */
   isExpanded?: boolean;
-  /** 悬停时显示的操作按钮 */
-  hoverActions?: React.ReactNode;
+  /** 悬停时显示的操作菜单项，不再传递 ReactNode，而是传递标准化对象数组 */
+  actionItems?: ActionMenuItem[];
   /** 右侧状态指示器（如发布状态点） */
   rightIndicator?: React.ReactNode;
   /** 点击事件 */
@@ -47,13 +48,15 @@ export const SidebarItem = React.memo(function SidebarItem({
   depth = 0,
   hasChildren = false,
   isExpanded = false,
-  hoverActions,
+  actionItems,
   rightIndicator,
   onClick,
   onChevronClick,
   onMouseEnter,
   onMouseLeave,
 }: SidebarItemProps) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
   // 一级项使用更大的字体和间距
   const isTopLevel = depth === 0;
   const textSize = isTopLevel ? 'text-[15px]' : 'text-sm';
@@ -65,14 +68,24 @@ export const SidebarItem = React.memo(function SidebarItem({
   // 即：8px - 24px = -16px，但我们用 pl-2 (8px) 然后箭头用负 margin 来实现
   const paddingLeft = isTopLevel ? 8 : 8 + depth * 8;
 
+  const handleMouseEnter = () => {
+    setIsHovered(true);
+    onMouseEnter?.();
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+    onMouseLeave?.();
+  };
+
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={`
         group flex items-center gap-2 px-2 ${verticalPadding} rounded-md cursor-pointer
         ${textSize} font-medium transition-colors select-none
@@ -109,15 +122,22 @@ export const SidebarItem = React.memo(function SidebarItem({
       {/* 标题：自动截断 */}
       <span className="flex-1 truncate min-w-0">{label}</span>
 
-      {/* 悬停操作按钮 */}
-      {hoverActions && (
-        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-          {hoverActions}
+      {/* 悬停操作菜单 */}
+      {actionItems && actionItems.length > 0 && (
+        <div 
+          className={`shrink-0 transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ActionMenu 
+            items={actionItems} 
+            align="end" 
+            menuWidth="w-56"
+          />
         </div>
       )}
 
       {/* 右侧状态指示器 */}
-      {rightIndicator && !hoverActions && (
+      {rightIndicator && (!actionItems || actionItems.length === 0) && (
         <div className="shrink-0">
           {rightIndicator}
         </div>

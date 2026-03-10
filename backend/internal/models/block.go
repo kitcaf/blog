@@ -91,7 +91,8 @@ type Block struct {
 	// 格式：用户输入的有意义短语 + 短随机哈希（例如：my-first-post-a3f2）
 	// 用于 SEO 友好的 URL：/blog/my-first-post-a3f2
 	// 使用部分唯一索引：只对非 NULL 值生效，避免多个 NULL 值冲突
-	Slug *string `gorm:"type:varchar(255);uniqueIndex:idx_blocks_slug_unique,where:slug IS NOT NULL" json:"slug,omitempty"`
+	// 只需要修改这里：在 where 条件里补上 deleted_at IS NULL
+	Slug *string `gorm:"type:varchar(255);uniqueIndex:idx_blocks_slug_unique,where:deleted_at IS NULL AND slug IS NOT NULL" json:"slug,omitempty"`
 
 	// 发布时间控制：NULL 表示草稿，非 NULL 表示已发布
 	PublishedAt *time.Time `gorm:"type:timestamptz;index" json:"published_at,omitempty"`

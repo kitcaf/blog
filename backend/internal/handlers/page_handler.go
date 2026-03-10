@@ -1,11 +1,17 @@
 package handlers
 
 import (
-	"net/http"
-
 	"blog-backend/internal/models"
 	"blog-backend/internal/services"
 	"blog-backend/pkg/response"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -109,6 +115,19 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 		block.Path = parent.Path + block.ID.String() + "/"
 	}
 
+	// 如果是 page 类型，自动生成 slug
+	if block.Type == "page" && block.Slug == nil {
+		// 从 properties 中提取 title
+		var props map[string]interface{}
+		if err := json.Unmarshal(block.Properties, &props); err == nil {
+			if title, ok := props["title"].(string); ok && title != "" {
+				// 生成 slug：标题 + 6位随机哈希
+				slug := generateSlugFromTitle(title, 6)
+				block.Slug = &slug
+			}
+		}
+	}
+
 	if err := h.blockService.CreatePage(&block); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to create page: "+err.Error())
 		return
@@ -160,4 +179,51 @@ func (h *PageHandler) DeletePage(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "删除成功"})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 辅助函数：Slug 生成
+// ─────────────────────────────────────────────────────────────────────────────
+
+// generateSlugFromTitle 根据标题生成 slug
+// 格式：标题转换 + 指定长度的随机哈希
+func generateSlugFromTitle(title string, hashLength int) string {
+	// 1. 转小写
+	slug := strings.ToLower(title)
+
+	// 2. 替换空格和特殊字符为连字符
+	slug = regexp.MustCompile(`[^\w\u4e00-\u9fa5]+`).ReplaceAllString(slug, "-")
+
+	// 3. 移除首尾的连字符
+	slug = strings.Trim(slug, "-")
+
+	// 4. 限制长度（保留前50个字符）
+	if len(slug) > 50 {
+		slug = slug[:50]
+		// 确保不在单词中间截断
+		if lastDash := strings.LastIndex(slug, "-"); lastDash > 30 {
+			slug = slug[:lastDash]
+		}
+	}
+
+	// 5. 添加指定长度的随机哈希避免冲突
+	randomHash := generateRandomHash(hashLength)
+	if slug == "" {
+		// 如果标题为空或全是特殊字符，使用 "page" 前缀
+		slug = "page-" + randomHash
+	} else {
+		slug = slug + "-" + randomHash
+	}
+
+	return slug
+}
+
+// generateRandomHash 生成指定长度的随机十六进制字符串
+func generateRandomHash(length int) string {
+	bytes := make([]byte, (length+1)/2)
+	if _, err := rand.Read(bytes); err != nil {
+		// 降级方案：使用时间戳的哈希
+		return fmt.Sprintf("%0*x", length, time.Now().UnixNano()%1000000)[:length]
+	}
+	return hex.EncodeToString(bytes)[:length]
 }

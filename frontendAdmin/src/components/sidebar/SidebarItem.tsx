@@ -63,7 +63,7 @@ export const SidebarItem = React.memo(function SidebarItem({
   // 一级项图标对齐"空间"标题（px-2 = 8px）
   // 箭头宽度 16px + gap 8px = 24px，所以一级项 paddingLeft 需要减去 24px
   // 即：8px - 24px = -16px，但我们用 pl-2 (8px) 然后箭头用负 margin 来实现
-  const paddingLeft = isTopLevel ? 8 : 8 + depth * 16;
+  const paddingLeft = isTopLevel ? 8 : 8 + depth * 8;
 
   return (
     <div

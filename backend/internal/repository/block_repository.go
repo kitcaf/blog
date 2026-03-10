@@ -2,6 +2,8 @@ package repository
 
 import (
 	"blog-backend/internal/models"
+	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -121,20 +123,66 @@ func (r *BlockRepository) SoftDeleteByPath(userID uuid.UUID, path string) error 
 }
 
 // FindChildren 查询某个节点的直接子节点（第一层，带用户隔离）
-// parentID 为 nil 时查询根节点
-func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
+// 返回顺序：按照父节点的 content_ids 字段中的顺序排列
+func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID uuid.UUID) ([]models.Block, error) {
 	var blocks []models.Block
 	query := r.db.Where("deleted_at IS NULL AND created_by = ?", userID).
-		Where("type IN ?", []string{"page", "folder"})
+		Where("type IN ?", []string{"page", "folder"}).
+		Where("parent_id = ?", parentID)
 
-	if parentID == nil {
-		// 查询根节点（parent_id IS NULL）
-		query = query.Where("parent_id IS NULL")
-	} else {
-		// 查询指定父节点的子节点
-		query = query.Where("parent_id = ?", *parentID)
+	err := query.Find(&blocks).Error
+	if err != nil {
+		return nil, err
 	}
 
-	err := query.Order("created_at ASC").Find(&blocks).Error
-	return blocks, err
+	// 查询父节点获取 content_ids
+	var parent models.Block
+	if err := r.db.Where("id = ? AND created_by = ?", parentID, userID).First(&parent).Error; err != nil {
+		// 如果父节点不存在，按 created_at 排序返回
+		query.Order("created_at ASC").Find(&blocks)
+		return blocks, nil
+	}
+
+	// 解析父节点的 content_ids
+	var contentIDs []string
+	if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err != nil || len(contentIDs) == 0 {
+		// 如果 content_ids 为空或解析失败，按 created_at 排序
+		query.Order("created_at ASC").Find(&blocks)
+		return blocks, nil
+	}
+
+	// 按照 content_ids 的顺序排序 blocks
+	blockMap := make(map[string]models.Block)
+	for _, block := range blocks {
+		blockMap[block.ID.String()] = block
+	}
+
+	sortedBlocks := make([]models.Block, 0, len(blocks))
+	for _, id := range contentIDs {
+		if block, exists := blockMap[id]; exists {
+			sortedBlocks = append(sortedBlocks, block)
+			delete(blockMap, id) // 标记已处理
+		}
+	}
+
+	// 将不在 content_ids 中的 block 追加到末尾（按 created_at 排序）
+	remainingBlocks := make([]models.Block, 0, len(blockMap))
+	for _, block := range blockMap {
+		remainingBlocks = append(remainingBlocks, block)
+	}
+	// 对剩余的 blocks 按 created_at 排序
+	sort.Slice(remainingBlocks, func(i, j int) bool {
+		return remainingBlocks[i].CreatedAt.Before(remainingBlocks[j].CreatedAt)
+	})
+	sortedBlocks = append(sortedBlocks, remainingBlocks...)
+
+	return sortedBlocks, nil
+}
+
+// FindRootBlock 查询用户的 root 类型 block
+func (r *BlockRepository) FindRootBlock(userID uuid.UUID) (*models.Block, error) {
+	var block models.Block
+	err := r.db.Where("type = ? AND created_by = ? AND deleted_at IS NULL", "root", userID).
+		First(&block).Error
+	return &block, err
 }

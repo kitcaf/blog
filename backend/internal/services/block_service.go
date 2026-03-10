@@ -142,7 +142,44 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 }
 
 // GetChildren 获取某个节点的直接子节点（侧边栏使用，带用户隔离）
-// parentID 为 nil 时返回根节点
 func (s *BlockService) GetChildren(userID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
-	return s.blockRepo.FindChildren(userID, parentID)
+	return s.blockRepo.FindChildren(userID, *parentID)
+}
+
+// GetOrCreateRootBlock 获取或创建用户的 root block
+func (s *BlockService) GetOrCreateRootBlock(userID uuid.UUID) (*models.Block, error) {
+	// 先尝试查询
+	rootBlock, err := s.blockRepo.FindRootBlock(userID)
+	if err == nil {
+		return rootBlock, nil
+	}
+
+	// 不存在则创建
+	return s.CreateRootBlockInternal(userID)
+}
+
+// CreateRootBlock 为用户创建 root block（注册时调用）
+func (s *BlockService) CreateRootBlock(userID uuid.UUID) error {
+	_, err := s.CreateRootBlockInternal(userID)
+	return err
+}
+
+// CreateRootBlockInternal 内部方法：创建 root block
+func (s *BlockService) CreateRootBlockInternal(userID uuid.UUID) (*models.Block, error) {
+	rootID := uuid.New()
+	rootBlock := &models.Block{
+		ID:         rootID,
+		ParentID:   nil,
+		Path:       "/" + rootID.String() + "/",
+		Type:       "root",
+		ContentIDs: json.RawMessage("[]"),
+		Properties: json.RawMessage("{}"),
+		CreatedBy:  &userID,
+	}
+
+	if err := s.blockRepo.Create(rootBlock); err != nil {
+		return nil, err
+	}
+
+	return rootBlock, nil
 }

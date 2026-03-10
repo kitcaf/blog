@@ -86,6 +86,13 @@ func (h *PageHandler) GetPageBySlug(c *gin.Context) {
 }
 
 // CreatePage 创建页面或文件夹类型的block
+// 数据库操作步骤：
+// 1. 设置审计字段（created_by, last_edited_by）
+// 2. 如果 parent_id 为 null，查询用户的 root block 并设置为父节点
+// 3. 计算物化路径（path）：root 节点 /{root_id}/，子节点 {parent.path}{id}/
+// 4. 为 page 类型自动生成 slug（标题 + 6位随机哈希）
+// 5. 插入新 block 到数据库
+// 6. 更新父节点的 content_ids 字段（将新 block 的 id 追加到父节点的 content_ids 数组）
 func (h *PageHandler) CreatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -95,27 +102,36 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 		return
 	}
 
-	// 设置审计字段
+	// 步骤1：设置审计字段
 	block.CreatedBy = &userID
 	block.LastEditedBy = &userID
 
-	// 计算正确的物化路径
+	// 步骤2：如果 parent_id 为 null，使用用户的 root block
+	var parent *models.Block
 	if block.ParentID == nil {
-		// 根节点：path = /{id}/
-		block.Path = "/" + block.ID.String() + "/"
+		// 查询用户的 root block
+		rootBlock, err := h.blockService.GetOrCreateRootBlock(userID)
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, "Failed to get root block: "+err.Error())
+			return
+		}
+		block.ParentID = &rootBlock.ID
+		parent = rootBlock
 	} else {
-		// 子节点：需要查询父节点的 path
-		// 注意：父节点可能是 folder 或 page 类型，都需要支持
-		parent, err := h.blockService.GetPageByID(userID, *block.ParentID)
+		// 查询指定的父节点
+		var err error
+		parent, err = h.blockService.GetPageByID(userID, *block.ParentID)
 		if err != nil {
 			response.Error(c, http.StatusBadRequest, "Parent not found: "+err.Error())
 			return
 		}
-		// path = {parent.path}{id}/
-		block.Path = parent.Path + block.ID.String() + "/"
 	}
 
-	// 如果是 page 类型，自动生成 slug
+	// 步骤3：计算物化路径
+	// path = {parent.path}{id}/
+	block.Path = parent.Path + block.ID.String() + "/"
+
+	// 步骤4：为 page 类型自动生成 slug
 	if block.Type == "page" && block.Slug == nil {
 		// 从 properties 中提取 title
 		var props map[string]interface{}
@@ -128,8 +144,33 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 		}
 	}
 
+	// 步骤5：插入新 block 到数据库
 	if err := h.blockService.CreatePage(&block); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to create page: "+err.Error())
+		return
+	}
+
+	// 步骤6：更新父节点的 content_ids 字段
+	// 解析父节点的 content_ids
+	var contentIDs []string
+	if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err != nil {
+		contentIDs = []string{}
+	}
+
+	// 追加新 block 的 id
+	contentIDs = append(contentIDs, block.ID.String())
+
+	// 序列化回 JSON
+	newContentIDs, err := json.Marshal(contentIDs)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update parent content_ids: "+err.Error())
+		return
+	}
+
+	// 更新父节点
+	parent.ContentIDs = newContentIDs
+	if err := h.blockService.UpdatePage(userID, parent); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update parent: "+err.Error())
 		return
 	}
 
@@ -137,15 +178,23 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 }
 
 // UpdatePage 更新页面
+// 数据库操作步骤：
+// 1. 验证 page ID 格式
+// 2. 解析请求体中的 block 数据
+// 3. 设置 last_edited_by 审计字段
+// 4. 如果修改了 title，重新生成 slug（仅 page 类型）
+// 5. 更新数据库中的 block 记录
 func (h *PageHandler) UpdatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
+	// 步骤1：验证 page ID
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
 	}
 
+	// 步骤2：解析请求体
 	var block models.Block
 	if err := c.ShouldBindJSON(&block); err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
@@ -153,8 +202,25 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 	}
 
 	block.ID = id
+
+	// 步骤3：设置审计字段
 	block.LastEditedBy = &userID
 
+	// 步骤4：如果是 page 类型且修改了 title，重新生成 slug
+	if block.Type == "page" {
+		var props map[string]interface{}
+		if err := json.Unmarshal(block.Properties, &props); err == nil {
+			if title, ok := props["title"].(string); ok && title != "" {
+				// 如果 slug 为空或需要更新，重新生成
+				if block.Slug == nil || *block.Slug == "" {
+					slug := generateSlugFromTitle(title, 6)
+					block.Slug = &slug
+				}
+			}
+		}
+	}
+
+	// 步骤5：更新数据库
 	if err := h.blockService.UpdatePage(userID, &block); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to update page")
 		return
@@ -164,18 +230,56 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 }
 
 // DeletePage 删除页面
+// 数据库操作步骤：
+// 1. 验证 page ID 格式
+// 2. 查询要删除的 block（验证权限和存在性）
+// 3. 软删除该 block 及其所有子孙节点（通过 path LIKE 匹配）
+// 4. 从父节点的 content_ids 中移除该 block 的 id
 func (h *PageHandler) DeletePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
+	// 步骤1：验证 page ID
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, "Invalid page ID")
 		return
 	}
 
+	// 步骤2：查询要删除的 block
+	block, err := h.blockService.GetPageByID(userID, id)
+	if err != nil {
+		response.Error(c, http.StatusNotFound, "Page not found")
+		return
+	}
+
+	// 步骤3：软删除该 block 及其子孙节点
 	if err := h.blockService.DeletePage(userID, id); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to delete page")
 		return
+	}
+
+	// 步骤4：从父节点的 content_ids 中移除
+	if block.ParentID != nil {
+		parent, err := h.blockService.GetPageByID(userID, *block.ParentID)
+		if err == nil {
+			// 解析父节点的 content_ids
+			var contentIDs []string
+			if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err == nil {
+				// 移除被删除的 block id
+				newContentIDs := []string{}
+				for _, cid := range contentIDs {
+					if cid != id.String() {
+						newContentIDs = append(newContentIDs, cid)
+					}
+				}
+
+				// 更新父节点
+				if newContentIDsJSON, err := json.Marshal(newContentIDs); err == nil {
+					parent.ContentIDs = newContentIDsJSON
+					h.blockService.UpdatePage(userID, parent)
+				}
+			}
+		}
 	}
 
 	response.Success(c, gin.H{"message": "删除成功"})

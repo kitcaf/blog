@@ -11,11 +11,15 @@ import (
 )
 
 type AuthHandler struct {
-	authService *services.AuthService
+	authService  *services.AuthService
+	blockService *services.BlockService
 }
 
-func NewAuthHandler(authService *services.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *services.AuthService, blockService *services.BlockService) *AuthHandler {
+	return &AuthHandler{
+		authService:  authService,
+		blockService: blockService,
+	}
 }
 
 type RegisterRequest struct {
@@ -25,6 +29,9 @@ type RegisterRequest struct {
 }
 
 // Register 用户注册
+// 数据库操作步骤：
+// 1. 创建用户账号
+// 2. 自动创建该用户的 root 类型 block（用于维护根目录的 content_ids）
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -32,10 +39,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// 步骤1：创建用户
 	user, err := h.authService.Register(req.Username, req.Email, req.Password)
 	if err != nil {
 		response.HandleError(c, err)
 		return
+	}
+
+	// 步骤2：为新用户创建 root 类型 block
+	if err := h.blockService.CreateRootBlock(user.ID); err != nil {
+		// root block 创建失败不影响注册流程，记录日志即可
+		// 用户首次使用时会自动创建
 	}
 
 	response.Success(c, gin.H{

@@ -12,14 +12,24 @@ type Block struct {
 	// 身份锚点：由前端 Tiptap 生成的 UUID
 	ID uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 
-	// 父级指针：顶层文章(Page)的 parent_id 为 NULL
+	// 父级指针：树形结构的核心字段
+	// - root 类型：parent_id = NULL（每个用户有且仅有一个 root 节点）
+	// - 根目录的 folder/page：parent_id = root_id
+	// - 其他所有节点：parent_id = 父节点的 id
 	ParentID *uuid.UUID `gorm:"type:uuid;index:idx_blocks_parent_id" json:"parent_id,omitempty"`
 
-	// 物化路径：格式 '/{page_id}/{parent_id}/{id}/'
-	// 使用 `path LIKE '/page_id/%'` 即可 O(1) 捞出整篇文章所有嵌套区块
+	// 物化路径：格式 '/{root_id}/{folder_id}/{page_id}/{block_id}/'
+	// - root 类型：path = /{root_id}/
+	// - 根目录节点：path = /{root_id}/{id}/
+	// - 子节点：path = {parent.path}{id}/
+	// 使用 `path LIKE '/root_id/%'` 即可 O(1) 查询用户的所有内容
 	Path string `gorm:"type:varchar(1000);not null;index:idx_blocks_path,type:btree,option:varchar_pattern_ops" json:"path"`
 
-	// 区块类型：'page', 'paragraph', 'heading', 'imageBlock', 'codeBlock' 等
+	// 区块类型：
+	// - 'root'：每个用户的根容器（自动创建，维护根目录的 content_ids 排序）
+	// - 'folder'：文件夹容器（可嵌套）
+	// - 'page'：页面容器（可包含内容块）
+	// - 'paragraph', 'heading', 'imageBlock', 'codeBlock' 等：内容块
 	Type string `gorm:"type:varchar(100);not null;index" json:"type"`
 
 	// 子节点排序数组：拖拽排序时仅更新父节点的此字段

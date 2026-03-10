@@ -40,7 +40,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	blockService := services.NewBlockService(blockRepo, rdb)
 
 	// 初始化 handlers
-	authHandler := handlers.NewAuthHandler(authService)
+	authHandler := handlers.NewAuthHandler(authService, blockService)
 	blockHandler := handlers.NewBlockHandler(blockService)
 	pageHandler := handlers.NewPageHandler(blockService)
 

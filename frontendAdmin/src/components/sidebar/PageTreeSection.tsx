@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText } from 'lucide-react';
+import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText, ChevronRight } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { SidebarItem } from './SidebarItem';
 import type { PageTreeNode } from '@/api/blocks';
@@ -141,7 +141,10 @@ const PageTreeItem = React.memo(function PageTreeItem({
 }: PageTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const hasChildren = node.children.length > 0;
+  const [isLoadingChildren, setIsLoadingChildren] = useState(false);
+  const [loadedChildren, setLoadedChildren] = useState<PageTreeNode[]>([]);
+  const hasChildren = node.children.length > 0 || loadedChildren.length > 0;
+  const displayChildren = loadedChildren.length > 0 ? loadedChildren : node.children;
 
   const activePageId = useBlockStore((s) => s.activePageId);
   const setActivePage = useBlockStore((s) => s.setActivePage);
@@ -159,11 +162,26 @@ const PageTreeItem = React.memo(function PageTreeItem({
   }, [node.id, node.type, hasChildren, setActivePage]);
 
   const handleChevronClick = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       e.stopPropagation();
+      
+      // 如果是文件夹且未加载过子节点，则懒加载
+      if (node.type === 'folder' && !isExpanded && loadedChildren.length === 0 && node.children.length === 0) {
+        setIsLoadingChildren(true);
+        try {
+          const { fetchChildren } = await import('@/api/blocks');
+          const { tree } = await fetchChildren(node.id);
+          setLoadedChildren(tree);
+        } catch (error) {
+          console.error('加载子节点失败:', error);
+        } finally {
+          setIsLoadingChildren(false);
+        }
+      }
+      
       setIsExpanded((prev) => !prev);
     },
-    [],
+    [node.id, node.type, node.children.length, isExpanded, loadedChildren.length],
   );
 
   const handleCreateFolder = useCallback(
@@ -182,15 +200,35 @@ const PageTreeItem = React.memo(function PageTreeItem({
     [node.id, onCreatePage],
   );
 
-  // 获取默认图标（统一尺寸 16px）
-  const getDefaultIcon = () => {
+  // 获取图标（统一尺寸 16px）
+  // 只有文件夹类型悬停时才显示展开箭头
+  const getIcon = () => {
+    // 文件夹类型 + 悬停时：显示展开箭头
+    if (node.type === 'folder' && isHovered) {
+      if (isLoadingChildren) {
+        return <Loader2 size={16} className="text-app-fg-light animate-spin" />;
+      }
+      return (
+        <ChevronRight 
+          size={16} 
+          className={`text-app-fg-light transition-transform cursor-pointer ${isExpanded ? 'rotate-90' : ''}`}
+          onClick={handleChevronClick}
+        />
+      );
+    }
+    
+    // 非悬停或非文件夹：显示默认图标
+    if (node.icon) {
+      return node.icon;
+    }
+    
     if (node.type === 'folder') {
       return <FolderIcon size={16} className="text-app-fg-light" />;
     }
     return <FileText size={16} className="text-app-fg-light" />;
   };
 
-  // 悬停操作按钮（仅文件夹显示）
+  // 悬停操作按钮（文件夹显示新建按钮）
   const hoverActions = node.type === 'folder' && isHovered ? (
     <div className="flex items-center gap-0.5">
       <button
@@ -220,7 +258,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   return (
     <div>
       <SidebarItem
-        icon={node.icon || getDefaultIcon()}
+        icon={getIcon()}
         label={node.title}
         active={isActive}
         depth={depth}
@@ -235,17 +273,27 @@ const PageTreeItem = React.memo(function PageTreeItem({
       />
 
       {/* 子节点（展开时渲染） */}
-      {hasChildren && isExpanded && (
+      {isExpanded && (
         <div>
-          {node.children.map((child) => (
-            <PageTreeItem 
-              key={child.id} 
-              node={child} 
-              depth={depth + 1}
-              onCreateFolder={onCreateFolder}
-              onCreatePage={onCreatePage}
-            />
-          ))}
+          {displayChildren.length > 0 ? (
+            displayChildren.map((child) => (
+              <PageTreeItem 
+                key={child.id} 
+                node={child} 
+                depth={depth + 1}
+                onCreateFolder={onCreateFolder}
+                onCreatePage={onCreatePage}
+              />
+            ))
+          ) : (
+            // 空状态提示
+            <div 
+              className="text-xs text-app-fg-light py-1.5 px-2"
+              style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}
+            >
+              暂无内容
+            </div>
+          )}
         </div>
       )}
     </div>

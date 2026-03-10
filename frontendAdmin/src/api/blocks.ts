@@ -150,6 +150,7 @@ export async function fetchChildren(parentId?: string | null): Promise<{
     return { children, tree };
   }
 
+  // 真实 API 模式
   const params = parentId ? { parent_id: parentId } : {};
   const { data } = await apiClient.get<DbBlock[]>(
     `/admin/blocks/tree`,
@@ -162,13 +163,36 @@ export async function fetchChildren(parentId?: string | null): Promise<{
 }
 
 /**
- * 兼容旧接口：获取完整目录树
+ * 获取完整目录树（两次查询避免渲染 root 容器）
+ * 
+ * 查询流程：
+ * 1. 第一次查询 parent_id=null：获取用户的 root block（不渲染）
+ * 2. 第二次查询 parent_id=root_id：获取根目录下的真正一级目录
+ * 
+ * 这样前端只渲染真正的业务节点（folder/page），不渲染 root 容器
  */
 export async function fetchPageTree(): Promise<{
   flatPages: BlockData[];
   tree: PageTreeNode[];
 }> {
-  const { children, tree } = await fetchChildren(null);
+  if (USE_MOCK) {
+    // Mock 模式：直接返回根节点
+    const { children, tree } = await fetchChildren(null);
+    return { flatPages: children, tree };
+  }
+
+  // 第一次查询：获取 root block（parent_id=null）
+  const firstQuery = await fetchChildren(null);
+  
+  // 如果没有返回任何节点，说明用户还没有 root block，返回空
+  if (firstQuery.children.length === 0) {
+    return { flatPages: [], tree: [] };
+  }
+
+  // 第二次查询：获取 root block 的子节点（真正的一级目录）
+  const rootBlockId = firstQuery.children[0].id;
+  const { children, tree } = await fetchChildren(rootBlockId);
+  
   return { flatPages: children, tree };
 }
 
@@ -242,36 +266,24 @@ export interface CreatePageParams {
  * 创建新文件夹
  * 
  * 路径计算规则（物化路径）：
- * - 根节点：path = `/{id}/`
- * - 子节点：path = `{parent.path}{id}/`
+ * - 根目录节点：parent_id = null，后端会自动使用用户的 root block 作为父节点
+ * - 子节点：parent_id = 父节点 ID
  * 
- * 示例：
- * - f1 (root): /f1/
- * - f2 (child of f1): /f1/f2/
- * - p1 (page in f2): /f1/f2/p1/
+ * 后端会自动计算正确的 path：
+ * - root block: /{root_id}/
+ * - 根目录节点: /{root_id}/{id}/
+ * - 子节点: {parent.path}{id}/
  * 
  * @param params - 文件夹参数
  * @returns 创建的文件夹 Block
  */
 export async function createFolder(params: CreateFolderParams): Promise<BlockData> {
   const id = crypto.randomUUID();
-  
-  // 计算 path：需要先获取父节点的 path
-  let path: string;
-  if (!params.parentId) {
-    // 根节点
-    path = `/${id}/`;
-  } else {
-    // 子节点：需要获取父节点的 path
-    // 注意：这里简化处理，实际应该先查询父节点
-    // 后端会在创建时自动计算正确的 path
-    path = `/${params.parentId}/${id}/`;
-  }
 
   const folderBlock: DbBlock = {
     id,
-    parent_id: params.parentId || null,
-    path, // 后端应该重新计算正确的 path
+    parent_id: params.parentId || null, // null 时后端会自动使用 root block
+    path: '', // 后端会自动计算正确的 path
     type: 'folder',
     content_ids: [],
     properties: {
@@ -302,23 +314,11 @@ export async function createFolder(params: CreateFolderParams): Promise<BlockDat
  */
 export async function createPage(params: CreatePageParams): Promise<BlockData> {
   const id = crypto.randomUUID();
-  
-  // 计算 path：需要先获取父节点的 path
-  let path: string;
-  if (!params.parentId) {
-    // 根节点
-    path = `/${id}/`;
-  } else {
-    // 子节点：需要获取父节点的 path
-    // 注意：这里简化处理，实际应该先查询父节点
-    // 后端会在创建时自动计算正确的 path
-    path = `/${params.parentId}/${id}/`;
-  }
 
   const pageBlock: DbBlock = {
     id,
-    parent_id: params.parentId || null,
-    path, // 后端应该重新计算正确的 path
+    parent_id: params.parentId || null, // null 时后端会自动使用 root block
+    path: '', // 后端会自动计算正确的 path
     type: 'page',
     content_ids: [],
     properties: {

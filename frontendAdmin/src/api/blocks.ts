@@ -162,15 +162,6 @@ export async function fetchChildren(parentId?: string | null): Promise<{
   return { children, tree };
 }
 
-/**
- * 获取完整目录树（两次查询避免渲染 root 容器）
- * 
- * 查询流程：
- * 1. 第一次查询 parent_id=null：获取用户的 root block（不渲染）
- * 2. 第二次查询 parent_id=root_id：获取根目录下的真正一级目录
- * 
- * 这样前端只渲染真正的业务节点（folder/page），不渲染 root 容器
- */
 export async function fetchPageTree(): Promise<{
   flatPages: BlockData[];
   tree: PageTreeNode[];
@@ -181,17 +172,9 @@ export async function fetchPageTree(): Promise<{
     return { flatPages: children, tree };
   }
 
-  // 第一次查询：获取 root block（parent_id=null）
-  const firstQuery = await fetchChildren(null);
-  
-  // 如果没有返回任何节点，说明用户还没有 root block，返回空
-  if (firstQuery.children.length === 0) {
-    return { flatPages: [], tree: [] };
-  }
-
-  // 第二次查询：获取 root block 的子节点（真正的一级目录）
-  const rootBlockId = firstQuery.children[0].id;
-  const { children, tree } = await fetchChildren(rootBlockId);
+  // 真实环境：后端 GetTree 在 parent_id=null 时会自动查询用户的 root block
+  // 并返回 root block 的子节点（真正的一级目录），所以只需要查询一次
+  const { children, tree } = await fetchChildren(null);
   
   return { flatPages: children, tree };
 }

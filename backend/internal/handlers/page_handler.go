@@ -131,8 +131,8 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 	// path = {parent.path}{id}/
 	block.Path = parent.Path + block.ID.String() + "/"
 
-	// 步骤4：为 page 类型自动生成 slug
-	if block.Type == "page" && block.Slug == nil {
+	// 步骤4：为 page | block 类型自动生成 slug
+	if (block.Type == "page" || block.Type == "folder") && block.Slug == nil {
 		// 从 properties 中提取 title
 		var props map[string]interface{}
 		if err := json.Unmarshal(block.Properties, &props); err == nil {

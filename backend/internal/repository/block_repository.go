@@ -4,6 +4,7 @@ import (
 	"blog-backend/internal/models"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -193,7 +194,7 @@ func removeIDFromJSON(raw json.RawMessage, idToRemove uuid.UUID) json.RawMessage
 	if err := json.Unmarshal(raw, &ids); err != nil {
 		return raw
 	}
-	
+
 	newIDs := make([]string, 0, len(ids))
 	idStr := idToRemove.String()
 	for _, id := range ids {
@@ -201,7 +202,7 @@ func removeIDFromJSON(raw json.RawMessage, idToRemove uuid.UUID) json.RawMessage
 			newIDs = append(newIDs, id)
 		}
 	}
-	
+
 	result, _ := json.Marshal(newIDs)
 	return result
 }
@@ -244,7 +245,7 @@ func (r *BlockRepository) MoveBlock(userID, targetBlockID uuid.UUID, newParentID
 				return err
 			}
 		}
-		
+
 		if err := tx.Where("id = ? AND created_by = ?", *newParentID, userID).First(&newParent).Error; err != nil {
 			return err
 		}
@@ -286,19 +287,42 @@ func (r *BlockRepository) MoveBlock(userID, targetBlockID uuid.UUID, newParentID
 			return err
 		}
 
-		// 5. 级联更新所有后代的 Path 
+		// 5. 级联更新所有后代的 Path
 		// UPDATE blocks SET path = newPrefix || SUBSTRING(path FROM len(oldPrefix) + 1) WHERE path LIKE 'oldPrefix%'
 		updatePathSQL := `
 			UPDATE blocks 
 			SET path = ? || SUBSTRING(path FROM ?) 
 			WHERE path LIKE ? AND created_by = ? AND deleted_at IS NULL`
-		
-		startIndex := len(oldPrefix) + 1 
-		
+
+		startIndex := len(oldPrefix) + 1
+
 		if err := tx.Exec(updatePathSQL, newPrefix, startIndex, oldPrefix+"%", userID).Error; err != nil {
 			return err
 		}
 
 		return nil
 	})
+}
+
+// UpdateDescendantPaths 批量更新子孙节点的 path
+// 当移动节点时，需要更新所有子孙节点的 path
+func (r *BlockRepository) UpdateDescendantPaths(userID uuid.UUID, oldPath, newPath string) error {
+	// 查询所有子孙节点
+	var descendants []models.Block
+	err := r.db.Where("path LIKE ? AND created_by = ? AND deleted_at IS NULL", oldPath+"%", userID).
+		Find(&descendants).Error
+	if err != nil {
+		return err
+	}
+
+	// 批量更新 path
+	for _, desc := range descendants {
+		// 替换 path 前缀
+		newDescPath := strings.Replace(desc.Path, oldPath, newPath, 1)
+		r.db.Model(&models.Block{}).
+			Where("id = ?", desc.ID).
+			Update("path", newDescPath)
+	}
+
+	return nil
 }

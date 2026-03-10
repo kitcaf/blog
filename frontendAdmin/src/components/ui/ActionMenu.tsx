@@ -7,20 +7,7 @@
  */
 
 import React from 'react';
-import { 
-  Copy, 
-  Trash2, 
-  Edit3, 
-  MoreHorizontal, 
-  ExternalLink,
-  Star,
-  CopyPlus,
-  ArrowRight,
-  RefreshCw,
-  PanelRightOpen,
-  FolderPlus,
-  FilePlus2,
-} from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 
 import {
   DropdownMenu,
@@ -91,11 +78,9 @@ export const ActionMenu = React.memo(function ActionMenu({
             
             <DropdownMenuItem
               onClick={(e) => {
-                e.preventDefault(); // Stop default generic interactions
+                e.preventDefault();
                 e.stopPropagation();
-                // We cast e to any since DropdownMenuItem onClick expects a specific Radix type 
-                // but we map it into React.MouseEvent via any override safely.
-                item.onClick(e as any);
+                item.onClick(e as React.MouseEvent<HTMLDivElement>);
               }}
               className={`group flex items-center justify-between cursor-pointer py-1.5 px-2 ${
                 item.destructive ? 'text-destructive focus:text-destructive focus:bg-destructive/10' : ''
@@ -103,7 +88,7 @@ export const ActionMenu = React.memo(function ActionMenu({
             >
               <div className="flex items-center gap-2 flex-1 w-full">
                 {item.icon && (
-                  <span className={`flex-shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ${item.destructive ? 'text-destructive' : ''}`}>
+                  <span className={`shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ${item.destructive ? 'text-destructive' : ''}`}>
                     {item.icon}
                   </span>
                 )}
@@ -124,18 +109,3 @@ export const ActionMenu = React.memo(function ActionMenu({
     </DropdownMenu>
   );
 });
-
-// Predefined Generic Icon Mapping for easier usage
-export const ActionMenuIcons = {
-  copyLink: <Copy size={13} />,
-  duplicate: <CopyPlus size={13} />,
-  rename: <Edit3 size={13} />,
-  moveTo: <ArrowRight size={13} />,
-  trash: <Trash2 size={13} />,
-  wiki: <RefreshCw size={13} />,
-  newTab: <ExternalLink size={13} />,
-  sidePeek: <PanelRightOpen size={13} />,
-  star: <Star size={13} />,
-  createFolder: <FolderPlus size={13} />,
-  createPage: <FilePlus2 size={13} />
-};

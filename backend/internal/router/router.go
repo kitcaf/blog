@@ -79,6 +79,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			pages.GET("/:id", pageHandler.GetPage)           // 获取单个页面详情
 			pages.PUT("/:id", pageHandler.UpdatePage)        // 更新页面
 			pages.DELETE("/:id", pageHandler.DeletePage)     // 删除页面
+			pages.POST("/:id/move", pageHandler.MovePage)    // 移动页面到新位置
 			pages.GET("/:id/blocks", blockHandler.GetBlocks) // 获取页面的所有 Block
 		}
 
@@ -87,7 +88,6 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		{
 			blocks.GET("/tree", blockHandler.GetTree) // 获取目录树（?parent_id=xxx）
 			blocks.PUT("", blockHandler.SyncBlocks)   // 批量更新 Block（RESTful 方式）
-			blocks.POST("/:id/move", blockHandler.MoveBlock) // 侧边栏拖拽树节点移动和排序
 		}
 	}
 

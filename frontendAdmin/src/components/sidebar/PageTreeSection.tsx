@@ -7,8 +7,25 @@ import React, { useState, useCallback } from 'react';
 import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText, ChevronRight } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { SidebarItem } from './SidebarItem';
-import type { PageTreeNode } from '@/api/blocks';
-import { ActionMenuIcons, type ActionMenuItem } from '@/components/ui/ActionMenu';
+import { type PageTreeNode, moveBlock } from '@/api/blocks';
+import { type ActionMenuItem } from '@/components/ui/ActionMenu';
+import { ActionMenuIcons } from '@/components/ui/ActionMenuIcons';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface PageTreeSectionProps {
   tree: PageTreeNode[];
@@ -18,6 +35,7 @@ interface PageTreeSectionProps {
   onCreateFolder: (parentId?: string | null) => void;
   onCreatePage: (parentId?: string | null) => void;
   onRetry: () => void;
+  onMoveComplete?: () => void;
 }
 
 export function PageTreeSection({
@@ -28,9 +46,88 @@ export function PageTreeSection({
   onCreateFolder,
   onCreatePage,
   onRetry,
+  onMoveComplete,
 }: PageTreeSectionProps) {
+  const [activeNode, setActiveNode] = useState<PageTreeNode | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    })
+  );
+
+  const handleDragStart = (e: DragStartEvent) => {
+    setActiveNode(e.active.data.current?.node || null);
+  };
+
+  const handleDragEnd = async (e: DragEndEvent) => {
+    setActiveNode(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+
+    const activeData = active.data.current?.node as PageTreeNode;
+    const overData = over.data.current?.node as PageTreeNode;
+    if (!activeData || !overData) return;
+
+    const blocksById = useBlockStore.getState().blocksById;
+    const rootPageIds = useBlockStore.getState().rootPageIds;
+    
+    const newParentId = overData.parentId;
+    
+    let newSiblingsIds: string[] = [];
+    if (newParentId === null) {
+      newSiblingsIds = [...rootPageIds];
+    } else {
+      newSiblingsIds = [...(blocksById[newParentId]?.contentIds || [])];
+    }
+    
+    let oldContentIds: string[] = [];
+    if (activeData.parentId !== newParentId) {
+      let oldSiblingsIds: string[] = [];
+      if (activeData.parentId === null) {
+        oldSiblingsIds = [...rootPageIds];
+      } else {
+        oldSiblingsIds = [...(blocksById[activeData.parentId]?.contentIds || [])];
+      }
+      oldContentIds = oldSiblingsIds.filter(id => id !== activeData.id);
+      newSiblingsIds = newSiblingsIds.filter(id => id !== activeData.id);
+    } else {
+      newSiblingsIds = newSiblingsIds.filter(id => id !== activeData.id);
+    }
+
+    const overIndex = newSiblingsIds.indexOf(overData.id);
+    const insertIndex = overIndex >= 0 ? overIndex : newSiblingsIds.length;
+    newSiblingsIds.splice(insertIndex, 0, activeData.id);
+
+    try {
+      if (activeData.parentId === newParentId) {
+        useBlockStore.getState().reorderChildren(newParentId, newSiblingsIds);
+      } else {
+        useBlockStore.getState().moveNode(activeData.id, newParentId, newSiblingsIds, activeData.parentId, oldContentIds);
+      }
+      
+      await moveBlock({
+        id: activeData.id,
+        new_parent_id: newParentId,
+        new_content_ids: newSiblingsIds,
+      });
+      onMoveComplete?.();
+    } catch (error) {
+      console.error('Move block failed:', error);
+      onMoveComplete?.(); 
+    }
+  };
+
   return (
-    <div className="mt-6 flex flex-col gap-1">
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="mt-6 flex flex-col gap-1">
       {/* 标题和新建按钮 */}
       <div className="mb-1 px-2 flex justify-between items-center">
         <span className="text-xs font-medium text-app-fg-light">空间</span>
@@ -65,19 +162,34 @@ export function PageTreeSection({
 
       {/* 目录树 */}
       {!isLoading && !isError && tree.length > 0 && (
-        <div>
-          {tree.map((node) => (
-            <PageTreeItem 
-              key={node.id} 
-              node={node} 
-              depth={0}
-              onCreateFolder={onCreateFolder}
-              onCreatePage={onCreatePage}
-            />
-          ))}
-        </div>
+        <SortableContext items={tree.map(n => n.id)} strategy={verticalListSortingStrategy}>
+          <div>
+            {tree.map((node) => (
+              <PageTreeItem 
+                key={node.id} 
+                node={node} 
+                depth={0}
+                onCreateFolder={onCreateFolder}
+                onCreatePage={onCreatePage}
+              />
+            ))}
+          </div>
+        </SortableContext>
       )}
+
+      <DragOverlay>
+        {activeNode ? (
+          <SidebarItem
+            icon={activeNode.type === 'folder' ? <FolderIcon size={16} /> : <FileText size={16} />}
+            label={activeNode.title}
+            active={false}
+            depth={0}
+            isDragging
+          />
+        ) : null}
+      </DragOverlay>
     </div>
+    </DndContext>
   );
 }
 
@@ -150,6 +262,23 @@ const PageTreeItem = React.memo(function PageTreeItem({
   const activePageId = useBlockStore((s) => s.activePageId);
   const setActivePage = useBlockStore((s) => s.setActivePage);
   const isActive = activePageId === node.id;
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: node.id,
+    data: { node },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   const handleClick = useCallback(() => {
     // 只有 page 类型才能激活（folder 不能打开编辑器）
@@ -297,6 +426,11 @@ const PageTreeItem = React.memo(function PageTreeItem({
   return (
     <div>
       <SidebarItem
+        setNodeRef={setNodeRef}
+        attributes={attributes}
+        listeners={listeners}
+        style={style}
+        isDragging={isDragging}
         icon={getIcon()}
         label={node.title}
         active={isActive}
@@ -313,27 +447,29 @@ const PageTreeItem = React.memo(function PageTreeItem({
 
       {/* 子节点（展开时渲染） */}
       {isExpanded && (
-        <div>
-          {displayChildren.length > 0 ? (
-            displayChildren.map((child) => (
-              <PageTreeItem 
-                key={child.id} 
-                node={child} 
-                depth={depth + 1}
-                onCreateFolder={onCreateFolder}
-                onCreatePage={onCreatePage}
-              />
-            ))
-          ) : (
-            // 空状态提示
-            <div 
-              className="text-xs text-app-fg-light py-1.5 px-2"
-              style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}
-            >
-              暂无内容
-            </div>
-          )}
-        </div>
+        <SortableContext items={displayChildren.map(c => c.id)} strategy={verticalListSortingStrategy}>
+          <div>
+            {displayChildren.length > 0 ? (
+              displayChildren.map((child) => (
+                <PageTreeItem 
+                  key={child.id} 
+                  node={child} 
+                  depth={depth + 1}
+                  onCreateFolder={onCreateFolder}
+                  onCreatePage={onCreatePage}
+                />
+              ))
+            ) : (
+              // 空状态提示
+              <div 
+                className="text-xs text-app-fg-light py-1.5 px-2"
+                style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}
+              >
+                暂无内容
+              </div>
+            )}
+          </div>
+        </SortableContext>
       )}
     </div>
   );

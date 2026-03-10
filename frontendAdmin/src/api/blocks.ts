@@ -321,3 +321,32 @@ export async function createPage(params: CreatePageParams): Promise<BlockData> {
   const { data } = await apiClient.post<DbBlock>('/admin/pages', pageBlock);
   return hydrateBlock(data);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 七、移动 Block
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface MoveBlockParams {
+  id: string;
+  new_parent_id: string | null;
+  new_content_ids: string[];
+}
+
+/**
+ * POST /admin/pages/:id/move
+ *
+ * 移动 block 到新位置（改变 parent_id 和 path）
+ * 
+ * @param params - 移动参数
+ */
+export async function moveBlock(params: MoveBlockParams): Promise<void> {
+  if (USE_MOCK) {
+    console.log('[MockMove] 移动 block (Mock 模式):', params);
+    return Promise.resolve();
+  }
+
+  await apiClient.post(`/admin/pages/${params.id}/move`, {
+    new_parent_id: params.new_parent_id,
+    new_content_ids: params.new_content_ids,
+  });
+}

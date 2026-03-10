@@ -92,6 +92,22 @@ interface BlockStoreActions {
    */
   reorderChildren: (parentId: string | null, orderedChildIds: string[]) => void;
 
+  /**
+   * 跨层级或同层级移动节点
+   * @param id 被移动的节点 ID
+   * @param newParentId 新父节点 ID（null 为根目录）
+   * @param newContentIds 新父节点的新子节点顺序
+   * @param oldParentId 旧父节点 ID（null 为根目录）
+   * @param oldContentIds 旧父节点的新子节点顺序
+   */
+  moveNode: (
+    id: string,
+    newParentId: string | null,
+    newContentIds: string[],
+    oldParentId: string | null,
+    oldContentIds: string[]
+  ) => void;
+
   // ── 导航 ─────────────────────────────────────
 
   /** 设置当前活跃页面（点击侧边栏）*/
@@ -302,6 +318,49 @@ export const useBlockStore = create<BlockStore>()(
             // as Block：只修改了非判别字段 contentIds，断言安全
             [parentId]: { ...parent, contentIds: orderedChildIds } as Block,
           },
+          dirtySet: newDirty,
+        };
+      });
+    },
+
+    moveNode: (id, newParentId, newContentIds, oldParentId, oldContentIds) => {
+      set((state) => {
+        const newDirty = new Set(state.dirtySet);
+        const node = state.blocksById[id];
+        if (!node) return state;
+
+        let newRootPageIds = state.rootPageIds;
+        const newBlocksById = { ...state.blocksById };
+
+        // 1. 更新 node 的 parentId
+        newBlocksById[id] = { ...node, parentId: newParentId } as Block;
+        newDirty.add(id);
+
+        // 2. 更新旧父节点的 contentIds
+        if (oldParentId === null) {
+          newRootPageIds = oldContentIds;
+        } else {
+          const oldParent = newBlocksById[oldParentId];
+          if (oldParent) {
+            newBlocksById[oldParentId] = { ...oldParent, contentIds: oldContentIds } as Block;
+            newDirty.add(oldParentId);
+          }
+        }
+
+        // 3. 更新新父节点的 contentIds
+        if (newParentId === null) {
+          newRootPageIds = newContentIds;
+        } else {
+          const newParent = newBlocksById[newParentId];
+          if (newParent) {
+            newBlocksById[newParentId] = { ...newParent, contentIds: newContentIds } as Block;
+            newDirty.add(newParentId);
+          }
+        }
+
+        return {
+          blocksById: newBlocksById,
+          rootPageIds: newRootPageIds,
           dirtySet: newDirty,
         };
       });

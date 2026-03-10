@@ -39,6 +39,18 @@ interface SidebarItemProps {
   onMouseEnter?: () => void;
   /** 鼠标离开事件 */
   onMouseLeave?: () => void;
+  /** dnd-kit 引用 */
+  setNodeRef?: (node: HTMLElement | null) => void;
+  /** dnd-kit 拖拽属性 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  attributes?: any;
+  /** dnd-kit 拖拽监听器 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listeners?: any;
+  /** dnd-kit 内联样式 */
+  style?: React.CSSProperties;
+  /** 是否正在拖拽 */
+  isDragging?: boolean;
 }
 
 export const SidebarItem = React.memo(function SidebarItem({
@@ -54,6 +66,11 @@ export const SidebarItem = React.memo(function SidebarItem({
   onChevronClick,
   onMouseEnter,
   onMouseLeave,
+  setNodeRef,
+  attributes,
+  listeners,
+  style,
+  isDragging,
 }: SidebarItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
 
@@ -80,7 +97,11 @@ export const SidebarItem = React.memo(function SidebarItem({
 
   return (
     <div
-      role="button"
+      ref={setNodeRef}
+      style={{ paddingLeft: `${paddingLeft}px`, ...style }}
+      {...attributes}
+      {...listeners}
+      role="treeitem"
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
@@ -88,13 +109,13 @@ export const SidebarItem = React.memo(function SidebarItem({
       onMouseLeave={handleMouseLeave}
       className={`
         group flex items-center gap-2 px-2 ${verticalPadding} rounded-md cursor-pointer
-        ${textSize} font-medium transition-colors select-none
+        ${textSize} font-medium transition-colors select-none touch-none
         ${active
           ? 'bg-app-hover text-app-fg-deeper'
           : 'text-app-fg hover:bg-app-hover hover:text-app-fg-deeper'
         }
+        ${isDragging ? 'opacity-50 bg-app-hover z-50 ring-1 ring-app-border' : ''}
       `}
-      style={{ paddingLeft: `${paddingLeft}px` }}
       aria-expanded={hasChildren ? isExpanded : undefined}
       aria-current={active ? 'page' : undefined}
     >
@@ -108,6 +129,7 @@ export const SidebarItem = React.memo(function SidebarItem({
           ${isExpanded ? 'rotate-90' : ''}
           ${isTopLevel ? '-ml-6' : ''}
         `}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={hasChildren ? onChevronClick : undefined}
         aria-hidden="true"
       >
@@ -126,6 +148,7 @@ export const SidebarItem = React.memo(function SidebarItem({
       {actionItems && actionItems.length > 0 && (
         <div 
           className={`shrink-0 transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
           <ActionMenu 

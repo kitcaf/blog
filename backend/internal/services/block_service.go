@@ -188,3 +188,9 @@ func (s *BlockService) CreateRootBlockInternal(userID uuid.UUID) (*models.Block,
 func (s *BlockService) MoveBlock(userID, blockID uuid.UUID, newParentID *uuid.UUID, newContentIDs []string) error {
 	return s.blockRepo.MoveBlock(userID, blockID, newParentID, newContentIDs)
 }
+
+// UpdateDescendantPaths 递归更新所有子孙节点的 path
+// 当移动一个节点时，需要更新其所有子孙节点的 path
+func (s *BlockService) UpdateDescendantPaths(userID uuid.UUID, oldPath, newPath string) error {
+	return s.blockRepo.UpdateDescendantPaths(userID, oldPath, newPath)
+}

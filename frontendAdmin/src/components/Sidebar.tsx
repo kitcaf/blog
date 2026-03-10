@@ -158,6 +158,7 @@ export function Sidebar() {
           onCreateFolder={(parentId) => handleOpenCreateDialog('folder', parentId)}
           onCreatePage={(parentId) => handleOpenCreateDialog('page', parentId)}
           onRetry={() => window.location.reload()}
+          onMoveComplete={refetch}
         />
 
         <SidebarBottomNav />

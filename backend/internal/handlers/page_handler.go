@@ -333,3 +333,142 @@ func generateRandomHash(length int) string {
 	}
 	return hex.EncodeToString(bytes)[:length]
 }
+
+// MovePage 移动页面或文件夹到新位置
+// 数据库操作步骤：
+// 1. 验证 block ID 和请求参数
+// 2. 查询要移动的 block 和新父节点
+// 3. 从旧父节点的 content_ids 中移除
+// 4. 更新 block 的 parent_id 和 path（递归更新所有子孙节点的 path）
+// 5. 将 block 添加到新父节点的 content_ids 中（按指定位置插入）
+type MovePageRequest struct {
+	NewParentID   *string  `json:"new_parent_id"`   // 新父节点 ID，null 表示移动到根目录
+	NewContentIDs []string `json:"new_content_ids"` // 新父节点的完整 content_ids 顺序
+}
+
+func (h *PageHandler) MovePage(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	// 步骤1：验证 block ID
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid block ID")
+		return
+	}
+
+	// 解析请求体
+	var req MovePageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
+		return
+	}
+
+	// 步骤2：查询要移动的 block
+	block, err := h.blockService.GetPageByID(userID, id)
+	if err != nil {
+		response.Error(c, http.StatusNotFound, "Block not found")
+		return
+	}
+
+	// 获取旧父节点
+	var oldParent *models.Block
+	if block.ParentID != nil {
+		oldParent, err = h.blockService.GetPageByID(userID, *block.ParentID)
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, "Old parent not found")
+			return
+		}
+	}
+
+	// 获取新父节点
+	var newParent *models.Block
+	var newParentID *uuid.UUID
+	if req.NewParentID == nil || *req.NewParentID == "" {
+		// 移动到根目录：使用用户的 root block
+		rootBlock, err := h.blockService.GetOrCreateRootBlock(userID)
+		if err != nil {
+			response.Error(c, http.StatusInternalServerError, "Failed to get root block: "+err.Error())
+			return
+		}
+		newParent = rootBlock
+		newParentID = &rootBlock.ID
+	} else {
+		// 移动到指定父节点
+		parsedParentID, err := uuid.Parse(*req.NewParentID)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, "Invalid new_parent_id")
+			return
+		}
+		newParentID = &parsedParentID
+		newParent, err = h.blockService.GetPageByID(userID, parsedParentID)
+		if err != nil {
+			response.Error(c, http.StatusNotFound, "New parent not found")
+			return
+		}
+	}
+
+	// 步骤3：从旧父节点的 content_ids 中移除
+	if oldParent != nil {
+		var oldContentIDs []string
+		if err := json.Unmarshal(oldParent.ContentIDs, &oldContentIDs); err == nil {
+			newOldContentIDs := []string{}
+			for _, cid := range oldContentIDs {
+				if cid != id.String() {
+					newOldContentIDs = append(newOldContentIDs, cid)
+				}
+			}
+			if oldContentIDsJSON, err := json.Marshal(newOldContentIDs); err == nil {
+				oldParent.ContentIDs = oldContentIDsJSON
+				h.blockService.UpdatePage(userID, oldParent)
+			}
+		}
+	}
+
+	// 步骤4：更新 block 的 parent_id 和 path
+	oldPath := block.Path
+	block.ParentID = newParentID
+	block.Path = newParent.Path + block.ID.String() + "/"
+	block.LastEditedBy = &userID
+
+	if err := h.blockService.UpdatePage(userID, block); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update block")
+		return
+	}
+
+	// 递归更新所有子孙节点的 path
+	if err := h.blockService.UpdateDescendantPaths(userID, oldPath, block.Path); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to update descendant paths")
+		return
+	}
+
+	// 步骤5：更新新父节点的 content_ids
+	if len(req.NewContentIDs) > 0 {
+		// 使用前端提供的完整顺序
+		if newContentIDsJSON, err := json.Marshal(req.NewContentIDs); err == nil {
+			newParent.ContentIDs = newContentIDsJSON
+			h.blockService.UpdatePage(userID, newParent)
+		}
+	} else {
+		// 如果没有提供顺序，追加到末尾
+		var newContentIDs []string
+		if err := json.Unmarshal(newParent.ContentIDs, &newContentIDs); err == nil {
+			// 确保不重复添加
+			found := false
+			for _, cid := range newContentIDs {
+				if cid == id.String() {
+					found = true
+					break
+				}
+			}
+			if !found {
+				newContentIDs = append(newContentIDs, id.String())
+			}
+			if newContentIDsJSON, err := json.Marshal(newContentIDs); err == nil {
+				newParent.ContentIDs = newContentIDsJSON
+				h.blockService.UpdatePage(userID, newParent)
+			}
+		}
+	}
+
+	response.Success(c, block)
+}

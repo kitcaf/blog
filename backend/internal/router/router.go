@@ -87,6 +87,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		{
 			blocks.GET("/tree", blockHandler.GetTree) // 获取目录树（?parent_id=xxx）
 			blocks.PUT("", blockHandler.SyncBlocks)   // 批量更新 Block（RESTful 方式）
+			blocks.POST("/:id/move", blockHandler.MoveBlock) // 侧边栏拖拽树节点移动和排序
 		}
 	}
 

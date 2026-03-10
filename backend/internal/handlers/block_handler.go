@@ -115,3 +115,33 @@ func (h *BlockHandler) GetTree(c *gin.Context) {
 
 	response.Success(c, children)
 }
+
+// MoveRequest 定义树节点移动和排序的通用请求结构
+type MoveRequest struct {
+	NewParentID   *uuid.UUID `json:"new_parent_id"`
+	NewContentIDs []string   `json:"new_content_ids"`
+}
+
+// MoveBlock 统一处理同级拖拽排序和跨级拖拽移动
+func (h *BlockHandler) MoveBlock(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	blockID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid block ID")
+		return
+	}
+
+	var req MoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.blockService.MoveBlock(userID, blockID, req.NewParentID, req.NewContentIDs); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Move failed: "+err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "移动成功"})
+}

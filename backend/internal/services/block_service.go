@@ -183,3 +183,8 @@ func (s *BlockService) CreateRootBlockInternal(userID uuid.UUID) (*models.Block,
 
 	return rootBlock, nil
 }
+
+// MoveBlock 移动和排序内容块
+func (s *BlockService) MoveBlock(userID, blockID uuid.UUID, newParentID *uuid.UUID, newContentIDs []string) error {
+	return s.blockRepo.MoveBlock(userID, blockID, newParentID, newContentIDs)
+}

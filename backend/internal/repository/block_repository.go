@@ -186,3 +186,119 @@ func (r *BlockRepository) FindRootBlock(userID uuid.UUID) (*models.Block, error)
 		First(&block).Error
 	return &block, err
 }
+
+// removeIDFromJSON 是一个辅助函数，用于从 json.RawMessage 中移除指定的 UUID
+func removeIDFromJSON(raw json.RawMessage, idToRemove uuid.UUID) json.RawMessage {
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return raw
+	}
+	
+	newIDs := make([]string, 0, len(ids))
+	idStr := idToRemove.String()
+	for _, id := range ids {
+		if id != idStr {
+			newIDs = append(newIDs, id)
+		}
+	}
+	
+	result, _ := json.Marshal(newIDs)
+	return result
+}
+
+// MoveBlock 处理区块移动和排序，更新 Materialized Path
+func (r *BlockRepository) MoveBlock(userID, targetBlockID uuid.UUID, newParentID *uuid.UUID, newContentIDs []string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 1. 获取目标节点当前状态
+		var targetBlock models.Block
+		if err := tx.Where("id = ? AND created_by = ? AND deleted_at IS NULL", targetBlockID, userID).First(&targetBlock).Error; err != nil {
+			return err
+		}
+
+		oldParentID := targetBlock.ParentID
+
+		// ================= 场景一：同级排序 =================
+		// 原 parent_id == 请求传来的 new_parent_id 且 new_parent_id 不为空
+		if oldParentID != nil && newParentID != nil && *oldParentID == *newParentID {
+			// 直接覆盖父节点的 content_ids
+			newIDsJSON, err := json.Marshal(newContentIDs)
+			if err != nil {
+				return err
+			}
+			return tx.Model(&models.Block{}).
+				Where("id = ? AND created_by = ? AND deleted_at IS NULL", *newParentID, userID).
+				Update("content_ids", newIDsJSON).Error
+		}
+
+		// ================= 场景二：跨级移动 =================
+
+		// 如果 newParentID 为空，默认不允许移动到 root 之外
+		if newParentID == nil {
+			return nil
+		}
+
+		// 1. 获取新旧父节点
+		var oldParent, newParent models.Block
+		if oldParentID != nil {
+			if err := tx.Where("id = ? AND created_by = ?", *oldParentID, userID).First(&oldParent).Error; err != nil {
+				return err
+			}
+		}
+		
+		if err := tx.Where("id = ? AND created_by = ?", *newParentID, userID).First(&newParent).Error; err != nil {
+			return err
+		}
+
+		// 计算前缀
+		var oldPrefix string
+		if oldParentID != nil {
+			oldPrefix = oldParent.Path + targetBlockID.String() + "/"
+		} else {
+			oldPrefix = targetBlock.Path // Fallback if no parent
+		}
+		newPrefix := newParent.Path + targetBlockID.String() + "/"
+
+		// 2. 从旧父节点移除目标 block ID
+		if oldParentID != nil {
+			updatedOldIDsJSON := removeIDFromJSON(oldParent.ContentIDs, targetBlockID)
+			if err := tx.Model(&models.Block{}).
+				Where("id = ? AND created_by = ?", *oldParentID, userID).
+				Update("content_ids", updatedOldIDsJSON).Error; err != nil {
+				return err
+			}
+		}
+
+		// 3. 将新排序数组写入新父节点
+		newIDsJSON, err := json.Marshal(newContentIDs)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&models.Block{}).
+			Where("id = ? AND created_by = ?", *newParentID, userID).
+			Update("content_ids", newIDsJSON).Error; err != nil {
+			return err
+		}
+
+		// 4. 更新自身的 ParentID
+		if err := tx.Model(&models.Block{}).
+			Where("id = ? AND created_by = ?", targetBlockID, userID).
+			Update("parent_id", *newParentID).Error; err != nil {
+			return err
+		}
+
+		// 5. 级联更新所有后代的 Path 
+		// UPDATE blocks SET path = newPrefix || SUBSTRING(path FROM len(oldPrefix) + 1) WHERE path LIKE 'oldPrefix%'
+		updatePathSQL := `
+			UPDATE blocks 
+			SET path = ? || SUBSTRING(path FROM ?) 
+			WHERE path LIKE ? AND created_by = ? AND deleted_at IS NULL`
+		
+		startIndex := len(oldPrefix) + 1 
+		
+		if err := tx.Exec(updatePathSQL, newPrefix, startIndex, oldPrefix+"%", userID).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+}

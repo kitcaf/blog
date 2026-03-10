@@ -289,6 +289,8 @@ func (h *PageHandler) DeletePage(c *gin.Context) {
 // 辅助函数：Slug 生成
 // ─────────────────────────────────────────────────────────────────────────────
 
+var nonAlphanumericHanRegex = regexp.MustCompile(`[^\w\x{4e00}-\x{9fa5}]+`)
+
 // generateSlugFromTitle 根据标题生成 slug
 // 格式：标题转换 + 指定长度的随机哈希
 func generateSlugFromTitle(title string, hashLength int) string {
@@ -296,7 +298,7 @@ func generateSlugFromTitle(title string, hashLength int) string {
 	slug := strings.ToLower(title)
 
 	// 2. 替换空格和特殊字符为连字符
-	slug = regexp.MustCompile(`[^\w\u4e00-\u9fa5]+`).ReplaceAllString(slug, "-")
+	slug = nonAlphanumericHanRegex.ReplaceAllString(slug, "-")
 
 	// 3. 移除首尾的连字符
 	slug = strings.Trim(slug, "-")

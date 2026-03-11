@@ -87,12 +87,11 @@ func (h *PageHandler) GetPageBySlug(c *gin.Context) {
 
 // CreatePage 创建页面或文件夹类型的block
 // 数据库操作步骤：
-// 1. 设置审计字段（created_by, last_edited_by）
-// 2. 如果 parent_id 为 null，查询用户的 root block 并设置为父节点
-// 3. 计算物化路径（path）：root 节点 /{root_id}/，子节点 {parent.path}{id}/
-// 4. 为 page 类型自动生成 slug（标题 + 6位随机哈希）
-// 5. 插入新 block 到数据库
-// 6. 更新父节点的 content_ids 字段（将新 block 的 id 追加到父节点的 content_ids 数组）
+// 1. 验证或寻找父节点，若为顶层则绑定至用户所属的隐藏 root block 上
+// 2. 结合父级的 Path 生成子级专属的物化路径 (Materialized Path)
+// 3. 若为 page 即刻读取 properties 生成附有短哈希盐的防撞 slug
+// 4. 将新的 block 作为完全独立行 INSERT 进数据库
+// 5. 【极致优化】依赖 Postgres 的原生 jsonb 操作（|| 运算符），一条 SQL 将新 ID 全原子化、无并发锁竞争地追加至父节点 content_ids 末尾
 func (h *PageHandler) CreatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -162,11 +161,10 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 
 // UpdatePage 更新页面
 // 数据库操作步骤：
-// 1. 验证 page ID 格式
-// 2. 解析请求体中的 block 数据
-// 3. 设置 last_edited_by 审计字段
-// 4. 如果修改了 title，重新生成 slug（仅 page 类型）
-// 5. 更新数据库中的 block 记录
+// 1. 接收与解析目标 ID（UUID）及新传递进来的 JSON Body
+// 2. 利用 JSONB 整体覆盖目标 block 的 properties 或其他纯文本标量字段（注意该接口并非拖拽的专有接口）
+// 3. 检测如果是 page 且发生了标题变动，在 Go 端纯计算重新生成短哈希拼装 slug
+// 4. 持久化所有的标量变动 (Save)
 func (h *PageHandler) UpdatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -214,10 +212,10 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 
 // DeletePage 删除页面
 // 数据库操作步骤：
-// 1. 验证 page ID 格式
-// 2. 查询要删除的 block（验证权限和存在性）
-// 3. 软删除该 block 及其所有子孙节点（通过 path LIKE 匹配）
-// 4. 从父节点的 content_ids 中移除该 block 的 id
+// 1. 接收欲删除的页面 ID (UUID)
+// 2. 【极致优化】巧妙结合 UPDATE 和 Postgres 的 RETURNING 特性去执行它的软删除操作。由于增加了约束条件，借此操作一次性零损耗完成了鉴权验证并带回它的 parent_id 以及完整的 path。
+// 3. 读取上一原生步提取的 path 凭借 LIKE 查询法，发送一条单行纯 SQL 级联将一切相关的多层子孙全部置上软删标签。
+// 4. 【极致优化】由于第一步获取到了 parent_id，利用 Postgres 原生 jsonb 减法 ( - 运算符 ) 将自己从老父级的 content_ids 排列中直接驱离，绝无内存读取后覆写的并发丢失事故。
 func (h *PageHandler) DeletePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -228,29 +226,15 @@ func (h *PageHandler) DeletePage(c *gin.Context) {
 		return
 	}
 
-	// 步骤2：查询要删除的 block，主要为了验证存在性和权限
-	_, err = h.blockService.GetPageByID(userID, id)
-	if err != nil {
-		response.Error(c, http.StatusNotFound, "Page not found")
+	// 步骤2：执行删除逻辑，依赖于服务层的 RETURNING 机制实现极其高效的软状态清理和数组解绑
+	if err := h.blockService.DeletePage(userID, id); err != nil {
+		// 返回通用错误消息或区分存在性
+		status := http.StatusInternalServerError
+		if err.Error() == "Page not found or permission denied" {
+			status = http.StatusNotFound
+		}
+		response.Error(c, status, "Failed to delete page: "+err.Error())
 		return
-	}
-
-	// 步骤3：软删除当前 block，并一次性用 RETURNING 拿到它的 parent_id
-	parentID, err := h.blockService.SoftDeleteAndReturnParent(userID, id)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to delete page")
-		return
-	}
-
-	// 步骤4：级联软删除所有的子孙节点
-	if err := h.blockService.DeletePage(userID, id); err != nil { // DeletePage now falls back to blockRepo.SoftDeleteByPath
-		// ignore err or log
-	}
-
-	// 步骤5：从父节点的 content_ids 中移除
-	// 极致优化：使用 Postgres 原生 jsonb 移除，避免高并发冲突
-	if parentID != nil {
-		h.blockService.RemoveContentID(userID, *parentID, id)
 	}
 
 	response.Success(c, gin.H{"message": "删除成功"})
@@ -307,11 +291,12 @@ func generateRandomHash(length int) string {
 
 // MovePage 移动页面或文件夹到新位置
 // 数据库操作步骤：
-// 1. 验证 block ID 和请求参数
-// 2. 查询要移动的 block 和新父节点
-// 3. 从旧父节点的 content_ids 中移除
-// 4. 更新 block 的 parent_id 和 path（递归更新所有子孙节点的 path）
-// 5. 将 block 添加到新父节点的 content_ids 中（按指定位置插入）
+// (注：该方法为传统旧接口逻辑补充，主干同级与降维推荐走 BlockHandler 里的事务移动)
+// 1. 解析需要拖拽的目标旧块与新附着父节点的 ID，计算新排列位置
+// 2. 脱离原组织：凭借 JSON Unmarshal 从原父节点中内存层面移走 (待优化为原生并发版)
+// 3. 计算投靠：重构自身的 parent_id 和基于新父级的 path 并发送 Update
+// 4. 级联重写：基于全新的物化前缀发送子域模糊匹配执行一波大规模字串替换 SQL 迁移下级
+// 5. 融于新家：根据 JSON 压盖新的 content_ids 给目标父系节点并落库
 type MovePageRequest struct {
 	NewParentID   *string  `json:"new_parent_id"`   // 新父节点 ID，null 表示移动到根目录
 	NewContentIDs []string `json:"new_content_ids"` // 新父节点的完整 content_ids 顺序

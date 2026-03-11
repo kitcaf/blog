@@ -115,19 +115,22 @@ func (r *BlockRepository) SoftDelete(userID uuid.UUID, ids []uuid.UUID) error {
 		Update("deleted_at", now).Error
 }
 
-// 极致优化：使用 RETURNING 一把梭软删除并返回 parent_id (避免先查后写)
-func (r *BlockRepository) SoftDeleteAndReturnParent(userID, blockID uuid.UUID) (*uuid.UUID, error) {
-	var parentID *uuid.UUID
+// 极致优化：使用 RETURNING 一把梭软删除并返回 parent_id 和 path (避免先查后写)
+func (r *BlockRepository) SoftDeleteAndReturnFields(userID, blockID uuid.UUID) (*uuid.UUID, string, error) {
+	var result struct {
+		ParentID *uuid.UUID
+		Path     string
+	}
 	
 	// Postgres 特有的 RETURNING 语法
 	err := r.db.Raw(`
 		UPDATE blocks 
 		SET deleted_at = NOW() 
 		WHERE id = ? AND created_by = ? AND deleted_at IS NULL 
-		RETURNING parent_id
-	`, blockID, userID).Scan(&parentID).Error
+		RETURNING parent_id, path
+	`, blockID, userID).Scan(&result).Error
 	
-	return parentID, err
+	return result.ParentID, result.Path, err
 }
 
 // 极致优化：利用 Postgres 原生 jsonb 移除数组内的指定元素

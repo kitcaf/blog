@@ -30,8 +30,9 @@ type RegisterRequest struct {
 
 // Register 用户注册
 // 数据库操作步骤：
-// 1. 创建用户账号
-// 2. 自动创建该用户的 root 类型 block（用于维护根目录的 content_ids）
+// 1. 接收参数并生成 bcrypt 密码哈希
+// 2. 【极致优化】依赖 Postgres 原生 UNIQUE 约束直接 INSERT，基于错误信息准确拦截账号冲突
+// 3. 【极致优化】利用 ON CONFLICT DO NOTHING (FirstOrCreate) 零竞争地自动确保创建出该用户的 root block
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

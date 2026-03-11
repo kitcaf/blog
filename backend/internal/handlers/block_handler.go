@@ -45,13 +45,10 @@ type SyncRequest struct {
 
 // SyncBlocks 批量更新 Block 数据（RESTful PUT 方式）
 // 数据库操作步骤：
-// 1. 解析请求体（updated_blocks 和 deleted_blocks）
-// 2. 批量 UPSERT updated_blocks（插入新记录或更新已存在记录）
-//   - 更新字段：properties, content_ids, path, parent_id, type, slug, published_at, last_edited_by, updated_at
-//   - 不更新字段：id, created_by, created_at
-//
-// 3. 批量软删除 deleted_blocks（设置 deleted_at 时间戳）
-// 4. 清除相关缓存（如果使用 Redis）
+// 1. 解析请求体，获取需要更新 (updated_blocks) 和需要删除 (deleted_blocks) 列表
+// 2. 【核心】利用 Postgres 原生的 UPSERT (ON CONFLICT DO UPDATE) 特性，仅针对内容相关字段做批量更新或插入，规避审计时间被覆盖
+// 3. 利用原生的 IN(?) 语句执行批量式软删除 (UPDATE deleted_at)
+// 4. 主动失效/清除对应的 Redis 缓存键
 func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -76,7 +73,9 @@ func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 
 // GetTree 获取完整目录树（侧边栏）
 // 数据库操作步骤：
-// 1. 去掉 parent_id 参数解析，直接拉取用户的这整棵树
+// 1. 【极致优化】利用 path 前缀索引和 type 过滤（root/folder/page），仅发一条单表 O(1) 数据库查询指令，捞出用户所有相关层级节点
+// 2. 在 Go 的内存中建立指针哈希表，并以 O(N) 极低复杂度迅速完成父子节点的树级挂载与指针拼接
+// 3. 按照各节点内置的 ContentIDs JSON 数组对其子节点进行就地排序，一次性抛出带有完整排序结构的渲染树
 func (h *BlockHandler) GetTree(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -96,6 +95,13 @@ type MoveRequest struct {
 }
 
 // MoveBlock 统一处理同级拖拽排序和跨级拖拽移动
+// 数据库操作步骤：
+// 1. 开启事务 (Transaction) 保护一致性
+// 2. 获取目标节点信息的当前状态（锁定其原始 parent_id 和 path）
+// 3. 若为跨级，从原父节点的 content_ids (JSONB) 中移除自身记录，修改目标 node 的 parent_id 引用
+// 4. 在新父节点中，直接复写全新的排列正确的 content_ids
+// 5. 【极致优化】调用 Postgres 原生级 SQL 字符串拼接 SUBSTRING，级联一次性修正当前拖拽节点及其树下无穷子孙节点的所有 path 物化路径
+// 6. 提交所有事务
 func (h *BlockHandler) MoveBlock(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 

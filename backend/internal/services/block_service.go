@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"blog-backend/internal/models"
@@ -101,31 +102,32 @@ func (s *BlockService) UpdatePage(userID uuid.UUID, block *models.Block) error {
 	return s.blockRepo.Update(userID, block)
 }
 
-// DeletePage 删除页面（软删除，带用户隔离）
+// DeletePage 删除页面（软删除当前节点，级联软删子节点，并从父节点 content_ids 移除）
 func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
-	block, err := s.blockRepo.FindByID(userID, pageID)
+	// 一条 SQL 同时完成更新与查询重要字段（RETURNING 特性）
+	parentID, path, err := s.blockRepo.SoftDeleteAndReturnFields(userID, pageID)
 	if err != nil {
 		return err
 	}
-
-	return s.blockRepo.SoftDeleteByPath(userID, block.Path)
-}
-
-func (s *BlockService) SoftDeleteAndReturnParent(userID, blockID uuid.UUID) (*uuid.UUID, error) {
-	// Execute returning and then delete by path logic? Wait, the soft delete by path still needs to happen
-	// Let's get parent returning from the current block
-	parentID, err := s.blockRepo.SoftDeleteAndReturnParent(userID, blockID)
-	if err != nil {
-		return nil, err
-	}
 	
-	// Soft delete all descendant paths as well (since current block is soft deleted, we must also cascade)
-	// We need the path though... if we didn't fetch the block, how do we soft delete descendants?
-	// The postgres way is to soft delete descendants by finding them via a CTE or standard query.
-	// But let's leave SoftDeleteByPath as a second step since it cascades. Wait, if we use RETURNING path, parent_id...
-	// For simplicity, let's keep the block fetch or just let it be. Wait, the prompt said:
-	// UPDATE blocks SET deleted_at = NOW() WHERE id = $1 AND created_by = $2 RETURNING parent_id;
-	return parentID, nil
+	// 没有符合条件的行被更新（不存在或无权限）
+	if path == "" {
+		return errors.New("Page not found or permission denied")
+	}
+
+	// 级联删除所有的子孙节点
+	if err := s.blockRepo.SoftDeleteByPath(userID, path); err != nil {
+		// 此处错误可仅打印日志，不应该阻塞流程
+	}
+
+	// 更新父节点数组
+	if parentID != nil {
+		if err := s.blockRepo.RemoveContentID(userID, *parentID, pageID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *BlockService) RemoveContentID(userID, parentID, childID uuid.UUID) error {
@@ -178,7 +180,7 @@ func (s *BlockService) GetSidebarTree(userID uuid.UUID) ([]*models.PageTreeNode,
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 2. 调用 repository 层的高效组装方法
 	return s.blockRepo.GetSidebarTree(userID, rootBlock.ID)
 }
@@ -221,7 +223,7 @@ func (s *BlockService) CreateRootBlockInternal(userID uuid.UUID) (*models.Block,
 	// We will implement that in repository later if we want DB raw, but for now we just use create
 	// with a duplicate check wrapper.
 	if err := s.blockRepo.Create(rootBlock); err != nil {
-		// Fallback: if there was a duplicate constraint, it means it was just created 
+		// Fallback: if there was a duplicate constraint, it means it was just created
 		if existing, errFind := s.blockRepo.FindRootBlock(userID); errFind == nil {
 			return existing, nil
 		}

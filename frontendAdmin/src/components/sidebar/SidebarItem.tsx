@@ -43,8 +43,6 @@ interface SidebarItemProps {
   style?: React.CSSProperties;
   /** 自定义 ref */
   innerRef?: React.Ref<HTMLDivElement>;
-  /** 是否隐藏左侧的固定展开箭头，以便在 icon 中自定义行为 */
-  hideChevron?: boolean;
 }
 
 export const SidebarItem = React.memo(function SidebarItem({
@@ -62,7 +60,6 @@ export const SidebarItem = React.memo(function SidebarItem({
   onMouseLeave,
   style,
   innerRef,
-  hideChevron = false,
 }: SidebarItemProps) {
   const [isHovered, setIsHovered] = React.useState(false);
 
@@ -103,22 +100,6 @@ export const SidebarItem = React.memo(function SidebarItem({
       aria-expanded={hasChildren ? isExpanded : undefined}
       aria-current={active ? 'page' : undefined}
     >
-      {/* 展开/折叠箭头 */}
-      {!hideChevron && (
-        <span
-          className={`
-            shrink-0 w-4 h-4 flex items-center justify-center
-            transition-transform duration-150
-            ${hasChildren ? 'text-app-fg-light hover:text-app-fg-deep' : 'opacity-0 pointer-events-none'}
-            ${isExpanded ? 'rotate-90' : ''}
-          `}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={hasChildren ? onChevronClick : undefined}
-          aria-hidden="true"
-        >
-          <ChevronRight size={12} />
-        </span>
-      )}
 
       {/* 图标：一级项 18px，其他 16px */}
       <span className={`shrink-0 ${iconSize} flex items-center justify-center text-[14px] leading-none`}>
@@ -140,6 +121,27 @@ export const SidebarItem = React.memo(function SidebarItem({
             align="end" 
             menuWidth="w-56"
           />
+        </div>
+      )}
+
+      {/* 右侧悬停展开箭头（当有子节点/为文件夹时，在悬停时显示在右侧） */}
+      {hasChildren && (
+        <div
+          className={`shrink-0 flex items-center justify-center transition-opacity duration-150 ${
+            isHovered ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onChevronClick?.(e as React.MouseEvent);
+          }}
+        >
+          <div className="p-0.5 rounded hover:bg-app-hover-deep text-app-fg-light hover:text-app-fg-deep">
+            <ChevronRight 
+              size={16} 
+              className={`transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`} 
+            />
+          </div>
         </div>
       )}
 

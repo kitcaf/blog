@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText, ChevronRight } from 'lucide-react';
+import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { SidebarItem } from './SidebarItem';
 import { type PageTreeNode, moveBlock } from '@/api/blocks';
@@ -34,19 +34,17 @@ export function PageTreeSection({
   onMoveComplete,
 }: PageTreeSectionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 240, height: 400 });
+  const [treeHeight, setTreeHeight] = useState(400); // 用于 react-arborist 的高度计算
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    // React Arborist 的虚拟列表需要确切的像素高度，所以使用 ResizeObserver 动态获取容器实际高度
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
-          setDimensions({
-            width: entry.contentRect.width,
-            height: entry.contentRect.height,
-          });
+        if (entry.contentRect.height > 0) {
+          setTreeHeight(entry.contentRect.height);
         }
       }
     });
@@ -58,8 +56,8 @@ export function PageTreeSection({
   // Debug: 打印树数据
   useEffect(() => {
     console.log('[PageTreeSection] Tree data:', tree);
-    console.log('[PageTreeSection] Container size:', dimensions);
-  }, [tree, dimensions]);
+    console.log('[PageTreeSection] Tree height:', treeHeight);
+  }, [tree, treeHeight]);
 
   const handleMove: MoveHandler<PageTreeNode> = async ({ dragIds, parentId, index }) => {
     const activeId = dragIds[0];
@@ -151,7 +149,7 @@ export function PageTreeSection({
             <Tree
               data={tree}
               width='100%'
-              height={dimensions.height}
+              height={treeHeight}
               indent={16}
               rowHeight={36}
               padding={0}
@@ -230,7 +228,6 @@ const PageTreeItem = React.memo(function PageTreeItem({
   dragHandle,
 }: NodeRendererProps<PageTreeNode>) {
   const { onCreateFolder, onCreatePage } = React.useContext(PageTreeContext);
-  const [isHovered, setIsHovered] = useState(false);
 
   const activePageId = useBlockStore((s) => s.activePageId);
   const setActivePage = useBlockStore((s) => s.setActivePage);
@@ -238,7 +235,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   const data = node.data;
   const isActive = activePageId === data.id;
   const isExpanded = node.isOpen;
-  const hasChildren = data.children && data.children.length > 0;
+  const hasChildren = data.type === 'folder';
 
   const handleClick = useCallback(() => {
     if (data.type === 'page') {
@@ -271,16 +268,6 @@ const PageTreeItem = React.memo(function PageTreeItem({
   );
 
   const getIcon = () => {
-    if (data.type === 'folder' && isHovered && hasChildren) {
-      return (
-        <ChevronRight
-          size={16}
-          className={`text-app-fg-light transition-transform cursor-pointer ${isExpanded ? 'rotate-90' : ''}`}
-          onClick={handleChevronClick}
-        />
-      );
-    }
-
     if (data.icon) return data.icon;
 
     if (data.type === 'folder') {
@@ -362,13 +349,10 @@ const PageTreeItem = React.memo(function PageTreeItem({
       depth={1}
       hasChildren={hasChildren}
       isExpanded={isExpanded}
-      hideChevron={true}
       actionItems={actionItems}
       rightIndicator={rightIndicator}
       onClick={handleClick}
       onChevronClick={handleChevronClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     />
   );
 });

@@ -20,6 +20,7 @@ import { MainContent } from '@/components/MainContent';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Login from '@/pages/Login';
 import { useBlockStore } from '@/store/useBlockStore';
+import { Toaster } from 'sonner';
 import { initialMockData } from '@/mockData';
 import './App.css';
 
@@ -85,6 +86,9 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      
+      {/* 挂载全局 Sonner 通知 */}
+      <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );
 }

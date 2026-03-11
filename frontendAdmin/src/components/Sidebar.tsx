@@ -22,6 +22,7 @@ import { useSidebarStore } from '@/store/useSidebarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
 import { createFolder, createPage } from '@/api/blocks';
+import { toast } from 'sonner';
 import { CreateItemDialog } from './CreateItemDialog';
 import {
   SidebarHeader,
@@ -107,6 +108,7 @@ export function Sidebar() {
           parentId: createDialog.parentId,
         });
         console.log('[Create] Folder created:', result);
+        toast.success(`文件夹 "${title}" 创建成功`);
       } else {
         const newPage = await createPage({
           title,
@@ -114,10 +116,12 @@ export function Sidebar() {
         });
         console.log('[Create] Page created:', newPage);
         setActivePage(newPage.id);
+        toast.success(`页面 "${title}" 创建成功`);
       }
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       console.error('创建失败:', error);
+      toast.error(error.message || '创建失败');
     } finally {
       setIsCreating(false);
     }

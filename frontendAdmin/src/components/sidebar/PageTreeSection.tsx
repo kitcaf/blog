@@ -234,7 +234,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   const data = node.data;
   const isActive = activePageId === data.id;
   const isExpanded = node.isOpen;
-  const hasChildren = data.type === 'folder' || (data.contentIds && data.contentIds.length > 0);
+  const hasChildren = data.contentIds && data.contentIds.length > 0;
 
   const handleClick = useCallback(() => {
     if (data.type === 'page') {

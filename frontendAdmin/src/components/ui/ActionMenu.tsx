@@ -77,10 +77,9 @@ export const ActionMenu = React.memo(function ActionMenu({
             {item.divided && index !== 0 && <DropdownMenuSeparator />}
             
             <DropdownMenuItem
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                item.onClick(e as React.MouseEvent<HTMLDivElement>);
+              onSelect={(e) => {
+                // Let Radix handle the menu closing normally, then trigger our onClick
+                item.onClick(e as unknown as React.MouseEvent<HTMLDivElement>);
               }}
               className={`group flex items-center justify-between cursor-pointer py-1.5 px-2 ${
                 item.destructive ? 'text-destructive focus:text-destructive focus:bg-destructive/10' : ''

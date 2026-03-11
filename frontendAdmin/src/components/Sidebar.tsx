@@ -72,9 +72,12 @@ export function Sidebar() {
 
   // 打开创建对话框
   const handleOpenCreateDialog = useCallback((type: 'folder' | 'page', parentId?: string | null) => {
-    // 直接使用 parentId，不需要查找父节点
-    // 如果有 parentId，显示"在文件夹中创建"，否则显示"根目录"
-    const parentTitle = parentId ? '在文件夹中创建' : '根目录';
+    let parentTitle = '根目录';
+    if (parentId) {
+      const parentBlock = useBlockStore.getState().blocksById[parentId];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parentTitle = parentBlock ? ((parentBlock.props as any)?.title || '未命名文件夹') : '未命名文件夹';
+    }
     
     console.log('[CreateDialog] Opening dialog:', { type, parentId, parentTitle });
     

@@ -82,7 +82,7 @@ export function usePageTreeQuery(
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: blockQueryKeys.pageTree(),
     queryFn: fetchPageTree,
-    staleTime: 5 * 60 * 1000, // 5 分钟内不重新请求
+    staleTime: 10 * 60 * 1000, // 5 分钟内不重新请求
     ...options,
   });
 

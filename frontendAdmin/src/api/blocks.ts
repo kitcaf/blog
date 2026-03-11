@@ -90,6 +90,7 @@ export interface PageTreeNode {
  * 将扁平的 Block 数组组装成嵌套树结构（O(n)）。
  */
 function buildPageTree(blocks: Block[]): PageTreeNode[] {
+  console.log('[Sidebar] Building tree with blocks count:', blocks.length);
   const nodeMap = new Map<string, PageTreeNode>();
 
   for (const block of blocks) {
@@ -99,9 +100,9 @@ function buildPageTree(blocks: Block[]): PageTreeNode[] {
       id: block.id,
       parentId: block.parentId,
       type: block.type as 'page' | 'folder',
-      title: props?.title ?? '未命名',
+      title: props?.title || '未命名',
       icon: props?.icon,
-      isPublished: block.publishedAt != null, // 根据 publishedAt 判断是否已发布
+      isPublished: block.publishedAt != null,
       slug: block.slug ?? undefined,
       contentIds: block.contentIds,
       children: [],
@@ -111,20 +112,21 @@ function buildPageTree(blocks: Block[]): PageTreeNode[] {
   const roots: PageTreeNode[] = [];
 
   for (const node of nodeMap.values()) {
-    if (node.parentId === null) {
-      roots.push(node);
+    // 逻辑优化：如果 parentId 缺失，或者指向一个不在当前列表中的节点，则将其视为根节点
+    const parent = node.parentId ? nodeMap.get(node.parentId) : null;
+    
+    if (parent) {
+      parent.children.push(node);
     } else {
-      const parent = nodeMap.get(node.parentId);
-      if (parent) {
-        parent.children.push(node);
-      } else {
-        roots.push(node);
-      }
+      console.log('[Sidebar] Root node detected:', node.title, node.id);
+      roots.push(node);
     }
   }
 
+  console.log('[Sidebar] Tree built, roots count:', roots.length);
   return roots;
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 三、API 1：侧边栏目录树（懒加载）

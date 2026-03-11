@@ -3,29 +3,14 @@
  * @description 页面目录树区域：标题、新建按钮、树形列表
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText, ChevronRight } from 'lucide-react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { SidebarItem } from './SidebarItem';
 import { type PageTreeNode, moveBlock } from '@/api/blocks';
 import { type ActionMenuItem } from '@/components/ui/ActionMenu';
 import { ActionMenuIcons } from '@/components/ui/ActionMenuIcons';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-  DragOverlay,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { Tree, type NodeRendererProps, type MoveHandler } from 'react-arborist';
 
 interface PageTreeSectionProps {
   tree: PageTreeNode[];
@@ -48,88 +33,92 @@ export function PageTreeSection({
   onRetry,
   onMoveComplete,
 }: PageTreeSectionProps) {
-  const [activeNode, setActiveNode] = useState<PageTreeNode | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 240, height: 400 });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    })
-  );
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-  const handleDragStart = (e: DragStartEvent) => {
-    setActiveNode(e.active.data.current?.node || null);
-  };
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          setDimensions({
+            width: entry.contentRect.width,
+            height: entry.contentRect.height,
+          });
+        }
+      }
+    });
 
-  const handleDragEnd = async (e: DragEndEvent) => {
-    setActiveNode(null);
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
-    const activeData = active.data.current?.node as PageTreeNode;
-    const overData = over.data.current?.node as PageTreeNode;
-    if (!activeData || !overData) return;
+  // Debug: 打印树数据
+  useEffect(() => {
+    console.log('[PageTreeSection] Tree data:', tree);
+    console.log('[PageTreeSection] Container size:', dimensions);
+  }, [tree, dimensions]);
+
+  const handleMove: MoveHandler<PageTreeNode> = async ({ dragIds, parentId, index }) => {
+    const activeId = dragIds[0];
+    if (!activeId) return;
 
     const blocksById = useBlockStore.getState().blocksById;
     const rootPageIds = useBlockStore.getState().rootPageIds;
-    
-    const newParentId = overData.parentId;
-    
+
+    const activeNode = blocksById[activeId];
+    if (!activeNode) return;
+
+    const newParentId = parentId === '__REACT_ARBORIST_INTERNAL_ROOT__' ? null : parentId;
+
     let newSiblingsIds: string[] = [];
     if (newParentId === null) {
       newSiblingsIds = [...rootPageIds];
     } else {
       newSiblingsIds = [...(blocksById[newParentId]?.contentIds || [])];
     }
-    
+
     let oldContentIds: string[] = [];
-    if (activeData.parentId !== newParentId) {
-      let oldSiblingsIds: string[] = [];
-      if (activeData.parentId === null) {
-        oldSiblingsIds = [...rootPageIds];
+    if (activeNode.parentId !== newParentId) {
+      if (activeNode.parentId === null) {
+        oldContentIds = [...rootPageIds];
       } else {
-        oldSiblingsIds = [...(blocksById[activeData.parentId]?.contentIds || [])];
+        oldContentIds = [...(blocksById[activeNode.parentId]?.contentIds || [])];
       }
-      oldContentIds = oldSiblingsIds.filter(id => id !== activeData.id);
-      newSiblingsIds = newSiblingsIds.filter(id => id !== activeData.id);
+      oldContentIds = oldContentIds.filter(id => id !== activeId);
+      newSiblingsIds = newSiblingsIds.filter(id => id !== activeId);
     } else {
-      newSiblingsIds = newSiblingsIds.filter(id => id !== activeData.id);
+      newSiblingsIds = newSiblingsIds.filter(id => id !== activeId);
     }
 
-    const overIndex = newSiblingsIds.indexOf(overData.id);
-    const insertIndex = overIndex >= 0 ? overIndex : newSiblingsIds.length;
-    newSiblingsIds.splice(insertIndex, 0, activeData.id);
+    const insertIndex = index >= 0 ? index : newSiblingsIds.length;
+    newSiblingsIds.splice(insertIndex, 0, activeId);
 
     try {
-      if (activeData.parentId === newParentId) {
+      if (activeNode.parentId === newParentId) {
         useBlockStore.getState().reorderChildren(newParentId, newSiblingsIds);
       } else {
-        useBlockStore.getState().moveNode(activeData.id, newParentId, newSiblingsIds, activeData.parentId, oldContentIds);
+        useBlockStore.getState().moveNode(activeId, newParentId, newSiblingsIds, activeNode.parentId, oldContentIds);
       }
-      
+
       await moveBlock({
-        id: activeData.id,
+        id: activeId,
         new_parent_id: newParentId,
         new_content_ids: newSiblingsIds,
       });
       onMoveComplete?.();
-    } catch (error) {
-      console.error('Move block failed:', error);
-      onMoveComplete?.(); 
+    } catch (err) {
+      console.error('Move block failed:', err);
+      onMoveComplete?.();
     }
   };
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="mt-6 flex flex-col gap-1">
+    <div className="mt-6 flex flex-col gap-1 flex-1 overflow-hidden">
       {/* 标题和新建按钮 */}
-      <div className="mb-1 px-2 flex justify-between items-center">
+      <div className="mb-1 px-2 flex justify-between items-center shrink-0">
         <span className="text-xs font-medium text-app-fg-light">空间</span>
         <div className="flex gap-1">
           <button
@@ -151,45 +140,33 @@ export function PageTreeSection({
         </div>
       </div>
 
-      {/* 加载状态 */}
       {isLoading && <LoadingState />}
-
-      {/* 错误状态 */}
       {isError && <ErrorState error={error} onRetry={onRetry} />}
-
-      {/* 空状态 */}
       {!isLoading && !isError && tree.length === 0 && <EmptyState />}
 
       {/* 目录树 */}
       {!isLoading && !isError && tree.length > 0 && (
-        <SortableContext items={tree.map(n => n.id)} strategy={verticalListSortingStrategy}>
-          <div>
-            {tree.map((node) => (
-              <PageTreeItem 
-                key={node.id} 
-                node={node} 
-                depth={0}
-                onCreateFolder={onCreateFolder}
-                onCreatePage={onCreatePage}
-              />
-            ))}
+        <PageTreeContext.Provider value={{ onCreateFolder, onCreatePage }}>
+          <div ref={containerRef} className="flex-1 min-h-[200px]" style={{ position: 'relative' }}>
+            <Tree
+              data={tree}
+              width='100%'
+              height={dimensions.height}
+              indent={16}
+              rowHeight={36}
+              padding={0}
+              onMove={handleMove}
+              disableDrag={false}
+              disableDrop={false}
+              idAccessor="id"
+              childrenAccessor="children"
+            >
+              {PageTreeItem}
+            </Tree>
           </div>
-        </SortableContext>
+        </PageTreeContext.Provider>
       )}
-
-      <DragOverlay>
-        {activeNode ? (
-          <SidebarItem
-            icon={activeNode.type === 'folder' ? <FolderIcon size={16} /> : <FileText size={16} />}
-            label={activeNode.title}
-            active={false}
-            depth={0}
-            isDragging
-          />
-        ) : null}
-      </DragOverlay>
     </div>
-    </DndContext>
   );
 }
 
@@ -199,7 +176,7 @@ export function PageTreeSection({
 
 function LoadingState() {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 text-xs text-app-fg-light">
+    <div className="flex items-center gap-2 px-3 py-2 text-xs text-app-fg-light shrink-0">
       <Loader2 size={13} className="animate-spin" />
       <span>加载中...</span>
     </div>
@@ -208,7 +185,7 @@ function LoadingState() {
 
 function ErrorState({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
   return (
-    <div className="mx-2 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2">
+    <div className="mx-2 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 shrink-0">
       <div className="flex items-center gap-1.5 text-xs text-red-400 mb-1">
         <AlertCircle size={12} />
         <span>加载失败</span>
@@ -229,141 +206,92 @@ function ErrorState({ error, onRetry }: { error: Error | null; onRetry: () => vo
 
 function EmptyState() {
   return (
-    <div className="px-3 py-2 text-xs text-app-fg-light">
+    <div className="px-3 py-2 text-xs text-app-fg-light shrink-0">
       暂无页面，点击上方按钮创建
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 内部组件：树节点（递归）
+// 内部组件：树节点（用于 react-arborist）
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface PageTreeItemProps {
-  node: PageTreeNode;
-  depth: number;
+const PageTreeContext = React.createContext<{
   onCreateFolder: (parentId?: string | null) => void;
   onCreatePage: (parentId?: string | null) => void;
-}
+}>({
+  onCreateFolder: () => { },
+  onCreatePage: () => { },
+});
 
-const PageTreeItem = React.memo(function PageTreeItem({ 
-  node, 
-  depth,
-  onCreateFolder,
-  onCreatePage,
-}: PageTreeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+const PageTreeItem = React.memo(function PageTreeItem({
+  node,
+  style,
+  dragHandle,
+}: NodeRendererProps<PageTreeNode>) {
+  const { onCreateFolder, onCreatePage } = React.useContext(PageTreeContext);
   const [isHovered, setIsHovered] = useState(false);
-  const [isLoadingChildren, setIsLoadingChildren] = useState(false);
-  const [loadedChildren, setLoadedChildren] = useState<PageTreeNode[]>([]);
-  const hasChildren = node.children.length > 0 || loadedChildren.length > 0;
-  const displayChildren = loadedChildren.length > 0 ? loadedChildren : node.children;
 
   const activePageId = useBlockStore((s) => s.activePageId);
   const setActivePage = useBlockStore((s) => s.setActivePage);
-  const isActive = activePageId === node.id;
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: node.id,
-    data: { node },
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const data = node.data;
+  const isActive = activePageId === data.id;
+  const isExpanded = node.isOpen;
+  const hasChildren = data.children && data.children.length > 0;
 
   const handleClick = useCallback(() => {
-    // 只有 page 类型才能激活（folder 不能打开编辑器）
-    if (node.type === 'page') {
-      setActivePage(node.id);
+    if (data.type === 'page') {
+      setActivePage(data.id);
     }
-    // 有子节点时切换展开状态
-    if (hasChildren) {
-      setIsExpanded((prev) => !prev);
-    }
-  }, [node.id, node.type, hasChildren, setActivePage]);
+  }, [data.id, data.type, setActivePage]);
 
   const handleChevronClick = useCallback(
-    async (e: React.MouseEvent) => {
+    (e: React.MouseEvent) => {
       e.stopPropagation();
-      
-      // 如果是文件夹且未加载过子节点，则懒加载
-      if (node.type === 'folder' && !isExpanded && loadedChildren.length === 0 && node.children.length === 0) {
-        setIsLoadingChildren(true);
-        try {
-          const { fetchChildren } = await import('@/api/blocks');
-          const { tree } = await fetchChildren(node.id);
-          setLoadedChildren(tree);
-        } catch (error) {
-          console.error('加载子节点失败:', error);
-        } finally {
-          setIsLoadingChildren(false);
-        }
-      }
-      
-      setIsExpanded((prev) => !prev);
+      node.toggle();
     },
-    [node.id, node.type, node.children.length, isExpanded, loadedChildren.length],
+    [node],
   );
 
   const handleCreateFolder = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      onCreateFolder(node.id);
+      onCreateFolder(data.id);
     },
-    [node.id, onCreateFolder],
+    [data.id, onCreateFolder],
   );
 
   const handleCreatePage = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      onCreatePage(node.id);
+      onCreatePage(data.id);
     },
-    [node.id, onCreatePage],
+    [data.id, onCreatePage],
   );
 
-  // 获取图标（统一尺寸 16px）
-  // 只有文件夹类型悬停时才显示展开箭头
   const getIcon = () => {
-    // 文件夹类型 + 悬停时：显示展开箭头
-    if (node.type === 'folder' && isHovered) {
-      if (isLoadingChildren) {
-        return <Loader2 size={16} className="text-app-fg-light animate-spin" />;
-      }
+    if (data.type === 'folder' && isHovered && hasChildren) {
       return (
-        <ChevronRight 
-          size={16} 
+        <ChevronRight
+          size={16}
           className={`text-app-fg-light transition-transform cursor-pointer ${isExpanded ? 'rotate-90' : ''}`}
           onClick={handleChevronClick}
         />
       );
     }
-    
-    // 非悬停或非文件夹：显示默认图标
-    if (node.icon) {
-      return node.icon;
-    }
-    
-    if (node.type === 'folder') {
+
+    if (data.icon) return data.icon;
+
+    if (data.type === 'folder') {
       return <FolderIcon size={16} className="text-app-fg-light" />;
     }
     return <FileText size={16} className="text-app-fg-light" />;
   };
 
-  // 构建操作菜单项
   const actionItems: ActionMenuItem[] = React.useMemo(() => {
     const items: ActionMenuItem[] = [];
-
-    // 对于文件夹，支持新建子项
-    if (node.type === 'folder') {
+    if (data.type === 'folder') {
       items.push({
         id: 'create-folder',
         label: '新建文件夹',
@@ -377,32 +305,24 @@ const PageTreeItem = React.memo(function PageTreeItem({
         onClick: handleCreatePage,
       });
     }
-
-    // 通用操作：重命名
     items.push({
       id: 'rename',
       label: '重命名',
       icon: ActionMenuIcons.rename,
       shortcut: 'F2',
-      divided: node.type === 'folder', // 如果上面有新建按钮，这里加上分割线
+      divided: data.type === 'folder',
       onClick: () => {
-        // TODO: Implement rename
-        console.log('Rename clicked for', node.id);
+        console.log('Rename:', data.id);
       },
     });
-
-    // 通用操作：复制链接
     items.push({
       id: 'copy-link',
       label: '复制链接',
       icon: ActionMenuIcons.copyLink,
       onClick: () => {
-        // TODO: Implement copy link
-        console.log('Copy link clicked for', node.id);
+        console.log('Copy link:', data.id);
       },
     });
-
-    // 通用操作：删除
     items.push({
       id: 'delete',
       label: '删除',
@@ -410,67 +330,45 @@ const PageTreeItem = React.memo(function PageTreeItem({
       destructive: true,
       divided: true,
       onClick: () => {
-        // TODO: Implement delete
-        console.log('Delete clicked for', node.id);
+        console.log('Delete:', data.id);
       },
     });
-
     return items;
-  }, [node.type, node.id, handleCreateFolder, handleCreatePage]);
+  }, [data.type, data.id, handleCreateFolder, handleCreatePage]);
 
-  // 右侧状态指示器（仅 page 类型显示发布状态）
-  const rightIndicator = node.type === 'page' && node.isPublished ? (
+  const rightIndicator = data.type === 'page' && data.isPublished ? (
     <span className="w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
   ) : undefined;
 
-  return (
-    <div>
-      <SidebarItem
-        setNodeRef={setNodeRef}
-        attributes={attributes}
-        listeners={listeners}
-        style={style}
-        isDragging={isDragging}
-        icon={getIcon()}
-        label={node.title}
-        active={isActive}
-        depth={depth}
-        hasChildren={hasChildren}
-        isExpanded={isExpanded}
-        actionItems={actionItems}
-        rightIndicator={rightIndicator}
-        onClick={handleClick}
-        onChevronClick={handleChevronClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      />
+  // react-arborist will inject width, height, top, left, zIndex into style
+  // It may also inject paddingLeft or marginLeft if configured, but we want 
+  // our own clean full-width item. We handle indentation inside SidebarItem or via padding.
+  const basePaddingLeft = 8; // default px-2 is 0.5rem = 8px
+  const indent = node.level * 16;
 
-      {/* 子节点（展开时渲染） */}
-      {isExpanded && (
-        <SortableContext items={displayChildren.map(c => c.id)} strategy={verticalListSortingStrategy}>
-          <div>
-            {displayChildren.length > 0 ? (
-              displayChildren.map((child) => (
-                <PageTreeItem 
-                  key={child.id} 
-                  node={child} 
-                  depth={depth + 1}
-                  onCreateFolder={onCreateFolder}
-                  onCreatePage={onCreatePage}
-                />
-              ))
-            ) : (
-              // 空状态提示
-              <div 
-                className="text-xs text-app-fg-light py-1.5 px-2"
-                style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}
-              >
-                暂无内容
-              </div>
-            )}
-          </div>
-        </SortableContext>
-      )}
-    </div>
+  const mergedStyle: React.CSSProperties = {
+    ...style,
+    paddingLeft: `${basePaddingLeft + indent}px`,
+    width: '100%',
+  };
+
+  return (
+    <SidebarItem
+      innerRef={dragHandle}
+      style={mergedStyle}
+      icon={getIcon()}
+      label={data.title}
+      active={isActive}
+      depth={1}
+      hasChildren={hasChildren}
+      isExpanded={isExpanded}
+      hideChevron={true}
+      actionItems={actionItems}
+      rightIndicator={rightIndicator}
+      onClick={handleClick}
+      onChevronClick={handleChevronClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    />
   );
 });

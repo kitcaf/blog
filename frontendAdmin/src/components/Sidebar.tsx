@@ -125,9 +125,13 @@ export function Sidebar() {
     if (flatPages.length === 0) return;
     hydrate(flatPages);
 
+    // 逻辑优化：寻找第一个页面作为活动页面，不强制要求 parentId === null
     if (!activePageId) {
-      const firstPage = flatPages.find((b) => b.type === 'page' && b.parentId === null);
-      if (firstPage) setActivePage(firstPage.id);
+      const firstPage = flatPages.find((b) => b.type === 'page');
+      if (firstPage) {
+        console.log('[Sidebar] Setting initial active page:', (firstPage.props as any).title, firstPage.id);
+        setActivePage(firstPage.id);
+      }
     }
   }, [flatPages, hydrate, activePageId, setActivePage]);
 
@@ -144,7 +148,7 @@ export function Sidebar() {
     >
       <div
         className="flex flex-col h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity"
-        style={{ width: width }}
+        style={{ width: `${width}px` }}
       >
         <SidebarHeader onHide={() => setIsOpen(false)} />
         

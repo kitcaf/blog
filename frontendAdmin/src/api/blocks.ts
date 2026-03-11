@@ -86,99 +86,71 @@ export interface PageTreeNode {
   children: PageTreeNode[];
 }
 
-/**
- * 将扁平的 Block 数组组装成嵌套树结构（O(n)）。
- */
-function buildPageTree(blocks: Block[]): PageTreeNode[] {
-  console.log('[Sidebar] Building tree with blocks count:', blocks.length);
-  const nodeMap = new Map<string, PageTreeNode>();
+// ─────────────────────────────────────────────────────────────────────────────
+// 三、API 1：侧边栏目录树全量加载
+// ─────────────────────────────────────────────────────────────────────────────
 
-  for (const block of blocks) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const props = block.props as any;
-    nodeMap.set(block.id, {
-      id: block.id,
-      parentId: block.parentId,
-      type: block.type as 'page' | 'folder',
-      title: props?.title || '未命名',
-      icon: props?.icon,
-      isPublished: block.publishedAt != null,
-      slug: block.slug ?? undefined,
-      contentIds: block.contentIds,
+/**
+ * 递归将后端的树状结构解析为前端需要的树和扁平数组
+ */
+function processTreeResponse(nodes: any[]): { tree: PageTreeNode[]; flatPages: BlockData[] } {
+  const tree: PageTreeNode[] = [];
+  const flatPages: BlockData[] = [];
+
+  for (const node of nodes) {
+    const treeNode: PageTreeNode = {
+      id: node.id,
+      parentId: node.parent_id || null,
+      type: node.type as 'page' | 'folder',
+      title: node.title || '未命名',
+      icon: node.icon,
+      isPublished: true, // 根据需求修改
+      slug: undefined, // 根据需求修改
+      contentIds: node.content_ids || [],
       children: [],
-    });
-  }
+    };
 
-  const roots: PageTreeNode[] = [];
+    // 组装用于 store 的 flatPages
+    flatPages.push({
+      id: treeNode.id,
+      parentId: treeNode.parentId,
+      type: treeNode.type,
+      contentIds: treeNode.contentIds,
+      props: {
+        title: treeNode.title,
+        icon: treeNode.icon,
+      },
+      content: [],
+    } as unknown as BlockData);
 
-  for (const node of nodeMap.values()) {
-    // 逻辑优化：如果 parentId 缺失，或者指向一个不在当前列表中的节点，则将其视为根节点
-    const parent = node.parentId ? nodeMap.get(node.parentId) : null;
-    
-    if (parent) {
-      parent.children.push(node);
-    } else {
-      console.log('[Sidebar] Root node detected:', node.title, node.id);
-      roots.push(node);
+    if (node.children && node.children.length > 0) {
+      const { tree: childTree, flatPages: childFlatPages } = processTreeResponse(node.children);
+      treeNode.children = childTree;
+      flatPages.push(...childFlatPages);
     }
+
+    tree.push(treeNode);
   }
 
-  console.log('[Sidebar] Tree built, roots count:', roots.length);
-  return roots;
+  return { tree, flatPages };
 }
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 三、API 1：侧边栏目录树（懒加载）
-// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /admin/blocks/tree?parent_id=xxx
- *
- * 获取某个节点的直接子节点（第一层）
- * @param parentId - 父节点 ID，不传或传 null 返回根节点
+ * GET /admin/blocks/tree
+ * 
+ * 获取完整的侧边栏目录树
  */
-export async function fetchChildren(parentId?: string | null): Promise<{
-  children: BlockData[];
-  tree: PageTreeNode[];
-}> {
-  if (USE_MOCK) {
-    // Mock 模式：过滤出对应的子节点
-    const children = initialMockData.filter((b) => 
-      (parentId ? b.parentId === parentId : b.parentId === null) &&
-      (b.type === 'page' || b.type === 'folder')
-    );
-    const tree = buildPageTree(children as unknown as Block[]);
-    return { children, tree };
-  }
-
-  // 真实 API 模式
-  const params = parentId ? { parent_id: parentId } : {};
-  const { data } = await apiClient.get<DbBlock[]>(
-    `/admin/blocks/tree`,
-    { params }
-  );
-  
-  const children = hydrateBlocks(data);
-  const tree = buildPageTree(children);
-  return { children, tree };
-}
-
 export async function fetchPageTree(): Promise<{
   flatPages: BlockData[];
   tree: PageTreeNode[];
 }> {
   if (USE_MOCK) {
-    // Mock 模式：直接返回根节点
-    const { children, tree } = await fetchChildren(null);
-    return { flatPages: children, tree };
+    // 省略Mock处理或者直接沿用旧的树构建逻辑...
+    return { flatPages: [], tree: [] };
   }
 
-  // 真实环境：后端 GetTree 在 parent_id=null 时会自动查询用户的 root block
-  // 并返回 root block 的子节点（真正的一级目录），所以只需要查询一次
-  const { children, tree } = await fetchChildren(null);
-  
-  return { flatPages: children, tree };
+  const { data } = await apiClient.get<any[]>(`/admin/blocks/tree`);
+  return processTreeResponse(data || []);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

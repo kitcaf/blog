@@ -1,6 +1,6 @@
 /**
  * @file PageTreeSection.tsx
- * @description 页面目录树区域：标题、新建按钮、树形列表
+ * @description 页面目录树区域：标题、新建按钮、树形列表（支持懒加载）
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -34,13 +34,12 @@ export function PageTreeSection({
   onMoveComplete,
 }: PageTreeSectionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [treeHeight, setTreeHeight] = useState(400); // 用于 react-arborist 的高度计算
+  const [treeHeight, setTreeHeight] = useState(400);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // React Arborist 的虚拟列表需要确切的像素高度，所以使用 ResizeObserver 动态获取容器实际高度
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentRect.height > 0) {
@@ -235,7 +234,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   const data = node.data;
   const isActive = activePageId === data.id;
   const isExpanded = node.isOpen;
-  const hasChildren = data.type === 'folder';
+  const hasChildren = data.type === 'folder' || (data.contentIds && data.contentIds.length > 0);
 
   const handleClick = useCallback(() => {
     if (data.type === 'page') {

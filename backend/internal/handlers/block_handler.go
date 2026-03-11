@@ -74,46 +74,19 @@ func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 	})
 }
 
-// GetTree 获取目录树（侧边栏）
+// GetTree 获取完整目录树（侧边栏）
 // 数据库操作步骤：
-// 1. 解析 parent_id 查询参数（可选）
-// 2. 如果 parent_id 为 null：查询用户的 root block，返回其直接子节点
-// 3. 如果 parent_id 有值：查询 parent_id = ? 的子节点
-// 4. 只返回 type IN ('page', 'folder') 的容器类型节点
-// 5. 排序规则：按父节点的 content_ids 字段顺序排序（拖拽排序的结果）
-// 6. 应用用户隔离（created_by = userID）和软删除过滤（deleted_at IS NULL）
+// 1. 去掉 parent_id 参数解析，直接拉取用户的这整棵树
 func (h *BlockHandler) GetTree(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
-	// 步骤1：解析 parent_id 参数
-	parentIDStr := c.Query("parent_id")
-	var parentID *uuid.UUID
-
-	if parentIDStr != "" && parentIDStr != "null" {
-		parsed, err := uuid.Parse(parentIDStr)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, "Invalid parent_id")
-			return
-		}
-		parentID = &parsed
-	} else {
-		// 步骤2：parent_id 为 null 时，查询用户的 root block
-		rootBlock, err := h.blockService.GetOrCreateRootBlock(userID)
-		if err != nil {
-			response.Error(c, http.StatusInternalServerError, "Failed to get root block: "+err.Error())
-			return
-		}
-		parentID = &rootBlock.ID
-	}
-
-	// 步骤3-6：查询子节点（repository 层会按 content_ids 顺序排序）
-	children, err := h.blockService.GetChildren(userID, parentID)
+	trees, err := h.blockService.GetSidebarTree(userID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get tree: "+err.Error())
 		return
 	}
 
-	response.Success(c, children)
+	response.Success(c, trees)
 }
 
 // MoveRequest 定义树节点移动和排序的通用请求结构

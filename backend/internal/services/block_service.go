@@ -146,6 +146,18 @@ func (s *BlockService) GetChildren(userID uuid.UUID, parentID *uuid.UUID) ([]mod
 	return s.blockRepo.FindChildren(userID, *parentID)
 }
 
+// GetSidebarTree 获取完整侧边栏目录树
+func (s *BlockService) GetSidebarTree(userID uuid.UUID) ([]*models.PageTreeNode, error) {
+	// 1. 先获取根节点 ID
+	rootBlock, err := s.GetOrCreateRootBlock(userID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// 2. 调用 repository 层的高效组装方法
+	return s.blockRepo.GetSidebarTree(userID, rootBlock.ID)
+}
+
 // GetOrCreateRootBlock 获取或创建用户的 root block
 func (s *BlockService) GetOrCreateRootBlock(userID uuid.UUID) (*models.Block, error) {
 	// 先尝试查询

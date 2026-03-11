@@ -326,3 +326,124 @@ func (r *BlockRepository) UpdateDescendantPaths(userID uuid.UUID, oldPath, newPa
 
 	return nil
 }
+
+// GetSidebarTree 返回整棵树的结构
+func (r *BlockRepository) GetSidebarTree(userID uuid.UUID, rootID uuid.UUID) ([]*models.PageTreeNode, error) {
+	var blocks []models.Block
+	
+	// 1. O(1) 极速查询：利用 path 索引，且严格限制 type
+	err := r.db.Select("id", "parent_id", "type", "properties", "content_ids").
+		Where("path LIKE ?", "/"+rootID.String()+"/%").
+		Where("type IN ?", []string{"root", "folder", "page"}). // 把 root 查出来作为起点
+		Where("created_by = ? AND deleted_at IS NULL", userID).
+		Find(&blocks).Error
+		
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 准备哈希表，实现 O(N) 的极速树组装
+	nodeMap := make(map[string]*models.PageTreeNode)
+	
+	// 第一遍遍历：初始化所有节点，并存入哈希表
+	for _, b := range blocks {
+		// 解析 properties 里的 title 和 icon
+		var props struct {
+			Title string `json:"title"`
+			Icon  string `json:"icon"`
+		}
+		json.Unmarshal(b.Properties, &props)
+		
+		// 解析 content_ids
+		var contentIDs []string
+		json.Unmarshal(b.ContentIDs, &contentIDs)
+
+		if contentIDs == nil {
+			contentIDs = []string{}
+		}
+		
+		node := &models.PageTreeNode{
+			ID:         b.ID.String(),
+			Type:       b.Type,
+			Title:      props.Title,
+			Icon:       props.Icon,
+			ContentIDs: contentIDs,
+			Children:   make([]*models.PageTreeNode, 0),
+		}
+		if b.ParentID != nil {
+			pid := b.ParentID.String()
+			node.ParentID = &pid
+		}
+		
+		nodeMap[node.ID] = node
+	}
+
+	// 第二遍遍历：通过哈希表建立父子关系
+	var rootNodes []*models.PageTreeNode
+	for _, node := range nodeMap {
+		if node.ParentID == nil || *node.ParentID == "" {
+			 // 如果是顶级节点 (或者隐藏的 root 节点)，放入根数组
+			 rootNodes = append(rootNodes, node)
+		} else {
+			 // 找到它的父节点，把自己塞进父节点的 Children 数组里
+			 if parent, exists := nodeMap[*node.ParentID]; exists {
+				 parent.Children = append(parent.Children, node)
+			 } else {
+				// 理论上不会出现，但如果真出现了就把他当作根节点处理
+				rootNodes = append(rootNodes, node)
+			 }
+		}
+	}
+
+	// 3. 根据 ContentIDs 对 Children 进行排序
+	for _, node := range nodeMap {
+		if len(node.Children) > 0 && len(node.ContentIDs) > 0 {
+			node.Children = sortChildrenByContentIDs(node.Children, node.ContentIDs)
+		}
+	}
+
+	// 过滤出真正的第一级节点(root的子节点)
+	var finalNodes []*models.PageTreeNode
+	for _, n := range rootNodes {
+		if n.Type == "root" {
+			finalNodes = append(finalNodes, n.Children...)
+		} else {
+			finalNodes = append(finalNodes, n)
+		}
+	}
+
+	// 对第一级本身也进行排序，如果找到了 root 节点的话
+	for _, n := range rootNodes {
+		if n.Type == "root" && len(n.ContentIDs) > 0 {
+			finalNodes = sortChildrenByContentIDs(finalNodes, n.ContentIDs)
+			break
+		}
+	}
+
+	if finalNodes == nil {
+		finalNodes = []*models.PageTreeNode{}
+	}
+
+	return finalNodes, nil
+}
+
+// 辅助排序函数
+func sortChildrenByContentIDs(children []*models.PageTreeNode, contentIDs []string) []*models.PageTreeNode {
+	// 建立 ID 对应的排序权重映射
+	orderMap := make(map[string]int)
+	for i, id := range contentIDs {
+		orderMap[id] = i
+	}
+	
+	sort.SliceStable(children, func(i, j int) bool {
+		// 如果在 content_ids 中找不到，放到最后
+		rankI, ok1 := orderMap[children[i].ID]
+		if !ok1 { rankI = 999999 }
+		rankJ, ok2 := orderMap[children[j].ID]
+		if !ok2 { rankJ = 999999 }
+		
+		return rankI < rankJ
+	})
+	
+	return children
+}

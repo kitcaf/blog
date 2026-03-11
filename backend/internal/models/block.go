@@ -117,6 +117,17 @@ type Block struct {
 	DeletedAt *time.Time `gorm:"type:timestamptz;index" json:"deleted_at,omitempty"`
 }
 
+// PageTreeNode 侧边栏目录树节点结构
+type PageTreeNode struct {
+	ID         string          `json:"id"`
+	ParentID   *string         `json:"parent_id,omitempty"`
+	Type       string          `json:"type"`
+	Title      string          `json:"title"`
+	Icon       string          `json:"icon"`
+	ContentIDs []string        `json:"content_ids"`
+	Children   []*PageTreeNode `json:"children"` // 总是返回数组让前端好处理
+}
+
 func (b *Block) TableName() string {
 	return "blocks"
 }

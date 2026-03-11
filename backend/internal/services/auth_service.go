@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"blog-backend/internal/config"
@@ -60,36 +61,44 @@ func (s *AuthService) Login(username, password string) (*TokenPair, *models.User
 	return tokens, user, nil
 }
 
-// Register 用户注册
 func (s *AuthService) Register(username, email, password string) (*models.User, error) {
-	// 检查用户名是否已存在
-	if _, err := s.userRepo.FindByUsername(username); err == nil {
-		return nil, errors.New(errors.ErrUserAlreadyExists, "username: "+username)
-	}
-
-	// 检查邮箱是否已存在
-	if _, err := s.userRepo.FindByEmail(email); err == nil {
-		return nil, errors.New(errors.ErrEmailAlreadyExists, "email: "+email)
-	}
-
 	// 哈希密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrInternalServer, err)
 	}
 
-	// 创建新用户
+	// 构造新用户
 	user := &models.User{
 		Username:     username,
 		Email:        email,
 		PasswordHash: string(hashedPassword),
 	}
 
+	// 利用数据库原生的 UNIQUE 约束，直接一把梭 INSERT
 	if err := s.userRepo.Create(user); err != nil {
+		errMsg := err.Error()
+		// 根据 Postgres 等主流数据库的错误信息判定是否违反唯一索引
+		if containsAny(errMsg, "users_username_key", "Duplicate entry", "username") && containsAny(errMsg, "unique", "Duplicate") {
+			return nil, errors.New(errors.ErrUserAlreadyExists, "username: "+username)
+		}
+		if containsAny(errMsg, "users_email_key", "Duplicate entry", "email") && containsAny(errMsg, "unique", "Duplicate") {
+			return nil, errors.New(errors.ErrEmailAlreadyExists, "email: "+email)
+		}
 		return nil, errors.Wrap(errors.ErrDatabaseInsert, err)
 	}
 
 	return user, nil
+}
+
+func containsAny(s string, substrs ...string) bool {
+	for _, sub := range substrs {
+		if !strings.Contains(s, sub) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // GetUserByID 根据 ID 获取用户

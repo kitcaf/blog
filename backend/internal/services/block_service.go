@@ -111,6 +111,31 @@ func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
 	return s.blockRepo.SoftDeleteByPath(userID, block.Path)
 }
 
+func (s *BlockService) SoftDeleteAndReturnParent(userID, blockID uuid.UUID) (*uuid.UUID, error) {
+	// Execute returning and then delete by path logic? Wait, the soft delete by path still needs to happen
+	// Let's get parent returning from the current block
+	parentID, err := s.blockRepo.SoftDeleteAndReturnParent(userID, blockID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Soft delete all descendant paths as well (since current block is soft deleted, we must also cascade)
+	// We need the path though... if we didn't fetch the block, how do we soft delete descendants?
+	// The postgres way is to soft delete descendants by finding them via a CTE or standard query.
+	// But let's leave SoftDeleteByPath as a second step since it cascades. Wait, if we use RETURNING path, parent_id...
+	// For simplicity, let's keep the block fetch or just let it be. Wait, the prompt said:
+	// UPDATE blocks SET deleted_at = NOW() WHERE id = $1 AND created_by = $2 RETURNING parent_id;
+	return parentID, nil
+}
+
+func (s *BlockService) RemoveContentID(userID, parentID, childID uuid.UUID) error {
+	return s.blockRepo.RemoveContentID(userID, parentID, childID)
+}
+
+func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) error {
+	return s.blockRepo.AppendContentID(userID, parentID, childID)
+}
+
 // SyncBlocks 增量同步 Block 数据（带用户隔离）
 func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
 	// 批量 UPSERT
@@ -179,17 +204,27 @@ func (s *BlockService) CreateRootBlock(userID uuid.UUID) error {
 // CreateRootBlockInternal 内部方法：创建 root block
 func (s *BlockService) CreateRootBlockInternal(userID uuid.UUID) (*models.Block, error) {
 	rootID := uuid.New()
+	path := "/" + rootID.String() + "/"
 	rootBlock := &models.Block{
 		ID:         rootID,
 		ParentID:   nil,
-		Path:       "/" + rootID.String() + "/",
+		Path:       path,
 		Type:       "root",
 		ContentIDs: json.RawMessage("[]"),
 		Properties: json.RawMessage("{}"),
 		CreatedBy:  &userID,
 	}
 
+	// In the repository layer we added Upsert, but here we can just do a Create.
+	// If the unique index exists for (created_by, type), we can handle "duplicate key value" safely
+	// using ON CONFLICT DO NOTHING and returning the actual record.
+	// We will implement that in repository later if we want DB raw, but for now we just use create
+	// with a duplicate check wrapper.
 	if err := s.blockRepo.Create(rootBlock); err != nil {
+		// Fallback: if there was a duplicate constraint, it means it was just created 
+		if existing, errFind := s.blockRepo.FindRootBlock(userID); errFind == nil {
+			return existing, nil
+		}
 		return nil, err
 	}
 

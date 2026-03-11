@@ -21,9 +21,10 @@ import { useBlockStore } from '@/store/useBlockStore';
 import { useSidebarStore } from '@/store/useSidebarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
-import { createFolder, createPage } from '@/api/blocks';
+import { createFolder, createPage, deletePage } from '@/api/blocks';
 import { toast } from 'sonner';
 import { CreateItemDialog } from './CreateItemDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   SidebarHeader,
   SidebarNav,
@@ -52,6 +53,17 @@ export function Sidebar() {
   }>({
     isOpen: false,
     type: 'folder',
+  });
+
+  // 删除对话框状态
+  const [deleteDialog, setDeleteDialog] = useState<{
+    isOpen: boolean;
+    id: string;
+    title: string;
+  }>({
+    isOpen: false,
+    id: '',
+    title: '',
   });
 
   const [isCreating, setIsCreating] = useState(false);
@@ -127,6 +139,28 @@ export function Sidebar() {
     }
   }, [createDialog, isCreating, refetch, setActivePage]);
 
+  // 取代原先直接弹出的确认框，改为打开自制弹窗
+  const handleOpenDeleteDialog = useCallback((id: string, title: string) => {
+    setDeleteDialog({ isOpen: true, id, title });
+  }, []);
+
+  // 执行真正的删除请求
+  const handleConfirmDelete = useCallback(async () => {
+    const { id, title } = deleteDialog;
+    if (!id) return;
+
+    try {
+      await deletePage(id);
+      toast.success(`"${title}" 删除成功`);
+      if (activePageId === id) {
+        setActivePage("");
+      }
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message || '删除失败');
+    }
+  }, [deleteDialog, activePageId, refetch, setActivePage]);
+
   // 水合数据到 Store
   useEffect(() => {
     if (flatPages.length === 0) return;
@@ -168,6 +202,7 @@ export function Sidebar() {
           error={error}
           onCreateFolder={(parentId) => handleOpenCreateDialog('folder', parentId)}
           onCreatePage={(parentId) => handleOpenCreateDialog('page', parentId)}
+          onDeleteNode={handleOpenDeleteDialog}
           onRetry={() => window.location.reload()}
           onMoveComplete={refetch}
         />
@@ -187,6 +222,16 @@ export function Sidebar() {
         parentTitle={createDialog.parentTitle}
         onClose={() => setCreateDialog({ ...createDialog, isOpen: false })}
         onConfirm={handleCreate}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        title="确认删除"
+        description={`确定要删除 "${deleteDialog.title}" 吗？此操作将彻底删除该项目及内部所有结构且无法恢复。`}
+        confirmText="删除"
+        isDestructive={true}
+        onClose={() => setDeleteDialog({ ...deleteDialog, isOpen: false })}
+        onConfirm={handleConfirmDelete}
       />
     </aside>
   );

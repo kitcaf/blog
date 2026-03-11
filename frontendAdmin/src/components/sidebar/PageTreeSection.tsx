@@ -19,6 +19,7 @@ interface PageTreeSectionProps {
   error: Error | null;
   onCreateFolder: (parentId?: string | null) => void;
   onCreatePage: (parentId?: string | null) => void;
+  onDeleteNode: (id: string, title: string) => void;
   onRetry: () => void;
   onMoveComplete?: () => void;
 }
@@ -30,6 +31,7 @@ export function PageTreeSection({
   error,
   onCreateFolder,
   onCreatePage,
+  onDeleteNode,
   onRetry,
   onMoveComplete,
 }: PageTreeSectionProps) {
@@ -143,7 +145,7 @@ export function PageTreeSection({
 
       {/* 目录树 */}
       {!isLoading && !isError && tree.length > 0 && (
-        <PageTreeContext.Provider value={{ onCreateFolder, onCreatePage }}>
+        <PageTreeContext.Provider value={{ onCreateFolder, onCreatePage, onDeleteNode }}>
           <div ref={containerRef} className="flex-1 min-h-[200px]" style={{ position: 'relative' }}>
             <Tree
               data={tree}
@@ -216,9 +218,11 @@ function EmptyState() {
 const PageTreeContext = React.createContext<{
   onCreateFolder: (parentId?: string | null) => void;
   onCreatePage: (parentId?: string | null) => void;
+  onDeleteNode: (id: string, title: string) => void;
 }>({
   onCreateFolder: () => { },
   onCreatePage: () => { },
+  onDeleteNode: () => { },
 });
 
 const PageTreeItem = React.memo(function PageTreeItem({
@@ -226,7 +230,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   style,
   dragHandle,
 }: NodeRendererProps<PageTreeNode>) {
-  const { onCreateFolder, onCreatePage } = React.useContext(PageTreeContext);
+  const { onCreateFolder, onCreatePage, onDeleteNode } = React.useContext(PageTreeContext);
 
   const activePageId = useBlockStore((s) => s.activePageId);
   const setActivePage = useBlockStore((s) => s.setActivePage);
@@ -316,11 +320,11 @@ const PageTreeItem = React.memo(function PageTreeItem({
       destructive: true,
       divided: true,
       onClick: () => {
-        console.log('Delete:', data.id);
+        onDeleteNode(data.id, data.title);
       },
     });
     return items;
-  }, [data.type, data.id, handleCreateFolder, handleCreatePage]);
+  }, [data.type, data.id, data.title, handleCreateFolder, handleCreatePage, onDeleteNode]);
 
   const rightIndicator = data.type === 'page' && data.isPublished ? (
     <span className="w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />

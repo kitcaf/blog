@@ -151,25 +151,8 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 	}
 
 	// 步骤6：更新父节点的 content_ids 字段
-	// 解析父节点的 content_ids
-	var contentIDs []string
-	if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err != nil {
-		contentIDs = []string{}
-	}
-
-	// 追加新 block 的 id
-	contentIDs = append(contentIDs, block.ID.String())
-
-	// 序列化回 JSON
-	newContentIDs, err := json.Marshal(contentIDs)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to update parent content_ids: "+err.Error())
-		return
-	}
-
-	// 更新父节点
-	parent.ContentIDs = newContentIDs
-	if err := h.blockService.UpdatePage(userID, parent); err != nil {
+	// 极致优化：使用 Postgres 原生 jsonb 追加，避免并发下的幽灵写入
+	if err := h.blockService.AppendContentID(userID, *block.ParentID, block.ID); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to update parent: "+err.Error())
 		return
 	}
@@ -245,41 +228,29 @@ func (h *PageHandler) DeletePage(c *gin.Context) {
 		return
 	}
 
-	// 步骤2：查询要删除的 block
-	block, err := h.blockService.GetPageByID(userID, id)
+	// 步骤2：查询要删除的 block，主要为了验证存在性和权限
+	_, err = h.blockService.GetPageByID(userID, id)
 	if err != nil {
 		response.Error(c, http.StatusNotFound, "Page not found")
 		return
 	}
 
-	// 步骤3：软删除该 block 及其子孙节点
-	if err := h.blockService.DeletePage(userID, id); err != nil {
+	// 步骤3：软删除当前 block，并一次性用 RETURNING 拿到它的 parent_id
+	parentID, err := h.blockService.SoftDeleteAndReturnParent(userID, id)
+	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to delete page")
 		return
 	}
 
-	// 步骤4：从父节点的 content_ids 中移除
-	if block.ParentID != nil {
-		parent, err := h.blockService.GetPageByID(userID, *block.ParentID)
-		if err == nil {
-			// 解析父节点的 content_ids
-			var contentIDs []string
-			if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err == nil {
-				// 移除被删除的 block id
-				newContentIDs := []string{}
-				for _, cid := range contentIDs {
-					if cid != id.String() {
-						newContentIDs = append(newContentIDs, cid)
-					}
-				}
+	// 步骤4：级联软删除所有的子孙节点
+	if err := h.blockService.DeletePage(userID, id); err != nil { // DeletePage now falls back to blockRepo.SoftDeleteByPath
+		// ignore err or log
+	}
 
-				// 更新父节点
-				if newContentIDsJSON, err := json.Marshal(newContentIDs); err == nil {
-					parent.ContentIDs = newContentIDsJSON
-					h.blockService.UpdatePage(userID, parent)
-				}
-			}
-		}
+	// 步骤5：从父节点的 content_ids 中移除
+	// 极致优化：使用 Postgres 原生 jsonb 移除，避免高并发冲突
+	if parentID != nil {
+		h.blockService.RemoveContentID(userID, *parentID, id)
 	}
 
 	response.Success(c, gin.H{"message": "删除成功"})

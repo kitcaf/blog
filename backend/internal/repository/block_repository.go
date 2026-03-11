@@ -115,6 +115,47 @@ func (r *BlockRepository) SoftDelete(userID uuid.UUID, ids []uuid.UUID) error {
 		Update("deleted_at", now).Error
 }
 
+// 极致优化：使用 RETURNING 一把梭软删除并返回 parent_id (避免先查后写)
+func (r *BlockRepository) SoftDeleteAndReturnParent(userID, blockID uuid.UUID) (*uuid.UUID, error) {
+	var parentID *uuid.UUID
+	
+	// Postgres 特有的 RETURNING 语法
+	err := r.db.Raw(`
+		UPDATE blocks 
+		SET deleted_at = NOW() 
+		WHERE id = ? AND created_by = ? AND deleted_at IS NULL 
+		RETURNING parent_id
+	`, blockID, userID).Scan(&parentID).Error
+	
+	return parentID, err
+}
+
+// 极致优化：利用 Postgres 原生 jsonb 移除数组内的指定元素
+func (r *BlockRepository) RemoveContentID(userID, parentID, childID uuid.UUID) error {
+	parentIDStr := parentID.String()
+	childIDStr := childID.String()
+	// 注意这里 content_ids 类型必须是 jsonb
+	return r.db.Exec(`
+		UPDATE blocks
+		SET content_ids = content_ids - ?
+		WHERE id = ? AND created_by = ? AND deleted_at IS NULL
+	`, childIDStr, parentIDStr, userID).Error
+}
+
+// 极致优化：利用 Postgres 原生 jsonb 追加数组内的指定元素
+func (r *BlockRepository) AppendContentID(userID, parentID, childID uuid.UUID) error {
+	parentIDStr := parentID.String()
+	childIDStr := childID.String()
+	
+	// 如果 content_ids 还没初始化为数组或为空，可以直接通过 COALESCE 赋予初始值
+	// PostgreSQL 提供 jsonb_insert 或 ||，利用 || 最简单拼接
+	return r.db.Exec(`
+		UPDATE blocks
+		SET content_ids = COALESCE(content_ids, '[]'::jsonb) || ?::jsonb
+		WHERE id = ? AND created_by = ? AND deleted_at IS NULL
+	`, `["`+childIDStr+`"]`, parentIDStr, userID).Error
+}
+
 // SoftDeleteByPath 软删除指定路径下的所有 Block（级联删除，带用户隔离）
 func (r *BlockRepository) SoftDeleteByPath(userID uuid.UUID, path string) error {
 	now := time.Now()
@@ -179,6 +220,8 @@ func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID uuid.UUID) ([]
 
 	return sortedBlocks, nil
 }
+
+
 
 // FindRootBlock 查询用户的 root 类型 block
 func (r *BlockRepository) FindRootBlock(userID uuid.UUID) (*models.Block, error) {

@@ -324,3 +324,21 @@ export async function moveBlock(params: MoveBlockParams): Promise<void> {
     new_content_ids: params.new_content_ids,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 八、删除 Block
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DELETE /admin/pages/:id
+ * 
+ * @param id - 目标 Page / Folder 的 UUID
+ */
+export async function deletePage(id: string): Promise<void> {
+  if (USE_MOCK) {
+    console.log('[MockDelete] 删除 block (Mock 模式):', id);
+    return Promise.resolve();
+  }
+
+  await apiClient.delete(`/admin/pages/${id}`);
+}

@@ -19,7 +19,7 @@ import { Loader2, FileText, AlertCircle, RefreshCw, PanelLeftOpen } from 'lucide
 import { useBlockStore } from '@/store/useBlockStore';
 import { useSidebarStore } from '@/store/useSidebarStore';
 import { TiptapEditor } from './editor/TiptapEditor';
-import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
+import { usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
 
 export function MainContent() {
   // 从路由参数获取 pageId
@@ -29,17 +29,27 @@ export function MainContent() {
   // 获取侧边栏的开关状态，以及设置方法
   const { isOpen, setIsOpen } = useSidebarStore();
 
-  // 加载当前活跃页面的内容 Blocks
-  const { blocks, isLoading, isError, error } = usePageBlocksQuery(pageId ?? null);
+  // 加载当前活跃页面的详情（page 块本身）
+  const { page, isLoading: isPageLoading, isError: isPageError, error: pageError } = usePageDetailQuery(pageId ?? null);
 
-  // 将 API 返回的内容 Block 合并到 Store
+  // 加载当前活跃页面的内容 Blocks
+  const { blocks, isLoading: isBlocksLoading, isError: isBlocksError, error: blocksError } = usePageBlocksQuery(pageId ?? null);
+
+  const isLoading = isPageLoading || isBlocksLoading;
+  const isError = isPageError || isBlocksError;
+  const error = pageError || blocksError;
+
+  // 将 API 返回的 page 块和内容 Block 合并到 Store
   useEffect(() => {
-    if (blocks.length === 0) return;
+    if (!page && blocks.length === 0) return;
+
+    // 合并 page 块和内容块
+    const allBlocks = page ? [page, ...blocks] : blocks;
 
     // 水合页面数据到 Store（用于编辑器）
-    useBlockStore.getState().hydratePage(blocks);
+    useBlockStore.getState().hydratePage(allBlocks);
 
-  }, [blocks, pageId]);
+  }, [page, blocks, pageId]);
 
   // ── 空状态：未选中页面 ────────────────────────────────────────────────────
 

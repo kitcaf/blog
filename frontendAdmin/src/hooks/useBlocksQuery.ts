@@ -36,6 +36,7 @@ import { useBlockStore } from '@/store/useBlockStore';
 import {
   fetchPageTree,
   fetchPageBlocks,
+  fetchPageDetail,
   syncBlocks,
   type PageTreeNode,
 } from '@/api/blocks';
@@ -50,6 +51,8 @@ export const blockQueryKeys = {
   pageTree: () => ['pageTree'] as const,
   /** 某篇文章的内容 Block 列表 */
   pageBlocks: (pageId: string) => ['pageBlocks', pageId] as const,
+  /** 单个页面详情（page 块本身） */
+  pageDetail: (pageId: string) => ['pageDetail', pageId] as const,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +137,42 @@ export function usePageBlocksQuery(pageId: string | null): UsePageBlocksQueryRes
 
   return {
     blocks: data ?? [],
+    isLoading,
+    isError,
+    error: error as Error | null,
+    refetch,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 2.5：单个页面详情（page 块本身）
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface UsePageDetailQueryResult {
+  /** 页面块本身（包含 title 等元数据） */
+  page: BlockData | null;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+/**
+ * 加载指定 Page 块的详细信息（包含 title、icon 等元数据）。
+ *
+ * @param pageId - 目标 Page 的 UUID（为 null 时 hook 静默）
+ */
+export function usePageDetailQuery(pageId: string | null): UsePageDetailQueryResult {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: blockQueryKeys.pageDetail(pageId ?? ''),
+    queryFn: () => fetchPageDetail(pageId!),
+    enabled: !!pageId,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  return {
+    page: data ?? null,
     isLoading,
     isError,
     error: error as Error | null,

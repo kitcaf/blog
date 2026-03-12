@@ -151,6 +151,18 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
   return hydrateBlocks(data);
 }
 
+/**
+ * GET /admin/pages/:pageId
+ *
+ * 获取单个页面的详细信息（包含 page 块本身）
+ *
+ * @param pageId - 目标 Page Block 的 UUID
+ */
+export async function fetchPageDetail(pageId: string): Promise<BlockData> {
+  const { data } = await apiClient.get<DbBlock>(`/admin/pages/${pageId}`);
+  return hydrateBlock(data);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 五、API 3：批量同步（防抖后调用）
 // ─────────────────────────────────────────────────────────────────────────────

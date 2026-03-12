@@ -20,7 +20,7 @@
  *  - isDirty: 显示橙色"未保存"指示点
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { editorExtensions } from './extensions';
@@ -48,6 +48,11 @@ function getPageBlocks(pageId?: string) {
 }
 
 export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
+  // 页面标题状态
+  const [pageTitle, setPageTitle] = useState('未命名');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // React Query 批量同步 mutation
   const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(pageId ?? null, {
     onSuccess: () => {
@@ -156,27 +161,90 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     },
   });
 
-  // 切换活跃页面时重置编辑器内容
+  // 切换活跃页面时重置编辑器内容和标题
   // 关键：跳过首次挂载，避免 useEditor 初始化后又立刻 setContent 导致内容闪烁
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
 
     // 首次挂载：prevPageIdRef 与 pageId 相同，跳过（useEditor 已加载初始内容）
-    if (prevPageIdRef.current === pageId) return;
+    if (prevPageIdRef.current === pageId) {
+      // 但需要加载标题
+      if (pageId) {
+        const { blocksById } = useBlockStore.getState();
+        const page = blocksById[pageId];
+        if (page && 'title' in page.props) {
+          setPageTitle(page.props.title);
+        }
+      }
+      return;
+    }
 
-    // 真正切换页面了：替换文档内容
+    // 真正切换页面了：替换文档内容和标题
     prevPageIdRef.current = pageId ?? null;
     const blocks = getPageBlocks(pageId);
     const newContent = hydrateToTiptap(blocks);
+    
+    // 加载页面标题
+    if (pageId) {
+      const { blocksById } = useBlockStore.getState();
+      const page = blocksById[pageId];
+      const title = (page && 'title' in page.props) ? page.props.title : '未命名';
+      setPageTitle(title);
+      
+      // 如果是新创建的页面（标题为"未命名"），自动聚焦标题输入框
+      if (title === '未命名') {
+        setTimeout(() => {
+          titleInputRef.current?.focus();
+          titleInputRef.current?.select();
+        }, 100);
+      }
+    }
+    
     // emitUpdate: false 防止切换页面触发 onUpdate → 不必要的同步
     editor.commands.setContent(newContent, { emitUpdate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
 
+  // 处理标题变更（防抖同步）
+  const handleTitleChange = useCallback((newTitle: string) => {
+    setPageTitle(newTitle);
+    
+    if (!pageId) return;
+    
+    // 清除之前的定时器
+    if (titleDebounceTimer.current) {
+      clearTimeout(titleDebounceTimer.current);
+    }
+    
+    // 防抖更新到 Store
+    titleDebounceTimer.current = setTimeout(() => {
+      const store = useBlockStore.getState();
+      const page = store.blocksById[pageId];
+      
+      if (page && 'title' in page.props) {
+        // 更新页面标题
+        store.updateSingleBlockData(pageId, page.content, {
+          ...page.props,
+          title: newTitle,
+        });
+        
+        // 标记为脏数据
+        store.markBlockDirty(pageId);
+        
+        // 触发同步
+        const payload = store.getSyncPayload();
+        if (payload.updated_blocks.length > 0) {
+          sync(payload);
+        }
+      }
+    }, DEBOUNCE_MS);
+  }, [pageId, sync]);
+
   // 组件卸载时清理防抖 timer（防止内存泄漏）
   useEffect(() => {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      if (titleDebounceTimer.current) clearTimeout(titleDebounceTimer.current);
     };
   }, []);
 
@@ -186,7 +254,29 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     <div className={`tiptap-editor-shell ${className}`}>
       {/* 同步状态指示器 */}
       <SyncStatusBar isSyncing={isSyncing} isSyncError={isSyncError} />
-      <EditorContent editor={editor} />
+      
+      {/* 页面元数据区域 */}
+      <div className="page-metadata px-16 pt-12 pb-4">
+        <input
+          ref={titleInputRef}
+          type="text"
+          value={pageTitle}
+          onChange={(e) => handleTitleChange(e.target.value)}
+          placeholder="未命名"
+          className="w-full text-4xl font-bold bg-transparent border-none outline-none 
+                     text-app-fg-deep placeholder:text-app-fg-light/40
+                     focus:outline-none focus:ring-0"
+          spellCheck={false}
+        />
+        <div className="mt-2 text-xs text-app-fg-light">
+          Press 'space' for AI or '/' for commands
+        </div>
+      </div>
+      
+      {/* 编辑器内容区 */}
+      <div className="px-16 pb-12">
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

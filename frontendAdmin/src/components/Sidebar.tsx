@@ -79,7 +79,7 @@ export function Sidebar() {
     }
   }, [clearAuth, navigate, refreshToken]);
 
-  // 打开创建对话框
+  // 打开创建对话框（仅用于文件夹）
   const handleOpenCreateDialog = useCallback((type: 'folder' | 'page', parentId?: string | null) => {
     let parentTitle = '根目录';
     if (parentId) {
@@ -107,6 +107,36 @@ export function Sidebar() {
       parentTitle,
     });
   }, [tree]);
+
+  // 直接创建页面（无对话框）
+  const handleCreatePageDirect = useCallback(async (parentId?: string | null) => {
+    if (isCreating) return;
+
+    console.log('[CreatePage] Creating page directly:', { parentId });
+
+    setIsCreating(true);
+    try {
+      const newPage = await createPage({
+        title: '未命名',
+        parentId: parentId ?? null,
+      });
+      console.log('[CreatePage] Page created:', newPage);
+      
+      // 刷新侧边栏
+      await refetch();
+      
+      // 导航到新页面（会自动聚焦标题）
+      navigate(`/page/${newPage.id}`);
+      
+      toast.success('页面创建成功');
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('创建页面失败:', err);
+      toast.error(err.message || '创建页面失败');
+    } finally {
+      setIsCreating(false);
+    }
+  }, [isCreating, refetch, navigate]);
 
   // 创建文件夹或页面
   const handleCreate = useCallback(async (title: string) => {
@@ -204,7 +234,7 @@ export function Sidebar() {
           isError={isError}
           error={error}
           onCreateFolder={(parentId) => handleOpenCreateDialog('folder', parentId)}
-          onCreatePage={(parentId) => handleOpenCreateDialog('page', parentId)}
+          onCreatePage={handleCreatePageDirect}
           onDeleteNode={handleOpenDeleteDialog}
           onRetry={() => window.location.reload()}
           onMoveComplete={refetch}

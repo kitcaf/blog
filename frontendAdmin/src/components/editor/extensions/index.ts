@@ -34,8 +34,12 @@ import { DirtyTrackerExtension } from './DirtyTrackerExtension';
 const lowlight = createLowlight();
 lowlight.register({ typescript, javascript, go, python, sql, bash });
 
-export const editorExtensions = [
-  // ── 核心套件（codeBlock 由 lowlight 版本替换）──────────────
+/**
+ * 创建编辑器扩展列表
+ * @param pageId - 当前页面 ID，用于 DirtyTrackerExtension
+ */
+export const createEditorExtensions = (pageId: string | null = null) => [
+  // ── 核心套件（禁用部分扩展，由自定义版本替换）──────────────
   StarterKit.configure({
     codeBlock: false, // 禁用 StarterKit 内置的 codeBlock，由 CodeBlockLowlight 接管
     heading: {
@@ -82,5 +86,10 @@ export const editorExtensions = [
   }),
 
   // ── 性能更新拦截引擎 ──────────────────────────────────────────
-  DirtyTrackerExtension,
+  DirtyTrackerExtension.configure({
+    pageId,
+  }),
 ];
+
+// 向后兼容：保留旧的导出（使用 null 作为默认 pageId）
+export const editorExtensions = createEditorExtensions(null);

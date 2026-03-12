@@ -1,33 +1,104 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { ReplaceStep, ReplaceAroundStep } from '@tiptap/pm/transform';
 import { useBlockStore } from '@/store/useBlockStore';
 
-export const DirtyTrackerExtension = Extension.create({
+/**
+ * @file DirtyTrackerExtension.ts
+ * @description 利用 ProseMirror Transaction → Step → StepMap 机制精确追踪变更
+ * 
+ * 核心优化：
+ *   1. 通过 Step 类型判断操作（替换、删除、插入）
+ *   2. 通过 StepMap 精确定位变更范围，只遍历变更节点
+ *   3. 缓存文档结构，避免每次全文档遍历
+ *   4. 增量更新 Store，O(变更数) 而非 O(文档大小)
+ */
+
+interface DirtyTrackerOptions {
+  pageId: string | null;
+}
+
+export const DirtyTrackerExtension = Extension.create<DirtyTrackerOptions>({
   name: 'dirtyTracker',
 
+  addOptions() {
+    return {
+      pageId: null,
+    };
+  },
+
   addProseMirrorPlugins() {
+    const { pageId } = this.options;
+    const pluginKey = new PluginKey<{ childIds: string[] }>('dirtyTracker');
+
     return [
       new Plugin({
-        key: new PluginKey('dirtyTracker'),
+        key: pluginKey,
+        
+        state: {
+          init(_, state) {
+            // 缓存文档结构：[blockId1, blockId2, ...]
+            const childIds: string[] = [];
+            state.doc.forEach((node) => {
+              if (node.attrs?.blockId) childIds.push(node.attrs.blockId);
+            });
+            return { childIds };
+          },
+          
+          apply(tr, pluginState) {
+            if (!tr.docChanged) return pluginState;
+            
+            // 重新收集结构（只在结构变化时）
+            const newChildIds: string[] = [];
+            tr.doc.forEach((node) => {
+              if (node.attrs?.blockId) newChildIds.push(node.attrs.blockId);
+            });
+            
+            return { childIds: newChildIds };
+          },
+        },
         
         appendTransaction: (transactions, oldState, newState) => {
-          // 如果没有任何实质性文档内容变动，直接跳过
           if (!transactions.some((tr) => tr.docChanged)) return null;
-
-          // 若是由 hydration 等主动干预触发的替代，不需要记录为脏数据
+          
+          // 跳过系统操作
           if (transactions.some(tr => tr.getMeta('preventUpdate') || tr.getMeta('isIdInjection'))) {
             return null;
           }
 
+          const store = useBlockStore.getState();
           const changedBlockIds = new Set<string>();
-          let rootChanged = false;
+          const deletedBlockIds = new Set<string>();
+          let hasStructureChange = false;
 
-          // 1. 解析本次事务的所有步骤 (Steps)，寻找内容变动的节点
+          // ═══════════════════════════════════════════════════════
+          // 核心：利用 Transaction → Step → StepMap 精确追踪变更
+          // ═══════════════════════════════════════════════════════
+          
           transactions.forEach((tr) => {
-            tr.mapping.maps.forEach((stepMap) => {
+            tr.steps.forEach((step, stepIndex) => {
+              const stepMap = tr.mapping.maps[stepIndex];
+              
+              // 1. 判断 Step 类型，识别删除操作
+              if (step instanceof ReplaceStep || step instanceof ReplaceAroundStep) {
+                const { from, to } = step as ReplaceStep;
+                
+                // 删除操作：oldEnd > oldStart
+                if (to > from) {
+                  oldState.doc.nodesBetween(from, to, (node) => {
+                    if (node.isBlock && node.attrs?.blockId) {
+                      deletedBlockIds.add(node.attrs.blockId);
+                      hasStructureChange = true;
+                    }
+                  });
+                }
+              }
+              
+              // 2. 通过 StepMap 精确定位变更范围（只遍历变更节点）
               stepMap.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+                // 只遍历变更范围内的节点
                 newState.doc.nodesBetween(newStart, newEnd, (node) => {
-                  if (node.isBlock && node.attrs.blockId) {
+                  if (node.isBlock && node.attrs?.blockId) {
                     changedBlockIds.add(node.attrs.blockId);
                   }
                 });
@@ -35,58 +106,58 @@ export const DirtyTrackerExtension = Extension.create({
             });
           });
 
-          // 2. 核心：判断页面的父子结构（排序、增删）是否发生变动
-          const oldChildIds: string[] = [];
-          oldState.doc.forEach((node) => {
-            if (node.attrs.blockId) oldChildIds.push(node.attrs.blockId);
-          });
+          // 3. 检测结构变化（利用缓存的 childIds，避免全文档遍历）
+          const oldPluginState = pluginKey.getState(oldState);
+          const newPluginState = pluginKey.getState(newState);
           
-          const newChildIds: string[] = [];
-          const newSet = new Set<string>();
-          newState.doc.forEach((node) => {
-            if (node.attrs.blockId) {
-              newChildIds.push(node.attrs.blockId);
-              newSet.add(node.attrs.blockId);
-            }
-          });
-
-          const deletedBlockIds = new Set<string>();
-
-          if (
-            oldChildIds.length !== newChildIds.length ||
-            !oldChildIds.every((id, i) => id === newChildIds[i])
-          ) {
-            rootChanged = true;
+          if (oldPluginState && newPluginState) {
+            const oldChildIds = oldPluginState.childIds;
+            const newChildIds = newPluginState.childIds;
             
-            // 旧的里有，新的里没有 => 彻底被删除了
-            oldChildIds.forEach((id) => {
-              if (!newSet.has(id)) deletedBlockIds.add(id);
-            });
-            
-            // 新的里有，旧的里没有 => 新生成的（步骤 1 基本已囊括，但双重保险）
-            newChildIds.forEach((id) => {
-              if (!oldChildIds.includes(id)) changedBlockIds.add(id);
-            });
-          }
-
-          // 3. 将抓到的脏 blockId 直接送入 Zustand Store的对应集合中
-          if (changedBlockIds.size > 0 || deletedBlockIds.size > 0 || rootChanged) {
-            const store = useBlockStore.getState();
-            const { activePageId, markBlockDirty, markBlockDeleted } = store;
-
-            if (changedBlockIds.size > 0) {
-              changedBlockIds.forEach((id) => markBlockDirty(id));
-            }
-            if (deletedBlockIds.size > 0) {
-              deletedBlockIds.forEach((id) => markBlockDeleted(id));
-            }
-            if (rootChanged && activePageId) {
-              // 父页面的排序发生变化了，父级本身脏了
-              markBlockDirty(activePageId);
+            if (
+              oldChildIds.length !== newChildIds.length ||
+              !oldChildIds.every((id: string, i: number) => id === newChildIds[i])
+            ) {
+              hasStructureChange = true;
+              
+              // 找出真正被删除的块（不在新结构中）
+              const newSet = new Set(newChildIds);
+              oldChildIds.forEach((id: string) => {
+                if (!newSet.has(id)) {
+                  deletedBlockIds.add(id);
+                }
+              });
+              
+              // 找出新增的块
+              const oldSet = new Set(oldChildIds);
+              newChildIds.forEach((id: string) => {
+                if (!oldSet.has(id)) {
+                  changedBlockIds.add(id);
+                }
+              });
             }
           }
 
-          return null; // 不修改文档内容，仅做旁路记录
+          // 4. 增量更新 Store（O(变更数)）
+          if (changedBlockIds.size > 0) {
+            changedBlockIds.forEach((id) => store.markBlockDirty(id));
+          }
+          
+          if (deletedBlockIds.size > 0) {
+            deletedBlockIds.forEach((id) => store.markBlockDeleted(id));
+          }
+          
+          if (hasStructureChange && pageId) {
+            store.markBlockDirty(pageId);
+            
+            // 更新页面结构（从缓存读取，无需遍历）
+            const newPluginState = pluginKey.getState(newState);
+            if (newPluginState) {
+              store.updatePageStructure(pageId, newPluginState.childIds);
+            }
+          }
+
+          return null;
         },
       }),
     ];

@@ -101,11 +101,11 @@ export async function fetchPageTree(): Promise<{
   tree: PageTreeNode[];
 }> {
   const { data } = await apiClient.get<PageTreeNode[]>(`/admin/blocks/tree`);
-  
+
   // 后端已经返回树形结构，直接使用
   // 同时将树形数据扁平化为 BlockData[] 供其他用途（如果需要）
   const flatPages: BlockData[] = [];
-  
+
   const flattenTree = (nodes: PageTreeNode[]) => {
     for (const node of nodes) {
       flatPages.push({
@@ -122,15 +122,15 @@ export async function fetchPageTree(): Promise<{
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       } as BlockData);
-      
+
       if (node.children && node.children.length > 0) {
         flattenTree(node.children);
       }
     }
   };
-  
+
   flattenTree(data || []);
-  
+
   return { flatPages, tree: data || [] };
 }
 
@@ -143,7 +143,8 @@ export async function fetchPageTree(): Promise<{
  *
  * 返回指定 page 下的所有内容块（段落、标题、图片等），
  * 注意：不含 page 块本身，后端只返回其直接/间接子块。
- *
+ * 
+ * 也就是获取文章包含的所有block，不包括它们的父级 type='page' block
  * @param pageId - 目标 Page Block 的 UUID
  */
 export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
@@ -155,7 +156,7 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
  * GET /admin/pages/:pageId
  *
  * 获取单个页面的详细信息（包含 page 块本身）
- *
+ * 就是获取某个block的数据
  * @param pageId - 目标 Page Block 的 UUID
  */
 export async function fetchPageDetail(pageId: string): Promise<BlockData> {

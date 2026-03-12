@@ -159,7 +159,7 @@ interface UsePageDetailQueryResult {
 
 /**
  * 加载指定 Page 块的详细信息（包含 title、icon 等元数据）。
- *
+ * 就是加载一个块
  * @param pageId - 目标 Page 的 UUID（为 null 时 hook 静默）
  */
 export function usePageDetailQuery(pageId: string | null): UsePageDetailQueryResult {

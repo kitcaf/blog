@@ -7,11 +7,6 @@
  *  2. Dirty Tracking：追踪用户编辑产生的变更
  *  3. 提供 Sync Payload：将变更打包发送给后端
  * 
- * 不负责：
- *  - ❌ 页面导航（由路由管理）
- *  - ❌ 侧边栏数据（由 React Query 管理）
- *  - ❌ CRUD 操作（直接调 API + refetch）
- * 
  * 数据流：
  *   路由变化 → MainContent 检测 pageId
  *   → React Query 加载页面 → hydratePage() → blocksById
@@ -74,7 +69,7 @@ interface EditorStoreActions {
   updateSingleBlockData: (id: string, content: InlineContent[], props: any) => void;
 
   /**
-   * 更新页面的子节点排序（处理新增/删除段落导致的结构变化）
+   * 更新页面的子节点排序（由 DirtyTrackerExtension 调用，避免重复遍历）
    */
   updatePageStructure: (pageId: string, newChildIds: string[]) => void;
 
@@ -175,8 +170,14 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
       const page = state.blocksById[pageId];
       if (!page) return state;
 
+      // 快速比较：长度 + 顺序
       const oldChildIds = page.contentIds;
-      if (oldChildIds.join(',') === newChildIds.join(',')) return state;
+      if (
+        oldChildIds.length === newChildIds.length &&
+        oldChildIds.every((id, i) => id === newChildIds[i])
+      ) {
+        return state;
+      }
 
       return {
         blocksById: {

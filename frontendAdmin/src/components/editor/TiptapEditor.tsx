@@ -9,7 +9,7 @@
  *             同时触发 React Query useMutation → POST /api/blocks/sync
  *
  * 性能关键点：
- *  - TiptapEditor 不订阅 blocksById 变化，只订阅 activePageId。
+ *  - TiptapEditor 不订阅 blocksById 变化，只接收 pageId prop。
  *    （否则会形成：onUpdate → replacePage → blocksById 变 → re-render → 循环）
  *  - 编辑中由 Tiptap 自身管理文档状态，Store 只在防抖后接收快照。
  *  - getSyncPayload / sync 均通过稳定引用获取，不触发 re-render。
@@ -32,26 +32,24 @@ const DEBOUNCE_MS = 1500;
 
 interface TiptapEditorProps {
   className?: string;
+  pageId?: string;
 }
 
 /**
- * 从 Store 中一次性读取当前活跃页的子 Block（非订阅式）。
+ * 从 Store 中一次性读取指定页面的子 Block（非订阅式）。
  * 在组件外定义为纯函数，避免每次渲染重新创建。
  */
-function getActivePageBlocks() {
-  const { activePageId, blocksById } = useBlockStore.getState();
-  if (!activePageId) return [];
-  const page = blocksById[activePageId];
+function getPageBlocks(pageId?: string) {
+  const { blocksById } = useBlockStore.getState();
+  if (!pageId) return [];
+  const page = blocksById[pageId];
   if (!page) return [];
   return page.contentIds.map((id) => blocksById[id]).filter(Boolean);
 }
 
-export function TiptapEditor({ className = '' }: TiptapEditorProps) {
-  // 只订阅 activePageId（基本类型，=== 比较稳定）
-  const activePageId = useBlockStore((s) => s.activePageId);
-
+export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   // React Query 批量同步 mutation
-  const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(activePageId, {
+  const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(pageId ?? null, {
     onSuccess: () => {
       console.info('[TiptapEditor] 自动同步成功 ✓');
     },
@@ -63,11 +61,11 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
-   * 记录上一次已加载的 activePageId，用于区分：
+   * 记录上一次已加载的 pageId，用于区分：
    *  - 首次挂载（prevPageId === null）→ 不重复 setContent（useEditor 已用初始内容）
-   *  - 切换页面（prevPageId !== activePageId）→ 需要 setContent 替换文档
+   *  - 切换页面（prevPageId !== pageId）→ 需要 setContent 替换文档
    */
-  const prevPageIdRef = useRef<string | null>(activePageId);
+  const prevPageIdRef = useRef<string | null>(pageId ?? null);
 
   /**
    * 防抖同步回调（三层齿轮架构）：
@@ -75,7 +73,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
    */
   const triggerSync = useCallback(
     (ed: Editor) => {
-      if (!activePageId || !ed) return;
+      if (!pageId || !ed) return;
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
       debounceTimer.current = setTimeout(() => {
@@ -86,7 +84,7 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
         if (dirtySet.size === 0 && deletedSet.size === 0) return;
 
         // 2. 处理父页面结构变动 (增删移导致排序变了)
-        if (dirtySet.has(activePageId)) {
+        if (dirtySet.has(pageId)) {
           const currentChildIds: string[] = [];
           // ed.state.doc.forEach 只遍历第一层，O(一级节点数)，极快！
           ed.state.doc.forEach((node) => {
@@ -94,13 +92,13 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
               currentChildIds.push(node.attrs.blockId);
             }
           });
-          store.updatePageStructure(activePageId, currentChildIds);
+          store.updatePageStructure(pageId, currentChildIds);
         }
 
         // 3. 核心：精准提取变脏的具体节点数据
         // 只有当存在除父页面以外的真实 block 变脏时才遍历
         const contentDirtyIds = new Set(dirtySet);
-        contentDirtyIds.delete(activePageId); // 排除掉父页面 ID
+        contentDirtyIds.delete(pageId); // 排除掉父页面 ID
 
         if (contentDirtyIds.size > 0) {
           // 在 ProseMirror 内存树中进行极速扫描
@@ -136,12 +134,12 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
         }
       }, DEBOUNCE_MS);
     },
-    [activePageId, sync],
+    [pageId, sync],
   );
 
   const editor = useEditor({
     extensions: editorExtensions,
-    content: hydrateToTiptap(getActivePageBlocks()),
+    content: hydrateToTiptap(getPageBlocks(pageId)),
     editorProps: {
       attributes: {
         class: 'prosemirror-editor outline-none',
@@ -163,17 +161,17 @@ export function TiptapEditor({ className = '' }: TiptapEditorProps) {
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
 
-    // 首次挂载：prevPageIdRef 与 activePageId 相同，跳过（useEditor 已加载初始内容）
-    if (prevPageIdRef.current === activePageId) return;
+    // 首次挂载：prevPageIdRef 与 pageId 相同，跳过（useEditor 已加载初始内容）
+    if (prevPageIdRef.current === pageId) return;
 
     // 真正切换页面了：替换文档内容
-    prevPageIdRef.current = activePageId;
-    const blocks = getActivePageBlocks();
+    prevPageIdRef.current = pageId ?? null;
+    const blocks = getPageBlocks(pageId);
     const newContent = hydrateToTiptap(blocks);
     // emitUpdate: false 防止切换页面触发 onUpdate → 不必要的同步
     editor.commands.setContent(newContent, { emitUpdate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePageId]);
+  }, [pageId]);
 
   // 组件卸载时清理防抖 timer（防止内存泄漏）
   useEffect(() => {

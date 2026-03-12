@@ -1,8 +1,8 @@
 /**
  * @file useBlocksQuery.ts
- * @description React Query hooks，对应 3 个核心 API。
+ * @description React Query hooks，对应核心 API
  *
- * 数据流架构（参见核心技术文档）：
+ * 数据流架构：
  *
  *   [ PostgreSQL / Go API ]
  *         ↑ ↓ (HTTP)
@@ -10,19 +10,20 @@
  *         ↑ ↓
  *   [ 调用方（Sidebar / MainContent）] ← 读取数据并决定何时写入 Store
  *         ↑ ↓
- *   [ Zustand Store ]        ← 工作台：高频编辑、拖拽
+ *   [ Zustand Store ]        ← 编辑器：Dirty Tracking、编辑缓存
  *         ↑ ↓
  *   [ React UI ]
  *
  * 设计原则：
  *  - Hook 只负责数据获取与缓存，不直接操作 Store
  *  - Store 的写入由"调用方"在 useEffect 中完成，保证单向数据流
- *  - 三个 Hook 各自独立缓存，互不影响
+ *  - 侧边栏数据完全由 React Query 管理，不经过 Store
+ *  - 编辑器数据：React Query 加载 → Store 缓存 → Tiptap 编辑
  *
  * 三个 Hook：
- *   usePageTreeQuery     → GET /api/pages/tree         (侧边栏目录)
- *   usePageBlocksQuery   → GET /api/pages/:id/blocks   (文章内容)
- *   useBlockSyncMutation → POST /api/blocks/sync        (批量同步)
+ *   usePageTreeQuery     → GET /api/admin/blocks/tree      (侧边栏目录)
+ *   usePageBlocksQuery   → GET /api/admin/pages/:id/blocks (文章内容)
+ *   useBlockSyncMutation → PUT /api/admin/blocks           (批量同步)
  */
 
 import {
@@ -116,9 +117,9 @@ interface UsePageBlocksQueryResult {
 /**
  * 加载指定 Page 的所有内容 Block。
  *
- * - 触发时机：activePageId 变化（用户点击侧边栏）。
- * - gcTime=5min：切换到其他页面后仍缓存，快速切换回来无需重新请求。
- * - enabled=!!pageId：pageId 为 null 时不发请求。
+ * - 触发时机：路由参数 pageId 变化（用户点击侧边栏或直接访问 URL）
+ * - gcTime=5min：切换到其他页面后仍缓存，快速切换回来无需重新请求
+ * - enabled=!!pageId：pageId 为 null 时不发请求
  *
  * @param pageId - 目标 Page 的 UUID（为 null 时 hook 静默）
  */

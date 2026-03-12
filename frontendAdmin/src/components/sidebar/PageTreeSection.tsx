@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Folder, Plus, Loader2, AlertCircle, RefreshCw, FolderIcon, FileText } from 'lucide-react';
-import { useBlockStore } from '@/store/useBlockStore';
 import { SidebarItem } from './SidebarItem';
 import { type PageTreeNode, moveBlock } from '@/api/blocks';
 import { type ActionMenuItem } from '@/components/ui/ActionMenu';
@@ -64,52 +64,52 @@ export function PageTreeSection({
     const activeId = dragIds[0];
     if (!activeId) return;
 
-    const blocksById = useBlockStore.getState().blocksById;
-    const rootPageIds = useBlockStore.getState().rootPageIds;
+    // 从树数据中查找节点（不依赖 Store）
+    const findNode = (nodes: PageTreeNode[], id: string): PageTreeNode | null => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = findNode(node.children, id);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
 
-    const activeNode = blocksById[activeId];
+    const activeNode = findNode(tree, activeId);
     if (!activeNode) return;
 
     const newParentId = parentId === '__REACT_ARBORIST_INTERNAL_ROOT__' ? null : parentId;
 
+    // 计算新的 contentIds
     let newSiblingsIds: string[] = [];
     if (newParentId === null) {
-      newSiblingsIds = [...rootPageIds];
+      newSiblingsIds = tree.map(n => n.id);
     } else {
-      newSiblingsIds = [...(blocksById[newParentId]?.contentIds || [])];
+      const newParent = findNode(tree, newParentId);
+      newSiblingsIds = newParent?.children?.map(n => n.id) || [];
     }
 
-    let oldContentIds: string[] = [];
-    if (activeNode.parentId !== newParentId) {
-      if (activeNode.parentId === null) {
-        oldContentIds = [...rootPageIds];
-      } else {
-        oldContentIds = [...(blocksById[activeNode.parentId]?.contentIds || [])];
-      }
-      oldContentIds = oldContentIds.filter(id => id !== activeId);
-      newSiblingsIds = newSiblingsIds.filter(id => id !== activeId);
-    } else {
-      newSiblingsIds = newSiblingsIds.filter(id => id !== activeId);
-    }
-
+    // 移除当前节点
+    newSiblingsIds = newSiblingsIds.filter(id => id !== activeId);
+    
+    // 插入到新位置
     const insertIndex = index >= 0 ? index : newSiblingsIds.length;
     newSiblingsIds.splice(insertIndex, 0, activeId);
 
     try {
-      if (activeNode.parentId === newParentId) {
-        useBlockStore.getState().reorderChildren(newParentId, newSiblingsIds);
-      } else {
-        useBlockStore.getState().moveNode(activeId, newParentId, newSiblingsIds, activeNode.parentId, oldContentIds);
-      }
-
+      // 直接调用 API，不更新 Store（侧边栏数据由 React Query 管理）
       await moveBlock({
         id: activeId,
         new_parent_id: newParentId,
         new_content_ids: newSiblingsIds,
       });
+      
+      // 刷新侧边栏数据
       onMoveComplete?.();
     } catch (err) {
       console.error('Move block failed:', err);
+      // 失败时也刷新，恢复到服务端状态
       onMoveComplete?.();
     }
   };
@@ -231,20 +231,19 @@ const PageTreeItem = React.memo(function PageTreeItem({
   dragHandle,
 }: NodeRendererProps<PageTreeNode>) {
   const { onCreateFolder, onCreatePage, onDeleteNode } = React.useContext(PageTreeContext);
-
-  const activePageId = useBlockStore((s) => s.activePageId);
-  const setActivePage = useBlockStore((s) => s.setActivePage);
+  const navigate = useNavigate();
+  const { pageId: currentPageId } = useParams<{ pageId?: string }>();
 
   const data = node.data;
-  const isActive = activePageId === data.id;
+  const isActive = currentPageId === data.id;
   const isExpanded = node.isOpen;
-  const hasChildren = data.contentIds && data.contentIds.length > 0;
+  const hasChildren = data.content_ids && data.content_ids.length > 0;
 
   const handleClick = useCallback(() => {
     if (data.type === 'page') {
-      setActivePage(data.id);
+      navigate(`/page/${data.id}`);
     }
-  }, [data.id, data.type, setActivePage]);
+  }, [data.id, data.type, navigate]);
 
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
@@ -271,6 +270,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   );
 
   const getIcon = () => {
+    // 后端返回的 icon 字段在顶层，直接使用
     if (data.icon) return data.icon;
 
     if (data.type === 'folder') {
@@ -326,8 +326,8 @@ const PageTreeItem = React.memo(function PageTreeItem({
     return items;
   }, [data.type, data.id, data.title, handleCreateFolder, handleCreatePage, onDeleteNode]);
 
-  const rightIndicator = data.type === 'page' && data.isPublished ? (
-    <span className="w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="已发布" />
+  const rightIndicator = data.type === 'page' ? (
+    <span className="w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="页面" />
   ) : undefined;
 
   // react-arborist will inject width, height, top, left, zIndex into style

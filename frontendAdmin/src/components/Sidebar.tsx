@@ -3,8 +3,8 @@
  * @description 侧边栏主组件，组合各个子组件
  *
  * 数据流：
- *   usePageTreeQuery → GET /api/pages/tree → buildPageTree()
- *   → PageTreeNode[] → Zustand hydrate → 渲染目录树
+ *   usePageTreeQuery → GET /api/admin/blocks/tree → buildPageTree()
+ *   → PageTreeNode[] → 直接渲染（不经过 Store）
  *
  * 组件结构：
  *   Sidebar (容器)
@@ -17,7 +17,6 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useBlockStore } from '@/store/useBlockStore';
 import { useSidebarStore } from '@/store/useSidebarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
@@ -38,9 +37,6 @@ export function Sidebar() {
   const { tree, flatPages, isLoading, isError, error, refetch } = usePageTreeQuery();
 
   // Store
-  const hydrate = useBlockStore((s) => s.hydrate);
-  const setActivePage = useBlockStore((s) => s.setActivePage);
-  const activePageId = useBlockStore((s) => s.activePageId);
   const { isOpen, width, setIsOpen, isResizing } = useSidebarStore();
   const { user, refreshToken, clearAuth } = useAuthStore();
 
@@ -87,9 +83,19 @@ export function Sidebar() {
   const handleOpenCreateDialog = useCallback((type: 'folder' | 'page', parentId?: string | null) => {
     let parentTitle = '根目录';
     if (parentId) {
-      const parentBlock = useBlockStore.getState().blocksById[parentId];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parentTitle = parentBlock ? ((parentBlock.props as any)?.title || '未命名文件夹') : '未命名文件夹';
+      // 从侧边栏树数据中查找父节点标题
+      const findNodeTitle = (nodes: typeof tree, id: string): string | null => {
+        for (const node of nodes) {
+          if (node.id === id) return node.title;
+          if (node.children) {
+            const found = findNodeTitle(node.children, id);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      
+      parentTitle = findNodeTitle(tree, parentId) || '未命名文件夹';
     }
     
     console.log('[CreateDialog] Opening dialog:', { type, parentId, parentTitle });
@@ -100,7 +106,7 @@ export function Sidebar() {
       parentId: parentId ?? null,
       parentTitle,
     });
-  }, []);
+  }, [tree]);
 
   // 创建文件夹或页面
   const handleCreate = useCallback(async (title: string) => {
@@ -127,17 +133,19 @@ export function Sidebar() {
           parentId: createDialog.parentId,
         });
         console.log('[Create] Page created:', newPage);
-        setActivePage(newPage.id);
+        // 使用路由导航到新页面
+        navigate(`/page/${newPage.id}`);
         toast.success(`页面 "${title}" 创建成功`);
       }
       refetch();
-    } catch (error: any) {
-      console.error('创建失败:', error);
-      toast.error(error.message || '创建失败');
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('创建失败:', err);
+      toast.error(err.message || '创建失败');
     } finally {
       setIsCreating(false);
     }
-  }, [createDialog, isCreating, refetch, setActivePage]);
+  }, [createDialog, isCreating, refetch, navigate]);
 
   // 取代原先直接弹出的确认框，改为打开自制弹窗
   const handleOpenDeleteDialog = useCallback((id: string, title: string) => {
@@ -152,29 +160,24 @@ export function Sidebar() {
     try {
       await deletePage(id);
       toast.success(`"${title}" 删除成功`);
-      if (activePageId === id) {
-        setActivePage("");
+      // 如果删除的是当前页面，导航到首页
+      if (window.location.pathname.includes(id)) {
+        navigate('/');
       }
       refetch();
-    } catch (err: any) {
-      toast.error(err.message || '删除失败');
+    } catch (err: unknown) {
+      const error = err as Error;
+      toast.error(error.message || '删除失败');
     }
-  }, [deleteDialog, activePageId, refetch, setActivePage]);
+  }, [deleteDialog, navigate, refetch]);
 
-  // 水合数据到 Store
+  // 侧边栏数据完全由 React Query 管理，不需要额外处理
   useEffect(() => {
-    if (flatPages.length === 0) return;
-    hydrate(flatPages);
-
-    // 逻辑优化：寻找第一个页面作为活动页面，不强制要求 parentId === null
-    if (!activePageId) {
-      const firstPage = flatPages.find((b) => b.type === 'page');
-      if (firstPage) {
-        console.log('[Sidebar] Setting initial active page:', (firstPage.props as any).title, firstPage.id);
-        setActivePage(firstPage.id);
-      }
+    // flatPages 仅用于调试或其他用途，侧边栏直接使用 tree 渲染
+    if (flatPages.length > 0) {
+      console.log('[Sidebar] Loaded pages count:', flatPages.length);
     }
-  }, [flatPages, hydrate, activePageId, setActivePage]);
+  }, [flatPages]);
 
   return (
     <aside

@@ -17,10 +17,6 @@
 
 import type { DbBlock, Block, BlockType, BlockData, BlockSyncPayload, InlineContent } from '@blog/types';
 import { apiClient } from './client';
-import { initialMockData } from '@/mockData';
-
-/** 环境变量控制：true → mock 模式，false → 真实 API 模式 */
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 一、内部工具：DbBlock → Block (hydrate)
@@ -34,7 +30,9 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
  * 注意：slug 和 published_at 是数据库独立字段，直接映射到 Block 顶层。
  */
 function hydrateBlock(db: DbBlock): Block {
-  const { content, ...restProps } = db.properties as {
+  // 安全地处理 properties 可能为 undefined 的情况
+  const properties = db.properties || {};
+  const { content, ...restProps } = properties as {
     content?: InlineContent[];
     [key: string]: unknown;
   };
@@ -72,17 +70,17 @@ function hydrateBlocks(dbBlocks: DbBlock[]): Block[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 侧边栏渲染所需的树节点结构。
+ * 侧边栏渲染所需的树节点结构（与后端 PageTreeNode 对应）
+ * 
+ * 注意：后端返回的结构中，title 和 icon 在顶层，不在 properties 中
  */
 export interface PageTreeNode {
   id: string;
-  parentId: string | null;
+  parent_id: string | null;  // 后端返回 snake_case
   type: 'page' | 'folder';
   title: string;
-  icon?: string;
-  isPublished?: boolean;
-  slug?: string;
-  contentIds: string[];
+  icon: string;
+  content_ids: string[];     // 后端返回 snake_case
   children: PageTreeNode[];
 }
 
@@ -91,66 +89,49 @@ export interface PageTreeNode {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 递归将后端的树状结构解析为前端需要的树和扁平数组
- */
-function processTreeResponse(nodes: any[]): { tree: PageTreeNode[]; flatPages: BlockData[] } {
-  const tree: PageTreeNode[] = [];
-  const flatPages: BlockData[] = [];
-
-  for (const node of nodes) {
-    const treeNode: PageTreeNode = {
-      id: node.id,
-      parentId: node.parent_id || null,
-      type: node.type as 'page' | 'folder',
-      title: node.title || '未命名',
-      icon: node.icon,
-      isPublished: true, // 根据需求修改
-      slug: undefined, // 根据需求修改
-      contentIds: node.content_ids || [],
-      children: [],
-    };
-
-    // 组装用于 store 的 flatPages
-    flatPages.push({
-      id: treeNode.id,
-      parentId: treeNode.parentId,
-      type: treeNode.type,
-      contentIds: treeNode.contentIds,
-      props: {
-        title: treeNode.title,
-        icon: treeNode.icon,
-      },
-      content: [],
-    } as unknown as BlockData);
-
-    if (node.children && node.children.length > 0) {
-      const { tree: childTree, flatPages: childFlatPages } = processTreeResponse(node.children);
-      treeNode.children = childTree;
-      flatPages.push(...childFlatPages);
-    }
-
-    tree.push(treeNode);
-  }
-
-  return { tree, flatPages };
-}
-
-/**
  * GET /admin/blocks/tree
  * 
  * 获取完整的侧边栏目录树
+ * 
+ * 注意：后端直接返回树形结构的 PageTreeNode[]，不需要前端再次构建树
+ * 后端返回的字段是 snake_case (parent_id, content_ids)，需要转换为 camelCase
  */
 export async function fetchPageTree(): Promise<{
   flatPages: BlockData[];
   tree: PageTreeNode[];
 }> {
-  if (USE_MOCK) {
-    // 省略Mock处理或者直接沿用旧的树构建逻辑...
-    return { flatPages: [], tree: [] };
-  }
-
-  const { data } = await apiClient.get<any[]>(`/admin/blocks/tree`);
-  return processTreeResponse(data || []);
+  const { data } = await apiClient.get<PageTreeNode[]>(`/admin/blocks/tree`);
+  
+  // 后端已经返回树形结构，直接使用
+  // 同时将树形数据扁平化为 BlockData[] 供其他用途（如果需要）
+  const flatPages: BlockData[] = [];
+  
+  const flattenTree = (nodes: PageTreeNode[]) => {
+    for (const node of nodes) {
+      flatPages.push({
+        id: node.id,
+        parentId: node.parent_id || null,
+        type: node.type as BlockType,
+        path: '', // 树形数据不包含 path
+        contentIds: node.content_ids || [],
+        props: {
+          title: node.title,
+          icon: node.icon,
+        },
+        content: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as BlockData);
+      
+      if (node.children && node.children.length > 0) {
+        flattenTree(node.children);
+      }
+    }
+  };
+  
+  flattenTree(data || []);
+  
+  return { flatPages, tree: data || [] };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,11 +147,6 @@ export async function fetchPageTree(): Promise<{
  * @param pageId - 目标 Page Block 的 UUID
  */
 export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
-  if (USE_MOCK) {
-    // Mock 模式：返回 initialMockData 中所有 parentId 等于 pageId 的子块
-    return initialMockData.filter((b) => b.parentId === pageId);
-  }
-
   const { data } = await apiClient.get<DbBlock[]>(`/admin/pages/${pageId}/blocks`);
   return hydrateBlocks(data);
 }
@@ -196,10 +172,6 @@ export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {
  * @param payload - 由 store.getSyncPayload() 计算得出
  */
 export async function syncBlocks(payload: BlockSyncPayload): Promise<void> {
-  if (USE_MOCK) {
-    console.log('[MockSync] 正在同步变更 (Mock 模式下仅打印日志):', payload);
-    return Promise.resolve();
-  }
   await apiClient.put('/admin/blocks', payload);
 }
 
@@ -239,8 +211,8 @@ export async function createFolder(params: CreateFolderParams): Promise<BlockDat
 
   const folderBlock: DbBlock = {
     id,
-    parent_id: params.parentId || null, // null 时后端会自动使用 root block
-    path: '', // 后端会自动计算正确的 path
+    parent_id: params.parentId || null,
+    path: '',
     type: 'folder',
     content_ids: [],
     properties: {
@@ -251,11 +223,6 @@ export async function createFolder(params: CreateFolderParams): Promise<BlockDat
     updated_at: new Date().toISOString(),
     deleted_at: null,
   };
-
-  if (USE_MOCK) {
-    console.log('[MockCreate] 创建文件夹 (Mock 模式):', folderBlock);
-    return hydrateBlock(folderBlock);
-  }
 
   const { data } = await apiClient.post<DbBlock>('/admin/pages', folderBlock);
   return hydrateBlock(data);
@@ -274,8 +241,8 @@ export async function createPage(params: CreatePageParams): Promise<BlockData> {
 
   const pageBlock: DbBlock = {
     id,
-    parent_id: params.parentId || null, // null 时后端会自动使用 root block
-    path: '', // 后端会自动计算正确的 path
+    parent_id: params.parentId || null,
+    path: '',
     type: 'page',
     content_ids: [],
     properties: {
@@ -286,11 +253,6 @@ export async function createPage(params: CreatePageParams): Promise<BlockData> {
     updated_at: new Date().toISOString(),
     deleted_at: null,
   };
-
-  if (USE_MOCK) {
-    console.log('[MockCreate] 创建页面 (Mock 模式):', pageBlock);
-    return hydrateBlock(pageBlock);
-  }
 
   const { data } = await apiClient.post<DbBlock>('/admin/pages', pageBlock);
   return hydrateBlock(data);
@@ -314,11 +276,6 @@ export interface MoveBlockParams {
  * @param params - 移动参数
  */
 export async function moveBlock(params: MoveBlockParams): Promise<void> {
-  if (USE_MOCK) {
-    console.log('[MockMove] 移动 block (Mock 模式):', params);
-    return Promise.resolve();
-  }
-
   await apiClient.post(`/admin/pages/${params.id}/move`, {
     new_parent_id: params.new_parent_id,
     new_content_ids: params.new_content_ids,
@@ -335,10 +292,5 @@ export async function moveBlock(params: MoveBlockParams): Promise<void> {
  * @param id - 目标 Page / Folder 的 UUID
  */
 export async function deletePage(id: string): Promise<void> {
-  if (USE_MOCK) {
-    console.log('[MockDelete] 删除 block (Mock 模式):', id);
-    return Promise.resolve();
-  }
-
   await apiClient.delete(`/admin/pages/${id}`);
 }

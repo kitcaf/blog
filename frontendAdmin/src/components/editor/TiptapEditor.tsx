@@ -60,9 +60,10 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
       dirtyIds.delete(pageId);
 
       if (dirtyIds.size > 0) {
+        // 递归遍历所有节点（包括列表项）
         ed.state.doc.descendants((node) => {
           const id = node.attrs?.blockId;
-          if (node.isBlock && id && dirtyIds.has(id)) {
+          if (id && dirtyIds.has(id)) {
             const jsonNode = node.toJSON();
             const content = parseTiptapNodeToInlineContent(jsonNode);
             const props = parseTiptapNodeToProps(jsonNode);
@@ -161,14 +162,14 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   return (
     <div className={className}>
       <SyncStatusBar isSyncing={isSyncing} isSyncError={isSyncError} />
-
+      {/* 元数据区域 */}
       <PageHeader
         initialTitle={serverTitle}
         onTitleChange={handleTitleChange}
         onEnter={handleTitleEnter}
         isPageLoaded={!!page}
       />
-
+      {/* Taptit区域 */}
       <div className="px-16 pb-12">
         <EditorContent editor={editor} />
       </div>

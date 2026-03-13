@@ -56,37 +56,41 @@ export const BlockIdExtension = Extension.create({
       new Plugin({
         key: new PluginKey('blockIdInjector'),
         appendTransaction: (transactions: readonly Transaction[], _oldState: EditorState, newState: EditorState) => {
-          // 如果没有任何文档变动，直接跳过，节省性能
+          // 如果没有任何文档变动，直接跳过
           if (!transactions.some((tr) => tr.docChanged)) {
             return null;
           }
 
-          // 如果这个 transaction 是由 setContent（或者 hydrate 过程）触发的，
-          // 我们不干预，因为 hydrateToTiptap 已经保证了所有传入的 node 都有正确的 blockId
-          // 在这层级我们可以通过检查 docChanged 等进行简单过滤。
+          // 跳过 setContent 初始化操作（已有完整 blockId）
+          if (transactions.some(tr => tr.getMeta('addToHistory') === false)) {
+            return null;
+          }
           
-          let tr = newState.tr;
+          const tr = newState.tr;
           let modified = false;
 
-          // 遍历整个文档（这里可以优化为只遍历变动区域，但全量遍历配合 ProseMirror 快照通常也足够快）
+          const seenIds = new Set<string>();
+
+          // 遍历整个文档，为缺失或重复 blockId 的节点生成新 ID
           newState.doc.descendants((node: ProseMirrorNode, pos: number) => {
             if (node.isBlock && trackedTypes.has(node.type.name)) {
-              const currentId = node.attrs.blockId;
+              const currentId = node.attrs.blockId as string | undefined;
               
-              if (!currentId) {
-                // 发现一个没有 UUID 的全新节点，生成一个并注入
-                // 使用 setMeta('preventUpdate', true) 防止触发无限循环或者不必要的外部 onUpdate
+              if (!currentId || seenIds.has(currentId)) {
+                // 生成新的 UUID（应对空ID或拆分段落带来的重复ID）
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
                   blockId: crypto.randomUUID(),
                 });
                 modified = true;
+              } else {
+                seenIds.add(currentId);
               }
             }
           });
 
           if (modified) {
-             // 打上标记，表示这是系统自动修补 ID 的事务，避免触发外部不必要的重渲染
+             // 标记为系统操作，避免触发 DirtyTracker
              tr.setMeta('isIdInjection', true);
              return tr;
           }

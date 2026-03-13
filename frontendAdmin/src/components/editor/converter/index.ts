@@ -245,11 +245,26 @@ function styleToMarkNodes(styles?: InlineStyle): TNode[] {
  * 局部脱水：仅解析单个 Tiptap JSONContent 的 InlineContent
  */
 export function parseTiptapNodeToInlineContent(node: JSONContent): InlineContent[] {
+  // 特殊处理列表项：listItem 和 taskItem 的内容在子节点 paragraph 中
+  if (node.type === 'listItem' || node.type === 'taskItem') {
+    const paragraph = node.content?.[0];
+    if (paragraph?.type === 'paragraph') {
+      return parseInlineContent(paragraph.content);
+    }
+    return [];
+  }
+  
   // blockquote 的文本在它的子节点 paragraph 里
-  if (node.type === 'blockquote' || node.type?.endsWith('List')) {
+  if (node.type === 'blockquote') {
      const inner = node.content?.[0]?.content ?? [];
      return parseInlineContent(inner);
   }
+  
+  // 列表容器节点（bulletList/orderedList/taskList）没有直接内容
+  if (node.type?.endsWith('List')) {
+    return [];
+  }
+  
   return parseInlineContent(node.content);
 }
 

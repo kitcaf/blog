@@ -54,12 +54,6 @@ export function PageTreeSection({
     return () => observer.disconnect();
   }, []);
 
-  // Debug: 打印树数据
-  useEffect(() => {
-    console.log('[PageTreeSection] Tree data:', tree);
-    console.log('[PageTreeSection] Tree height:', treeHeight);
-  }, [tree, treeHeight]);
-
   const handleMove: MoveHandler<PageTreeNode> = async ({ dragIds, parentId, index }) => {
     const activeId = dragIds[0];
     if (!activeId) return;
@@ -92,7 +86,7 @@ export function PageTreeSection({
 
     // 移除当前节点
     newSiblingsIds = newSiblingsIds.filter(id => id !== activeId);
-    
+
     // 插入到新位置
     const insertIndex = index >= 0 ? index : newSiblingsIds.length;
     newSiblingsIds.splice(insertIndex, 0, activeId);
@@ -104,7 +98,7 @@ export function PageTreeSection({
         new_parent_id: newParentId,
         new_content_ids: newSiblingsIds,
       });
-      
+
       // 刷新侧边栏数据
       onMoveComplete?.();
     } catch (err) {

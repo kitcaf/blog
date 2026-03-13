@@ -27,7 +27,6 @@ import type {
   BlockData,
   InlineContent,
   InlineStyle,
-  CalloutVariant,
   BulletListItemBlock,
   NumberedListItemBlock,
   CheckListItemBlock,
@@ -47,7 +46,6 @@ type TNode = {
 
 /** 将内部 TNode 安全转换为 JSONContent（结构兼容，类型断言合法） */
 const toJSONContent = (node: TNode): JSONContent => node as unknown as JSONContent;
-const toJSONContentArray = (nodes: TNode[]): JSONContent[] => nodes as unknown as JSONContent[];
 
 // ─────────────────────────────────────────────
 // hydrate：Block[] → Tiptap JSONContent
@@ -241,26 +239,8 @@ function styleToMarkNodes(styles?: InlineStyle): TNode[] {
 }
 
 // ─────────────────────────────────────────────
-// dehydrate：Tiptap JSONContent → Block[]
+// 局部脱水：用于 DirtyTracker 的增量更新
 // ─────────────────────────────────────────────
-
-/**
- * 将 Tiptap 文档 JSON 转换回 Block 扁平数组。
- *
- * 注意：
- *  - 保留 attrs.blockId（若存在）以维持脏追踪精确性
- *  - 新节点（blockId 为 null）调用 crypto.randomUUID() 生成 ID
- *  - blockquote > paragraph、listItem > paragraph 等嵌套结构均会被展平
- */
-export function dehydrateFromTiptap(
-  doc: JSONContent,
-  parentId: string,
-  parentPath: string,
-): Block[] {
-  return (doc.content ?? []).flatMap((node) =>
-    tiptapNodeToBlocks(node, parentId, parentPath),
-  );
-}
 /**
  * 局部脱水：仅解析单个 Tiptap JSONContent 的 InlineContent
  */
@@ -268,15 +248,15 @@ export function parseTiptapNodeToInlineContent(node: JSONContent): InlineContent
   // blockquote 的文本在它的子节点 paragraph 里
   if (node.type === 'blockquote' || node.type?.endsWith('List')) {
      const inner = node.content?.[0]?.content ?? [];
-     return extractInline(inner);
+     return parseInlineContent(inner);
   }
-  return extractInline(node.content);
+  return parseInlineContent(node.content);
 }
 
 /**
  * 局部脱水：仅解析单个 Tiptap JSONContent 的 Props
  */
-export function parseTiptapNodeToProps(node: JSONContent): Record<string, any> {
+export function parseTiptapNodeToProps(node: JSONContent): Record<string, unknown> {
   const attrs = node.attrs || {};
   switch (node.type) {
     case 'heading':
@@ -300,154 +280,18 @@ export function parseTiptapNodeToProps(node: JSONContent): Record<string, any> {
   }
 }
 
-function tiptapNodeToBlocks(
-  node: JSONContent,
-  parentId: string,
-  parentPath: string,
-): Block[] {
-  // 经过 BlockIdExtension 的处理，此时所有 block 级节点理论上都必须有 blockId
-  let id = node.attrs?.['blockId'] as string | undefined;
-  if (!id) {
-    console.warn('[Block Converter] 严重警告: 发现缺失 blockId 的节点，这不应该发生。', node);
-    // 降级保护：如果真出现了意外，生成一个临时的 UUID 以免崩溃
-    id = crypto.randomUUID();
-  }
-  
-  const path = `${parentPath}${id}/`;
-
-  // 共享 BaseBlock 字段（不用 as const，否则 contentIds 变 readonly 与 Block 不兼容）
-  const base = { id, parentId, path, contentIds: [] as string[] };
-
-  switch (node.type) {
-    case 'paragraph':
-      return [{ ...base, type: 'paragraph' as const, props: {}, content: extractInline(node.content) }];
-
-    case 'heading':
-      return [
-        {
-          ...base,
-          type: 'heading' as const,
-          props: { level: (node.attrs?.['level'] as 1 | 2 | 3) ?? 1 },
-          content: extractInline(node.content),
-        },
-      ];
-
-    case 'blockquote': {
-      const inner = node.content?.[0]?.content ?? [];
-      return [{ ...base, type: 'quote' as const, props: {}, content: extractInline(inner) }];
-    }
-
-    case 'codeBlock':
-      return [
-        {
-          ...base,
-          type: 'code' as const,
-          props: { language: (node.attrs?.['language'] as string) ?? 'plaintext' },
-          content: [{ type: 'text' as const, text: node.content?.[0]?.text ?? '' }],
-        },
-      ];
-
-    case 'horizontalRule':
-      return [{ ...base, type: 'divider' as const, props: {}, content: [] }];
-
-    // ── 列表：展平各 listItem 为独立 Block ──
-    case 'bulletList':
-      return (node.content ?? []).map((listItemNode): Block => {
-        let itemId = listItemNode.attrs?.['blockId'] as string | undefined;
-        if (!itemId) {
-          console.warn('[Block Converter] bulletListItem 缺失 blockId', listItemNode);
-          itemId = crypto.randomUUID();
-        }
-        const inner = listItemNode.content?.[0]?.content ?? [];
-        return {
-          id: itemId,
-          parentId,
-          path: `${parentPath}${itemId}/`,
-          contentIds: [],
-          type: 'bulletListItem',
-          props: {},
-          content: extractInline(inner),
-        };
-      });
-
-    case 'orderedList':
-      return (node.content ?? []).map((listItemNode): Block => {
-        let itemId = listItemNode.attrs?.['blockId'] as string | undefined;
-        if (!itemId) {
-          console.warn('[Block Converter] numberedListItem 缺失 blockId', listItemNode);
-          itemId = crypto.randomUUID();
-        }
-        const inner = listItemNode.content?.[0]?.content ?? [];
-        return {
-          id: itemId,
-          parentId,
-          path: `${parentPath}${itemId}/`,
-          contentIds: [],
-          type: 'numberedListItem',
-          props: {},
-          content: extractInline(inner),
-        };
-      });
-
-    case 'taskList':
-      return (node.content ?? []).map((taskItemNode): Block => {
-        let itemId = taskItemNode.attrs?.['blockId'] as string | undefined;
-        if (!itemId) {
-          console.warn('[Block Converter] checkListItem 缺失 blockId', taskItemNode);
-          itemId = crypto.randomUUID();
-        }
-        const inner = taskItemNode.content?.[0]?.content ?? [];
-        return {
-          id: itemId,
-          parentId,
-          path: `${parentPath}${itemId}/`,
-          contentIds: [],
-          type: 'checkListItem',
-          props: { checked: (taskItemNode.attrs?.['checked'] as boolean) ?? false },
-          content: extractInline(inner),
-        };
-      });
-
-    // ── 自定义节点 ──
-    case 'callout':
-      return [
-        {
-          ...base,
-          type: 'callout' as const,
-          props: { variant: ((node.attrs?.['variant'] as CalloutVariant) ?? 'info') },
-          content: extractInline(node.content),
-        },
-      ];
-
-    case 'imageBlock':
-      return [
-        {
-          ...base,
-          type: 'image' as const,
-          props: {
-            url: (node.attrs?.['url'] as string) ?? '',
-            caption: node.attrs?.['caption'] as string | undefined,
-            alignment: node.attrs?.['alignment'] as 'left' | 'center' | 'right' | 'full' | undefined,
-            width: node.attrs?.['width'] as number | undefined,
-          },
-          content: [],
-        },
-      ];
-
-    default:
-      // 未知 node 类型跳过（不破坏整体数据）
-      return [];
-  }
-}
+// ─────────────────────────────────────────────
+// 内部辅助函数
+// ─────────────────────────────────────────────
 
 /** Tiptap content（JSONContent[]）→ InlineContent[] */
-function extractInline(content?: JSONContent[]): InlineContent[] {
+function parseInlineContent(content?: JSONContent[]): InlineContent[] {
   if (!content) return [];
 
   return content.flatMap((node): InlineContent[] => {
     if (node.type !== 'text') return [];
 
-    const styles = extractMarksToStyle(node.marks);
+    const styles = parseMarksToStyle(node.marks);
     const linkMark = node.marks?.find((m) => m.type === 'link');
 
     if (linkMark) {
@@ -472,7 +316,7 @@ function extractInline(content?: JSONContent[]): InlineContent[] {
 }
 
 /** Tiptap marks（JSONContent[]）→ InlineStyle */
-function extractMarksToStyle(marks?: JSONContent[]): InlineStyle {
+function parseMarksToStyle(marks?: JSONContent[]): InlineStyle {
   if (!marks) return {};
   const styles: InlineStyle = {};
   for (const mark of marks) {
@@ -491,6 +335,3 @@ function extractMarksToStyle(marks?: JSONContent[]): InlineStyle {
 function hasStyles(styles: InlineStyle): boolean {
   return Object.values(styles).some(Boolean);
 }
-
-// 导出工具函数（供单元测试使用）
-export { toJSONContent, toJSONContentArray };

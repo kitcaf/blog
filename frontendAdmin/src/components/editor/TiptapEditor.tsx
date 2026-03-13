@@ -14,19 +14,21 @@ interface TiptapEditorProps {
 }
 
 export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
-  // 1. 加载数据
+  // 1. 获取到的数据状态映射与水合
   const { page, isLoading: pageLoading } = usePageDetailQuery(pageId ?? null);
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
-  console.log('数据源block数据', blocks)
-  console.log('数据源page', page)
+  // console.log('数据源block数据（包含type='page'的block的数据）', blocks)
+  // console.log('数据源page', page)
+
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializedPageRef = useRef<string | null>(null); // 防线：记录哪些页面已完成初始水合
+
   const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(pageId ?? null);
 
-  // 2. 状态映射与水合
+  // 2. 获取到的数据状态映射与水合
   useEffect(() => {
-    if (!page || !pageId) return;
-    const allBlocks = [page, ...blocks];
-    useBlockStore.getState().hydratePage(allBlocks);
+    if (!page || !pageId || blocks.length === 0) return;
+    useBlockStore.getState().hydratePage(blocks);
   }, [page, blocks, pageId]);
 
   // 服务器标题源数据
@@ -55,7 +57,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
 
     if (dirtySet.size > 0) {
       const dirtyIds = new Set(dirtySet);
-      dirtyIds.delete(pageId); 
+      dirtyIds.delete(pageId);
 
       if (dirtyIds.size > 0) {
         ed.state.doc.descendants((node) => {
@@ -84,6 +86,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
       },
     },
     onUpdate: ({ editor: ed, transaction }) => {
+      console.log("测试更新，Tiptap 内部维护数据", editor.getJSON())
       if (transaction.getMeta('preventUpdate') || transaction.getMeta('isIdInjection')) {
         return;
       }
@@ -91,20 +94,31 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     },
   }, [pageId]);
 
-  // 6. 监听外部数据变化水合到编辑器
+  // 6. 监听外部数据变化水合到编辑器（仅初始化）
   useEffect(() => {
     if (!editor || !page || !pageId) return;
+
+    // 重点防线：如果当前 pageId 已经成功水合过，则直接返回。
+    // 这防止了 React Query 发生 refetch 时（如窗口聚焦切换），新的 page 对象触发 useEffect，
+    // 导致 editor.commands.setContent() 覆盖掉用户正在编写的内容！
+    if (initializedPageRef.current === pageId) return;
 
     const store = useBlockStore.getState();
     const pageBlock = store.blocksById[pageId];
     if (!pageBlock) return;
 
+    // 根据页面的 contentIds 数组（规定展示顺序），从 store 取出对应的 block 实体
     const contentBlocks = pageBlock.contentIds
       .map((id) => store.blocksById[id])
       .filter(Boolean);
 
+    // 转换成tiptap格式
     const content = hydrateToTiptap(contentBlocks);
+    // Tiptap 内部生成了一棵节点数据
     editor.commands.setContent(content, { emitUpdate: false });
+
+    // 该页面已成功完成初始水合，拒绝二次外部数据注入
+    initializedPageRef.current = pageId;
   }, [editor, page, pageId]);
 
   // 7. 标题变更回调
@@ -148,8 +162,8 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     <div className={className}>
       <SyncStatusBar isSyncing={isSyncing} isSyncError={isSyncError} />
 
-      <PageHeader 
-        initialTitle={serverTitle} 
+      <PageHeader
+        initialTitle={serverTitle}
         onTitleChange={handleTitleChange}
         onEnter={handleTitleEnter}
         isPageLoaded={!!page}
@@ -162,12 +176,12 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   );
 }
 
-const SyncStatusBar = memo(function SyncStatusBar({ 
-  isSyncing, 
-  isSyncError 
-}: { 
-  isSyncing: boolean; 
-  isSyncError: boolean; 
+const SyncStatusBar = memo(function SyncStatusBar({
+  isSyncing,
+  isSyncError
+}: {
+  isSyncing: boolean;
+  isSyncError: boolean;
 }) {
   if (!isSyncing && !isSyncError) return null;
 

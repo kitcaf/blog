@@ -109,7 +109,7 @@ func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// 没有符合条件的行被更新（不存在或无权限）
 	if path == "" {
 		return errors.New("Page not found or permission denied")
@@ -140,7 +140,7 @@ func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) erro
 
 // SyncBlocks 增量同步 Block 数据（带用户隔离）
 func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
-	// 批量 UPSERT
+	// 批量 UPSERT【支持新增】
 	if len(updatedBlocks) > 0 {
 		if err := s.blockRepo.Upsert(userID, updatedBlocks); err != nil {
 			return err

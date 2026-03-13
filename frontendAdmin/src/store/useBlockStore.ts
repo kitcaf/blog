@@ -189,6 +189,11 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
   },
 
   // ── 同步 ──────────────────────────────────
+  /**
+   * updated_blocks: 需要更新或者新增的block
+   * deleted_blocks: 需要删除的block
+   * @returns 
+   */
   getSyncPayload: (): BlockSyncPayload => {
     const { blocksById, dirtySet, deletedSet } = get();
 

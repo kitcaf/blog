@@ -269,6 +269,24 @@ export function parseTiptapNodeToInlineContent(node: JSONContent): InlineContent
 }
 
 /**
+ * 局部脱水：仅解析单个 Tiptap JSONContent 的 Type，映射回 Block 类型
+ */
+export function parseTiptapNodeType(typeName: string): string {
+  switch (typeName) {
+    case 'paragraph':      return 'paragraph';
+    case 'heading':        return 'heading';
+    case 'blockquote':     return 'quote';
+    case 'codeBlock':      return 'code';
+    case 'horizontalRule': return 'divider';
+    case 'listItem':       return 'bulletListItem'; // 默认值，实际由于扁平化可能需要父级上下文判别，但在局部提取时先保证基础映射
+    case 'taskItem':       return 'checkListItem';
+    case 'callout':        return 'callout';
+    case 'imageBlock':     return 'image';
+    default:               return 'paragraph';
+  }
+}
+
+/**
  * 局部脱水：仅解析单个 Tiptap JSONContent 的 Props
  */
 export function parseTiptapNodeToProps(node: JSONContent): Record<string, unknown> {

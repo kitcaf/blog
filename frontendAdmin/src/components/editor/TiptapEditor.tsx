@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, memo } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { createEditorExtensions } from './extensions';
-import { hydrateToTiptap, parseTiptapNodeToInlineContent, parseTiptapNodeToProps } from './converter';
+import { hydrateToTiptap, parseTiptapNodeToInlineContent, parseTiptapNodeToProps, parseTiptapNodeType } from './converter';
 import { useBlockSyncMutation, usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
 import { PageHeader } from './components/PageHeader';
 
@@ -17,7 +17,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   // 1. 获取到的数据状态映射与水合
   const { page, isLoading: pageLoading } = usePageDetailQuery(pageId ?? null);
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
-  // console.log('数据源block数据（包含type='page'的block的数据）', blocks)
+  console.log('数据源block数据（包含type=page 的block的数据）', blocks)
   // console.log('数据源page', page)
 
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,6 +60,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
       dirtyIds.delete(pageId);
 
       if (dirtyIds.size > 0) {
+        const pageBlock = store.blocksById[pageId];
         // 递归遍历所有节点（包括列表项）
         ed.state.doc.descendants((node) => {
           const id = node.attrs?.blockId;
@@ -67,7 +68,15 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
             const jsonNode = node.toJSON();
             const content = parseTiptapNodeToInlineContent(jsonNode);
             const props = parseTiptapNodeToProps(jsonNode);
-            store.updateSingleBlockData(id, content, props);
+
+            // 如果是新增 Block，我们需要构造它的 metadata 以便后端同步
+            const metadata = pageBlock ? {
+              type: parseTiptapNodeType(node.type.name),
+              parentId: pageId,
+              path: `${pageBlock.path}${id}/`
+            } : undefined;
+
+            store.updateSingleBlockData(id, content, props, metadata);
             dirtyIds.delete(id);
             if (dirtyIds.size === 0) return false;
           }
@@ -128,9 +137,9 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     const store = useBlockStore.getState();
     const pageBlock = store.blocksById[pageId];
 
-    if (pageBlock && 'title' in pageBlock.props) {
+    if (pageBlock) {
       store.updateSingleBlockData(pageId, pageBlock.content, {
-        ...pageBlock.props,
+        ...(pageBlock.props || {}),
         title: newTitle,
       });
       store.markBlockDirty(pageId);

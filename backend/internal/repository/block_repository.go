@@ -121,7 +121,7 @@ func (r *BlockRepository) SoftDeleteAndReturnFields(userID, blockID uuid.UUID) (
 		ParentID *uuid.UUID
 		Path     string
 	}
-	
+
 	// Postgres 特有的 RETURNING 语法
 	err := r.db.Raw(`
 		UPDATE blocks 
@@ -129,7 +129,7 @@ func (r *BlockRepository) SoftDeleteAndReturnFields(userID, blockID uuid.UUID) (
 		WHERE id = ? AND created_by = ? AND deleted_at IS NULL 
 		RETURNING parent_id, path
 	`, blockID, userID).Scan(&result).Error
-	
+
 	return result.ParentID, result.Path, err
 }
 
@@ -149,7 +149,7 @@ func (r *BlockRepository) RemoveContentID(userID, parentID, childID uuid.UUID) e
 func (r *BlockRepository) AppendContentID(userID, parentID, childID uuid.UUID) error {
 	parentIDStr := parentID.String()
 	childIDStr := childID.String()
-	
+
 	// 如果 content_ids 还没初始化为数组或为空，可以直接通过 COALESCE 赋予初始值
 	// PostgreSQL 提供 jsonb_insert 或 ||，利用 || 最简单拼接
 	return r.db.Exec(`
@@ -223,8 +223,6 @@ func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID uuid.UUID) ([]
 
 	return sortedBlocks, nil
 }
-
-
 
 // FindRootBlock 查询用户的 root 类型 block
 func (r *BlockRepository) FindRootBlock(userID uuid.UUID) (*models.Block, error) {
@@ -373,24 +371,67 @@ func (r *BlockRepository) UpdateDescendantPaths(userID uuid.UUID, oldPath, newPa
 	return nil
 }
 
+// RebuildContentIDs 批量重建父块的 content_ids
+// 根据实际的子块查询结果，重新构建父块的 content_ids 数组
+func (r *BlockRepository) RebuildContentIDs(userID uuid.UUID, parentIDs []uuid.UUID) error {
+	if len(parentIDs) == 0 {
+		return nil
+	}
+
+	// 对每个父块，查询其子块并重建 content_ids
+	for _, parentID := range parentIDs {
+		var children []models.Block
+		err := r.db.Select("id").
+			Where("parent_id = ? AND created_by = ? AND deleted_at IS NULL", parentID, userID).
+			Order("created_at ASC").
+			Find(&children).Error
+
+		if err != nil {
+			return err
+		}
+
+		// 构建 content_ids 数组
+		contentIDs := make([]string, len(children))
+		for i, child := range children {
+			contentIDs[i] = child.ID.String()
+		}
+
+		// 更新父块的 content_ids
+		contentIDsJSON, err := json.Marshal(contentIDs)
+		if err != nil {
+			return err
+		}
+
+		err = r.db.Model(&models.Block{}).
+			Where("id = ? AND created_by = ?", parentID, userID).
+			Update("content_ids", contentIDsJSON).Error
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // GetSidebarTree 返回整棵树的结构
 func (r *BlockRepository) GetSidebarTree(userID uuid.UUID, rootID uuid.UUID) ([]*models.PageTreeNode, error) {
 	var blocks []models.Block
-	
+
 	// 1. O(1) 极速查询：利用 path 索引，且严格限制 type
 	err := r.db.Select("id", "parent_id", "type", "properties", "content_ids").
 		Where("path LIKE ?", "/"+rootID.String()+"/%").
 		Where("type IN ?", []string{"root", "folder", "page"}). // 把 root 查出来作为起点
 		Where("created_by = ? AND deleted_at IS NULL", userID).
 		Find(&blocks).Error
-		
+
 	if err != nil {
 		return nil, err
 	}
 
 	// 2. 准备哈希表，实现 O(N) 的极速树组装
 	nodeMap := make(map[string]*models.PageTreeNode)
-	
+
 	// 第一遍遍历：初始化所有节点，并存入哈希表
 	for _, b := range blocks {
 		// 解析 properties 里的 title 和 icon
@@ -399,7 +440,7 @@ func (r *BlockRepository) GetSidebarTree(userID uuid.UUID, rootID uuid.UUID) ([]
 			Icon  string `json:"icon"`
 		}
 		json.Unmarshal(b.Properties, &props)
-		
+
 		// 解析 content_ids
 		var contentIDs []string
 		json.Unmarshal(b.ContentIDs, &contentIDs)
@@ -407,7 +448,7 @@ func (r *BlockRepository) GetSidebarTree(userID uuid.UUID, rootID uuid.UUID) ([]
 		if contentIDs == nil {
 			contentIDs = []string{}
 		}
-		
+
 		node := &models.PageTreeNode{
 			ID:         b.ID.String(),
 			Type:       b.Type,
@@ -420,7 +461,7 @@ func (r *BlockRepository) GetSidebarTree(userID uuid.UUID, rootID uuid.UUID) ([]
 			pid := b.ParentID.String()
 			node.ParentID = &pid
 		}
-		
+
 		nodeMap[node.ID] = node
 	}
 
@@ -428,16 +469,16 @@ func (r *BlockRepository) GetSidebarTree(userID uuid.UUID, rootID uuid.UUID) ([]
 	var rootNodes []*models.PageTreeNode
 	for _, node := range nodeMap {
 		if node.ParentID == nil || *node.ParentID == "" {
-			 // 如果是顶级节点 (或者隐藏的 root 节点)，放入根数组
-			 rootNodes = append(rootNodes, node)
+			// 如果是顶级节点 (或者隐藏的 root 节点)，放入根数组
+			rootNodes = append(rootNodes, node)
 		} else {
-			 // 找到它的父节点，把自己塞进父节点的 Children 数组里
-			 if parent, exists := nodeMap[*node.ParentID]; exists {
-				 parent.Children = append(parent.Children, node)
-			 } else {
+			// 找到它的父节点，把自己塞进父节点的 Children 数组里
+			if parent, exists := nodeMap[*node.ParentID]; exists {
+				parent.Children = append(parent.Children, node)
+			} else {
 				// 理论上不会出现，但如果真出现了就把他当作根节点处理
 				rootNodes = append(rootNodes, node)
-			 }
+			}
 		}
 	}
 
@@ -480,16 +521,20 @@ func sortChildrenByContentIDs(children []*models.PageTreeNode, contentIDs []stri
 	for i, id := range contentIDs {
 		orderMap[id] = i
 	}
-	
+
 	sort.SliceStable(children, func(i, j int) bool {
 		// 如果在 content_ids 中找不到，放到最后
 		rankI, ok1 := orderMap[children[i].ID]
-		if !ok1 { rankI = 999999 }
+		if !ok1 {
+			rankI = 999999
+		}
 		rankJ, ok2 := orderMap[children[j].ID]
-		if !ok2 { rankJ = 999999 }
-		
+		if !ok2 {
+			rankJ = 999999
+		}
+
 		return rankI < rankJ
 	})
-	
+
 	return children
 }

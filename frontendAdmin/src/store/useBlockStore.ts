@@ -66,7 +66,7 @@ interface EditorStoreActions {
    * 更新单个 Block 的数据（防抖同步时从 Tiptap 提取数据后调用）
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updateSingleBlockData: (id: string, content: InlineContent[], props: any) => void;
+  updateSingleBlockData: (id: string, content: InlineContent[], props: any, metadata?: { type: string; parentId: string; path: string }) => void;
 
   /**
    * 更新页面的子节点排序（由 DirtyTrackerExtension 调用，避免重复遍历）
@@ -151,17 +151,41 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
   },
 
   // ── 数据更新（防抖同步时调用）──────────────
-  updateSingleBlockData: (id, content, props) => {
+  updateSingleBlockData: (id, content, props, metadata) => {
     set((state) => {
       const oldBlock = state.blocksById[id];
-      if (!oldBlock) return state;
+      
+      // 逻辑分支 A（现有 Block）
+      if (oldBlock) {
+        return {
+          blocksById: {
+            ...state.blocksById,
+            [id]: { ...oldBlock, content, props: { ...oldBlock.props, ...props } } as Block,
+          },
+        };
+      }
 
-      return {
-        blocksById: {
-          ...state.blocksById,
-          [id]: { ...oldBlock, content, props: { ...oldBlock.props, ...props } } as Block,
-        },
-      };
+      // 逻辑分支 B（新增 Block）：如果是新 ID，则根据传入的元数据构造完整的新 Block
+      if (metadata) {
+        const newBlock: Block = {
+          id,
+          parentId: metadata.parentId,
+          path: metadata.path,
+          type: metadata.type as any,
+          content,
+          props: props as any,
+          contentIds: [],
+        };
+        
+        return {
+          blocksById: {
+            ...state.blocksById,
+            [id]: newBlock,
+          },
+        };
+      }
+
+      return state;
     });
   },
 

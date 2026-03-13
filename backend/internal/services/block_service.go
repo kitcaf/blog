@@ -139,9 +139,24 @@ func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) erro
 }
 
 // SyncBlocks 增量同步 Block 数据（带用户隔离）
+// 核心逻辑：
+// 1. 批量 UPSERT 更新/新增的块
+// 2. 软删除指定的块
+// 3. 收集所有受影响的父块 ID
+// 4. 批量更新父块的 content_ids（基于实际子块查询）
 func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
+	// 收集所有受影响的父块 ID
+	affectedParents := make(map[uuid.UUID]bool)
+
 	// 批量 UPSERT【支持新增】
 	if len(updatedBlocks) > 0 {
+		// 收集所有父块 ID
+		for _, block := range updatedBlocks {
+			if block.ParentID != nil {
+				affectedParents[*block.ParentID] = true
+			}
+		}
+
 		if err := s.blockRepo.Upsert(userID, updatedBlocks); err != nil {
 			return err
 		}
@@ -149,7 +164,27 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 
 	// 软删除
 	if len(deletedIDs) > 0 {
+		// 先查询被删除块的父块 ID
+		for _, id := range deletedIDs {
+			block, err := s.blockRepo.FindByID(userID, id)
+			if err == nil && block.ParentID != nil {
+				affectedParents[*block.ParentID] = true
+			}
+		}
+
 		if err := s.blockRepo.SoftDelete(userID, deletedIDs); err != nil {
+			return err
+		}
+	}
+
+	// 批量更新所有受影响父块的 content_ids
+	if len(affectedParents) > 0 {
+		parentIDs := make([]uuid.UUID, 0, len(affectedParents))
+		for parentID := range affectedParents {
+			parentIDs = append(parentIDs, parentID)
+		}
+
+		if err := s.blockRepo.RebuildContentIDs(userID, parentIDs); err != nil {
 			return err
 		}
 	}

@@ -61,23 +61,22 @@ export const BlockIdExtension = Extension.create({
             return null;
           }
 
-          // 跳过 setContent 初始化操作（已有完整 blockId）
-          if (transactions.some(tr => tr.getMeta('addToHistory') === false)) {
+          // 如果最新的事务已经标记为 ID 注入，避免死循环（虽然 tr 处理本身通常足够，但这里做个双保险）
+          if (transactions.some(tr => tr.getMeta('isIdInjection'))) {
             return null;
           }
           
           const tr = newState.tr;
           let modified = false;
-
           const seenIds = new Set<string>();
 
-          // 遍历整个文档，为缺失或重复 blockId 的节点生成新 ID
+          // 遍历文档树，确保每一个 block 节点都有唯一的 blockId
           newState.doc.descendants((node: ProseMirrorNode, pos: number) => {
             if (node.isBlock && trackedTypes.has(node.type.name)) {
               const currentId = node.attrs.blockId as string | undefined;
               
               if (!currentId || seenIds.has(currentId)) {
-                // 生成新的 UUID（应对空ID或拆分段落带来的重复ID）
+                // 生成新的 UUID：处理两种情况 1. 它是刚诞生的新节点（空ID） 2. 它是切块分裂产生的副本（重复ID）
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
                   blockId: crypto.randomUUID(),
@@ -90,7 +89,7 @@ export const BlockIdExtension = Extension.create({
           });
 
           if (modified) {
-             // 标记为系统操作，避免触发 DirtyTracker
+             // 标记为 ID 注入事务，防止无限循环
              tr.setMeta('isIdInjection', true);
              return tr;
           }

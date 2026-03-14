@@ -25,7 +25,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
 
   const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(pageId ?? null);
 
-  // 2. 获取到的数据状态映射与水合
+  // 2. 获取到的数据状态映射与水合（监听[page, blocks, pageId]）
   useEffect(() => {
     if (!page || !pageId || blocks.length === 0) return;
     useBlockStore.getState().hydratePage(blocks);
@@ -108,9 +108,6 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   useEffect(() => {
     if (!editor || !page || !pageId || blocks.length === 0) return;
 
-    // 重点防线：如果当前 pageId 已经成功水合过，则直接返回。
-    // 这防止了 React Query 发生 refetch 时（如窗口聚焦切换），新的 page 对象触发 useEffect，
-    // 导致 editor.commands.setContent() 覆盖掉用户正在编写的内容！
     if (initializedPageRef.current === pageId) return;
 
     const store = useBlockStore.getState();
@@ -128,7 +125,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     // 转换成tiptap格式
     const content = hydrateToTiptap(contentBlocks);
     console.log('转换后的Tiptap内容:', content);
-    
+
     // Tiptap 内部生成了一棵节点数据
     editor.commands.setContent(content, { emitUpdate: false });
 

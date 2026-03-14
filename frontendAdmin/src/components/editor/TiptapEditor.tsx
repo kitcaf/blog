@@ -106,7 +106,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
 
   // 6. 监听外部数据变化水合到编辑器（仅初始化）
   useEffect(() => {
-    if (!editor || !page || !pageId) return;
+    if (!editor || !page || !pageId || blocks.length === 0) return;
 
     // 重点防线：如果当前 pageId 已经成功水合过，则直接返回。
     // 这防止了 React Query 发生 refetch 时（如窗口聚焦切换），新的 page 对象触发 useEffect，
@@ -122,14 +122,19 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
       .map((id) => store.blocksById[id])
       .filter(Boolean);
 
+    console.log('准备水合到编辑器 - pageBlock:', pageBlock);
+    console.log('准备水合到编辑器 - contentBlocks:', contentBlocks);
+
     // 转换成tiptap格式
     const content = hydrateToTiptap(contentBlocks);
+    console.log('转换后的Tiptap内容:', content);
+    
     // Tiptap 内部生成了一棵节点数据
     editor.commands.setContent(content, { emitUpdate: false });
 
     // 该页面已成功完成初始水合，拒绝二次外部数据注入
     initializedPageRef.current = pageId;
-  }, [editor, page, pageId]);
+  }, [editor, page, pageId, blocks]);
 
   // 7. 标题变更回调
   const handleTitleChange = useCallback((newTitle: string) => {

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useBlockStore } from '@/store/useBlockStore';
+import { useSyncStore } from '@/store/useSyncStore';
 import { createEditorExtensions } from './extensions';
 import { hydrateToTiptap } from './converter';
 import { useBlockSyncMutation, usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
 import { PageHeader } from './components/PageHeader';
-import { SyncManager } from './components/SyncManager';
 
 const DEBOUNCE_MS = 1000;
 
@@ -21,7 +21,14 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   // 1. 数据查询
   const { page, isLoading: pageLoading } = usePageDetailQuery(pageId ?? null);
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
-  const { sync } = useBlockSyncMutation(pageId ?? null);
+  const { sync } = useBlockSyncMutation(pageId ?? null, {
+    onSuccess: () => {
+      useSyncStore.getState().setSyncing(false);
+    },
+    onError: () => {
+      useSyncStore.getState().setError(true);
+    },
+  });
 
   // 2. 缓存计算值（优化 2）
   const serverTitle = useMemo(
@@ -46,6 +53,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
       const store = useBlockStore.getState();
       const payload = store.getSyncPayload();
       if (payload.updated_blocks.length > 0 || payload.deleted_blocks.length > 0) {
+        useSyncStore.getState().setSyncing(true);
         sync(payload);
       }
     }, DEBOUNCE_MS);
@@ -130,20 +138,19 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
 
   if (!editor) return null;
 
-  // 优化 3：状态下放 - 使用 SyncManager 隔离同步状态
   return (
     <div className={className}>
-      <SyncManager pageId={pageId!}>
+      <div className="px-16 pt-12 pb-4">
         <PageHeader
           initialTitle={serverTitle}
           onTitleChange={handleTitleChange}
           onEnter={handleTitleEnter}
           isPageLoaded={isPageLoaded}
         />
-        <div className="px-16 pb-12">
-          <EditorContent editor={editor} />
-        </div>
-      </SyncManager>
+      </div>
+      <div className="px-16 pb-12">
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { useParams } from 'react-router-dom';
 import { PanelLeftOpen } from 'lucide-react';
 import { useSidebarStore } from '@/store/useSidebarStore';
 import { TiptapEditor } from './editor/TiptapEditor';
+import { ArticleNavBar } from './editor/components/ArticleNavBar';
 
 export function MainContent() {
   // 从路由参数获取 pageId
@@ -36,9 +37,9 @@ export function MainContent() {
     );
   }
 
-  // ── 正常渲染编辑器 ───────────────────────────────────────────────────────
+  // ── 正常渲染编辑器（上下布局：ArticleNavBar + TiptapEditor）───────────────
   return (
-    <main className="flex-1 h-full bg-app-bg overflow-y-auto relative">
+    <main className="flex-1 h-full bg-app-bg flex flex-col relative">
       {!isOpen && (
         <button
           className="absolute top-4 left-4 z-50 p-2 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors"
@@ -49,10 +50,14 @@ export function MainContent() {
         </button>
       )}
 
-      {/* 调整最大宽度为百分比，避免硬编码像素 */}
-      <div className="w-full max-w-[65%] mx-auto px-8 py-16 md:py-24 pb-48 transition-all duration-300">
-        {/* Tiptap 富文本编辑器（自己负责加载数据） */}
-        <TiptapEditor pageId={pageId} />
+      {/* 顶部：ArticleNavBar 全宽 */}
+      <ArticleNavBar />
+
+      {/* 底部：TiptapEditor 容器（可滚动） */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="w-full max-w-[65%] mx-auto px-8 py-16 md:py-24 pb-48 transition-all duration-300">
+          <TiptapEditor pageId={pageId} />
+        </div>
       </div>
     </main>
   );

@@ -56,7 +56,7 @@ export const PageHeader = memo(function PageHeader({
   }, [isPageLoaded, initialTitle]);
 
   return (
-    <div className="page-metadata px-16 pt-12 pb-4">
+    <div className="page-metadata">
       <AutoResizeTextarea
         textareaRef={titleTextareaRef}
         value={localTitle}

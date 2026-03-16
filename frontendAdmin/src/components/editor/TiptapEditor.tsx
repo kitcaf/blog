@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, memo } from 'react';
-import { useEditor, EditorContent, type Editor } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react';
 import { useBlockStore } from '@/store/useBlockStore';
 import { createEditorExtensions } from './extensions';
-import { hydrateToTiptap, parseTiptapNodeToInlineContent, parseTiptapNodeToProps, parseTiptapNodeType } from './converter';
+import { hydrateToTiptap } from './converter';
 import { useBlockSyncMutation, usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
 import { PageHeader } from './components/PageHeader';
 
@@ -17,7 +17,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   // 1. 获取到的数据状态映射与水合
   const { page, isLoading: pageLoading } = usePageDetailQuery(pageId ?? null);
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
-  console.log('数据源block数据（包含type=page 的block的数据）', blocks)
+  // console.log('数据源block数据（包含type=page 的block的数据）', blocks)
   // console.log('数据源page', page)
 
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -25,7 +25,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
 
   const { sync, isSyncing, isError: isSyncError } = useBlockSyncMutation(pageId ?? null);
 
-  // 2. 获取到的数据状态映射与水合（监听[page, blocks, pageId]）
+  // 2. 数据状态水合（监听 [page, blocks, pageId]）
   useEffect(() => {
     if (!page || !pageId || blocks.length === 0) return;
     useBlockStore.getState().hydratePage(blocks);
@@ -34,7 +34,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
   // 服务器标题源数据
   const serverTitle = page && 'title' in page.props ? (page.props.title as string) : '未命名';
 
-  // 3. 同步逻辑 (通用防抖)
+  // 3. 同步逻辑 (通用防抖) 只是“发送 API 请求同步到后端” 这个行为
   const triggerSync = useCallback(() => {
     if (!pageId) return;
     if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -48,42 +48,12 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     }, DEBOUNCE_MS);
   }, [pageId, sync]);
 
-  // 4. 编辑器内容处理逻辑
-  const handleEditorUpdate = useCallback((ed: Editor) => {
+  // 4. 编辑器内容处理逻辑（简化版：数据提取已在 DirtyTrackerExtension 中完成）
+  const handleEditorUpdate = useCallback(() => {
     if (!pageId) return;
-
-    const store = useBlockStore.getState();
-    const { dirtySet } = store;
-
-    if (dirtySet.size > 0) {
-      const dirtyIds = new Set(dirtySet);
-      dirtyIds.delete(pageId);
-
-      if (dirtyIds.size > 0) {
-        const pageBlock = store.blocksById[pageId];
-        // 递归遍历所有节点（包括列表项）
-        ed.state.doc.descendants((node) => {
-          const id = node.attrs?.blockId;
-          if (id && dirtyIds.has(id)) {
-            const jsonNode = node.toJSON();
-            const content = parseTiptapNodeToInlineContent(jsonNode);
-            const props = parseTiptapNodeToProps(jsonNode);
-
-            // 如果是新增 Block，我们需要构造它的 metadata 以便后端同步
-            const metadata = pageBlock ? {
-              type: parseTiptapNodeType(node.type.name),
-              parentId: pageId,
-              path: `${pageBlock.path}${id}/`
-            } : undefined;
-
-            store.updateSingleBlockData(id, content, props, metadata);
-            dirtyIds.delete(id);
-            if (dirtyIds.size === 0) return false;
-          }
-          return true;
-        });
-      }
-    }
+    
+    // 数据提取和 Store 更新已经在 DirtyTrackerExtension.appendTransaction 中完成
+    // 这里只负责触发防抖同步
     triggerSync();
   }, [pageId, triggerSync]);
 
@@ -95,12 +65,11 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
         class: 'prosemirror-editor outline-none',
       },
     },
-    onUpdate: ({ editor: ed, transaction }) => {
-      console.log("测试更新，Tiptap 内部维护数据", editor.getJSON())
+    onUpdate: ({ transaction }) => {
       if (transaction.getMeta('preventUpdate') || transaction.getMeta('isIdInjection')) {
         return;
       }
-      handleEditorUpdate(ed as Editor);
+      handleEditorUpdate();
     },
   }, [pageId]);
 

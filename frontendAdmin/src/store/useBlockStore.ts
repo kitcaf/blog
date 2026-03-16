@@ -7,13 +7,21 @@
  *  2. Dirty Tracking：追踪用户编辑产生的变更
  *  3. 提供 Sync Payload：将变更打包发送给后端
  * 
- * 数据流：
+ * 数据流（优化后）：
  *   路由变化 → MainContent 检测 pageId
  *   → React Query 加载页面 → hydratePage() → blocksById
- *   → 用户编辑 → Tiptap Extension → markBlockDirty()
- *   → 防抖 1.5s → 从 Tiptap 提取数据 → updateSingleBlockData()
+ *   → 用户编辑 → DirtyTrackerExtension.appendTransaction
+ *     ├─ 提取节点数据（content, props）
+ *     ├─ updateSingleBlockData() 更新 blocksById
+ *     └─ markBlockDirty() 标记 dirtySet
+ *   → TiptapEditor.handleEditorUpdate → triggerSync() (防抖 1s)
  *   → getSyncPayload() → API sync → clearDirtyState()
  *   → 切换页面 → reset() 清空旧页面状态
+ * 
+ * 性能优化：
+ *   - 数据提取和标记在 DirtyTrackerExtension 中一次完成
+ *   - 只遍历变更范围，O(变更数) 而非 O(文档大小)
+ *   - handleEditorUpdate 不再遍历文档，只负责触发同步
  */
 
 import { create } from 'zustand';
@@ -63,7 +71,7 @@ interface EditorStoreActions {
   markBlockDeleted: (id: string) => void;
 
   /**
-   * 更新单个 Block 的数据（防抖同步时从 Tiptap 提取数据后调用）
+   * 更新单个 Block 的数据（由 DirtyTrackerExtension 在检测到变更时立即调用）
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updateSingleBlockData: (id: string, content: InlineContent[], props: any, metadata?: { type: string; parentId: string; path: string }) => void;
@@ -150,7 +158,7 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     });
   },
 
-  // ── 数据更新（防抖同步时调用）──────────────
+  // ── 数据更新（由 DirtyTrackerExtension 调用）──────────────
   updateSingleBlockData: (id, content, props, metadata) => {
     set((state) => {
       const oldBlock = state.blocksById[id];
@@ -167,15 +175,15 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
 
       // 逻辑分支 B（新增 Block）：如果是新 ID，则根据传入的元数据构造完整的新 Block
       if (metadata) {
-        const newBlock: Block = {
+        const newBlock = {
           id,
           parentId: metadata.parentId,
           path: metadata.path,
-          type: metadata.type as any,
+          type: metadata.type,
           content,
-          props: props as any,
+          props,
           contentIds: [],
-        };
+        } as Block;
         
         return {
           blocksById: {

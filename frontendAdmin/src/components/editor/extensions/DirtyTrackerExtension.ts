@@ -1,40 +1,29 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { useBlockStore } from '@/store/useBlockStore';
-
-/**
- * 递归收集节点及其所有子节点中的 blockId
- * 关键：处理列表结构（bulletList > listItem > paragraph）
- */
-function collectBlockIdsRecursive(node: ProseMirrorNode, ids: Set<string>): void {
-  if (node.attrs?.blockId) {
-    ids.add(node.attrs.blockId);
-  }
-
-  // 递归遍历子节点（处理列表容器等嵌套结构）
-  node.forEach((child) => {
-    collectBlockIdsRecursive(child, ids);
-  });
-}
+import {
+  parseTiptapNodeToInlineContent,
+  parseTiptapNodeToProps,
+  parseTiptapNodeType,
+} from '../converter';
 
 /**
  * @file DirtyTrackerExtension.ts
- * @description 利用 ProseMirror Transaction → Step → StepMap 机制精确追踪变更
+ * @description 利用 ProseMirror Transaction → Step → StepMap 机制精确追踪变更并提取数据
  * 
  * 核心设计：
  *   1. 扁平化追踪：
  *      - topLevelIds：收集所有有 blockId 的节点（包括列表项）
  *      - 对应 Block 模型的扁平结构（列表项是独立的 Block）
  *   
- *   2. 精确变更检测：
- *      - 通过 Step 类型判断操作（替换、删除、插入）
+ *   2. 精确变更检测与数据提取（一次遍历完成）：
  *      - 通过 StepMap 精确定位变更范围，只遍历变更节点
- *      - 递归收集 blockId，正确处理列表结构
+ *      - 在遍历时同时提取节点的 content 和 props
+ *      - 立即更新 Store，避免二次遍历
  *   
  *   3. 性能优化：
- *      - 缓存所有 blockId，避免每次全文档遍历
- *      - 增量更新 Store，O(变更数) 而非 O(文档大小)
+ *      - 只遍历变更范围，O(变更数) 而非 O(文档大小)
+ *      - 数据提取和标记在同一个地方，避免重复遍历
  *      - 跳过系统操作（preventUpdate、isIdInjection）
  * 
  * 数据结构映射：
@@ -100,6 +89,14 @@ export const DirtyTrackerExtension = Extension.create<DirtyTrackerOptions>({
           },
         },
 
+        /**
+         * ProseMirror 核心appendTransaction
+         * 
+         * @param transactions：事务数组，导致这次状态变更的所有事务的集合
+         * @param oldState：旧状态快照，在这批 transactions 应用到文档之前，引擎内存中的完整文档树快照
+         * @param newState：新状态快照，事务执行在内存中生成的全新文档树快照
+         * @returns 
+         */
         appendTransaction: (transactions, oldState, newState) => {
           if (!transactions.some((tr) => tr.docChanged)) return null;
 
@@ -109,30 +106,55 @@ export const DirtyTrackerExtension = Extension.create<DirtyTrackerOptions>({
           }
 
           const store = useBlockStore.getState();
+          const pageBlock = pageId ? store.blocksById[pageId] : null;
           const changedBlockIds = new Set<string>();
           const deletedBlockIds = new Set<string>();
           let hasStructureChange = false;
 
-          // ═══════════════════════════════════════════════════════
-          // 核心：通过比较文档结构来检测变更，而不是分析 Step
-          // ═══════════════════════════════════════════════════════
-
-          // 1. 收集所有变更范围内的 blockId
+          // 策略 1：精确收集变更节点并提取数据（一次遍历完成）
           transactions.forEach((tr) => {
             tr.steps.forEach((_step, stepIndex) => {
               const stepMap = tr.mapping.maps[stepIndex];
-              
+
               // 通过 StepMap 精确定位变更范围
               stepMap.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-                // 遍历新文档的变更范围，收集所有 blockId
-                newState.doc.nodesBetween(newStart, newEnd, (node) => {
-                  collectBlockIdsRecursive(node, changedBlockIds);
+                // 遍历新文档的变更范围
+                newState.doc.nodesBetween(newStart, newEnd, (node, pos) => {
+                  if (!node.attrs?.blockId) return true;
+
+                  const id = node.attrs.blockId;
+                  const nodeStart = pos;
+                  const nodeEnd = pos + node.nodeSize;
+
+                  // 检查变更范围是否真的在这个节点内部
+                  // 如果变更范围与节点范围有交集，说明这个节点真的变了
+                  if (newStart < nodeEnd && newEnd > nodeStart) {
+                    changedBlockIds.add(id);
+
+                    // 立即提取数据并更新 Store
+                    const jsonNode = node.toJSON();
+                    const content = parseTiptapNodeToInlineContent(jsonNode);
+                    const props = parseTiptapNodeToProps(jsonNode);
+
+                    // 构造 metadata（如果是新节点）
+                    const metadata = (!store.blocksById[id] && pageBlock) ? {
+                      type: parseTiptapNodeType(node.type.name),
+                      parentId: pageId!,
+                      path: `${pageBlock.path}${id}/`
+                    } : undefined;
+
+                    // 更新 Store（数据提取和更新在同一个地方）
+                    store.updateSingleBlockData(id, content, props, metadata);
+                  }
+
+                  // 不递归子节点，让 nodesBetween 自己遍历
+                  return true;
                 });
               });
             });
           });
 
-          // 2. 检测结构变化（通过比较 topLevelIds）
+          // 策略 2：检测结构变化（新增、删除、移动节点）
           const oldPluginState = pluginKey.getState(oldState);
           const newPluginState = pluginKey.getState(newState);
 
@@ -157,21 +179,52 @@ export const DirtyTrackerExtension = Extension.create<DirtyTrackerOptions>({
 
               // 找出新增的块（在新结构中存在，但在旧结构中不存在）
               const oldSet = new Set(oldTopLevelIds);
+              const newIds = new Set<string>();
+
               newTopLevelIds.forEach((id: string) => {
                 if (!oldSet.has(id)) {
+                  newIds.add(id);
                   changedBlockIds.add(id);
                 }
               });
+
+              // 优化：一次遍历找到所有新增节点
+              if (newIds.size > 0) {
+                newState.doc.descendants((node) => {
+                  const id = node.attrs?.blockId;
+                  if (id && newIds.has(id)) {
+                    const jsonNode = node.toJSON();
+                    const content = parseTiptapNodeToInlineContent(jsonNode);
+                    const props = parseTiptapNodeToProps(jsonNode);
+
+                    const metadata = pageBlock ? {
+                      type: parseTiptapNodeType(node.type.name),
+                      parentId: pageId!,
+                      path: `${pageBlock.path}${id}/`
+                    } : undefined;
+
+                    store.updateSingleBlockData(id, content, props, metadata);
+
+                    // 从集合中移除已找到的节点
+                    newIds.delete(id);
+
+                    // 如果所有新节点都找到了，提前停止遍历
+                    if (newIds.size === 0) return false;
+                  }
+                  return true;
+                });
+              }
             }
           }
 
-          // 3. 增量更新 Store
-          // 先标记内容变更的块
+          // 策略 3：更新 Store 状态
+
+          // 标记内容变更的块
           if (changedBlockIds.size > 0) {
             changedBlockIds.forEach((id) => store.markBlockDirty(id));
           }
 
-          // 再处理删除（删除会从 dirtySet 中移除，所以要后执行）
+          // 处理删除（删除会从 dirtySet 中移除，所以要后执行）
           if (deletedBlockIds.size > 0) {
             deletedBlockIds.forEach((id) => store.markBlockDeleted(id));
           }

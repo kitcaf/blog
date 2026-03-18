@@ -32,6 +32,7 @@ interface UseEditorSyncControllerParams {
   pageId?: string;
   page: BlockData | null;
   blocks: BlockData[];
+  isBlocksLoading: boolean;
   sync: (request: PreparedBlockSync) => void;
 }
 
@@ -44,6 +45,7 @@ export function useEditorSyncController({
   pageId,
   page,
   blocks,
+  isBlocksLoading,
   sync,
 }: UseEditorSyncControllerParams): UseEditorSyncControllerResult {
   // 防抖定时器：延迟触发同步，避免频繁请求
@@ -155,9 +157,13 @@ export function useEditorSyncController({
       return;
     }
 
+    if (isBlocksLoading) {
+      return;
+    }
+
     // 将服务器数据水合到 Store
     useBlockStore.getState().hydratePage(page, blocks);
-  }, [blocks, page, pageId]);
+  }, [blocks, isBlocksLoading, page, pageId]);
 
   /**
    * Effect 2: 页面切换时重置运行时状态
@@ -187,7 +193,7 @@ export function useEditorSyncController({
    * 因为 Store 的水合可能还没完成
    */
   useEffect(() => {
-    if (!editor || !pageId || !page) {
+    if (!editor || !pageId || !page || isBlocksLoading) {
       return;
     }
 
@@ -196,22 +202,21 @@ export function useEditorSyncController({
       return;
     }
 
-    // 直接使用 blocks 参数，而不是从 Store 读取
-    const pageBlock = blocks.find((b) => b.id === pageId);
+    const { blocksById } = useBlockStore.getState();
+    const pageBlock = blocksById[pageId];
     if (!pageBlock) {
       return;
     }
 
-    // 获取页面的子 blocks
     const contentBlocks = pageBlock.contentIds
-      .map((id) => blocks.find((b) => b.id === id))
+      .map((id) => blocksById[id])
       .filter((block): block is NonNullable<typeof block> => Boolean(block));
 
     // 转换为 Tiptap 文档格式并注入编辑器
     editor.commands.setContent(hydrateToTiptap(contentBlocks), { emitUpdate: false });
     resetDirtyTracker(editor); // 清空候选 ID
     initializedPageRef.current = pageId; // 标记已初始化
-  }, [blocks, editor, page, pageId]);
+  }, [blocks, editor, isBlocksLoading, page, pageId]);
 
   /**
    * Effect 4: 监听编辑器更新事件

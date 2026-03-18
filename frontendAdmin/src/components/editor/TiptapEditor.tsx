@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, memo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useSyncStore } from '@/store/useSyncStore';
-import { createEditorExtensions } from './extensions';
+import { editorExtensions } from './extensions';
 import { useEditorSyncController } from './sync/useEditorSyncController';
-import { useBlockSyncMutation, usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
+import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
+import { usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
 import { PageHeader } from './components/PageHeader';
 
 interface TiptapEditorProps {
@@ -11,22 +11,15 @@ interface TiptapEditorProps {
   pageId?: string;
 }
 
-export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
+function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { page, isLoading: pageLoading } = usePageDetailQuery(pageId ?? null);
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
   console.log("初始数据", blocks)
-  const { sync } = useBlockSyncMutation(pageId ?? null, {
-    onSuccess: () => {
-      useSyncStore.getState().setSyncing(false);
-    },
-    onError: () => {
-      useSyncStore.getState().setError(true);
-    },
-  });
+  const { sync } = useBlockSyncRunner(pageId ?? null);
 
   const editor = useEditor(
     {
-      extensions: createEditorExtensions(),
+      extensions: editorExtensions,
       editorProps: {
         attributes: {
           class: 'prosemirror-editor outline-none',
@@ -41,10 +34,8 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     pageId,
     page,
     blocks,
-    sync: (request) => {
-      useSyncStore.getState().setSyncing(true);
-      sync(request);
-    },
+    isBlocksLoading: blocksLoading,
+    sync,
   });
 
   const handleTitleChange = useCallback(
@@ -72,7 +63,7 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
 
   return (
     <div className={className}>
-      <div className="px-16 pt-12 pb-4">
+      <div className="px-16">
         <PageHeader
           initialTitle={page && 'title' in page.props ? (page.props.title as string) : '未命名'}
           onTitleChange={handleTitleChange}
@@ -86,3 +77,13 @@ export function TiptapEditor({ className = '', pageId }: TiptapEditorProps) {
     </div>
   );
 }
+
+// 使用 React.memo 优化：只在 pageId 变化时重渲染
+// 忽略 page 和 blocks 的变化，因为编辑器内容由 Tiptap 内部管理
+export const TiptapEditor = memo(TiptapEditorComponent, (prevProps, nextProps) => {
+  // 返回 true 表示不重渲染，返回 false 表示需要重渲染
+  // 只有 pageId 变化时才重渲染
+  return prevProps.pageId === nextProps.pageId && prevProps.className === nextProps.className;
+});
+
+TiptapEditor.displayName = 'TiptapEditor';

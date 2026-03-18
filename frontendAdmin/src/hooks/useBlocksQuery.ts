@@ -21,23 +21,19 @@
  *  - 编辑器数据：React Query 加载 → Store 缓存 → Tiptap 编辑
  *
  * 三个 Hook：
- *   usePageTreeQuery     → GET /api/admin/blocks/tree      (侧边栏目录)
- *   usePageBlocksQuery   → GET /api/admin/pages/:id/blocks (文章内容)
- *   useBlockSyncMutation → PUT /api/admin/blocks           (批量同步)
+ *   usePageTreeQuery   → GET /api/admin/blocks/tree      (侧边栏目录)
+ *   usePageBlocksQuery → GET /api/admin/pages/:id/blocks (文章内容)
+ *   usePageDetailQuery → GET /api/admin/pages/:id        (页面元数据)
  */
 
 import {
   useQuery,
-  useMutation,
-  useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
 import {
   fetchPageTree,
   fetchPageBlocks,
   fetchPageDetail,
-  syncBlocks,
   type PageTreeNode,
 } from '@/api/blocks';
 import type { BlockData } from '@blog/types';
@@ -123,6 +119,7 @@ interface UsePageBlocksQueryResult {
  * - 触发时机：路由参数 pageId 变化（用户点击侧边栏或直接访问 URL）
  * - gcTime=5min：切换到其他页面后仍缓存，快速切换回来无需重新请求
  * - enabled=!!pageId：pageId 为 null 时不发请求
+ * - refetchOnMount=false：编辑场景下，本地 Store 是 source of truth，避免重新获取
  *
  * @param pageId - 目标 Page 的 UUID（为 null 时 hook 静默）
  */
@@ -131,8 +128,10 @@ export function usePageBlocksQuery(pageId: string | null): UsePageBlocksQueryRes
     queryKey: blockQueryKeys.pageBlocks(pageId ?? ''),
     queryFn: () => fetchPageBlocks(pageId!),
     enabled: !!pageId,
-    staleTime: 30 * 1000,        // 30s 内认为数据新鲜（编辑场景：本地 Store 是 source of truth）
-    gcTime: 5 * 60 * 1000,       // 缓存保留 5 分钟（切换页面后快速切回无需重新请求）
+    staleTime: 60 * 1000 * 30,        // 30分钟内认为数据新鲜（编辑场景：本地 Store 是 source of truth）
+    gcTime: 5 * 60 * 1000,            // 缓存保留 5 分钟（切换页面后快速切回无需重新请求）
+    refetchOnMount: false,            // 组件挂载时不重新获取（避免编辑时触发重渲染）
+    refetchOnWindowFocus: false,      // 窗口聚焦时不重新获取（编辑场景下避免干扰）
   });
 
   return {
@@ -169,6 +168,8 @@ export function usePageDetailQuery(pageId: string | null): UsePageDetailQueryRes
     enabled: !!pageId,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
+    refetchOnMount: false,            // 组件挂载时不重新获取（避免编辑时触发重渲染）
+    refetchOnWindowFocus: false,      // 窗口聚焦时不重新获取（编辑场景下避免干扰）
   });
 
   return {
@@ -180,77 +181,3 @@ export function usePageDetailQuery(pageId: string | null): UsePageDetailQueryRes
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook 3：批量同步 Mutation
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface UseBlockSyncMutationOptions {
-  /** 同步成功后的回调（可用于显示 Toast 或日志） */
-  onSuccess?: () => void;
-  /** 同步失败后的回调（可用于显示错误提示） */
-  onError?: (error: Error) => void;
-}
-
-interface UseBlockSyncMutationResult {
-  /** 触发同步，通常由防抖定时器在检测到 dirty blocks 时调用 */
-  sync: (request: PreparedBlockSync) => void;
-  /** 当前是否有请求正在进行中 */
-  isSyncing: boolean;
-  /** 上次同步请求是否以失败告终 */
-  isError: boolean;
-}
-
-/**
- * 批量同步 Block 变更。
- *
- * 成功后：
- *  1. 仅确认本次请求快照对应的 dirty 集合
- *  2. 精确失效当前页面的 Block 缓存（refetchType: 'inactive'），
- *     避免立即重新请求打断编辑体验，仅在用户离开此页面后下次进来时刷新
- *
- * 失败后：
- *  - 不清除 dirty 状态（下次防抖触发时自动重试）
- *  - 触发 onError 回调（调用方可展示 Toast 提示）
- *
- * @param activePageId - 当前活跃页面 ID，用于精确失效对应缓存
- * @param options - 成功/失败回调
- */
-export function useBlockSyncMutation(
-  activePageId: string | null,
-  options?: UseBlockSyncMutationOptions,
-): UseBlockSyncMutationResult {
-  const queryClient = useQueryClient();
-  const acknowledgeSync = useBlockStore((s) => s.acknowledgeSync);
-
-  const { mutate, isPending, isError } = useMutation({
-    mutationFn: (request: PreparedBlockSync) => syncBlocks(request.payload),
-
-    onSuccess: (_data, request) => {
-      // 1. 仅确认本次请求对应的 dirty 标记，避免误清理飞行中的新编辑
-      acknowledgeSync(request.snapshot);
-
-      // 2. 精确失效缓存：告知 React Query 该页面缓存已过期，
-      //    但不立即重新请求（等用户下次进来时再拉取）
-      if (activePageId) {
-        void queryClient.invalidateQueries({
-          queryKey: blockQueryKeys.pageBlocks(activePageId),
-          refetchType: 'inactive', // 仅在组件不活跃时触发重新拉取
-        });
-      }
-
-      options?.onSuccess?.();
-    },
-
-    onError: (error: Error) => {
-      // 同步失败：保留 dirty 状态，等待下次重试
-      console.error('[BlockSync] 同步失败:', error.message);
-      options?.onError?.(error);
-    },
-  });
-
-  return {
-    sync: mutate,
-    isSyncing: isPending,
-    isError,
-  };
-}

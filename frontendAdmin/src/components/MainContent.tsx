@@ -11,17 +11,12 @@
  */
 
 import { useParams } from 'react-router-dom';
-import { PanelLeftOpen } from 'lucide-react';
-import { useSidebarStore } from '@/store/useSidebarStore';
 import { TiptapEditor } from './editor/TiptapEditor';
 import { ArticleNavBar } from './editor/components/ArticleNavBar';
 
 export function MainContent() {
   // 从路由参数获取 pageId
   const { pageId } = useParams<{ pageId?: string }>();
-
-  // 获取侧边栏的开关状态，以及设置方法
-  const { isOpen, setIsOpen } = useSidebarStore();
 
   // ── 空状态：未选中页面 ────────────────────────────────────────────────────
   if (!pageId) {
@@ -40,17 +35,7 @@ export function MainContent() {
   // ── 正常渲染编辑器（上下布局：ArticleNavBar + TiptapEditor）───────────────
   return (
     <main className="flex-1 h-full bg-app-bg flex flex-col relative">
-      {!isOpen && (
-        <button
-          className="absolute top-4 left-4 z-50 p-2 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors"
-          onClick={() => setIsOpen(true)}
-          title="展开侧边栏"
-        >
-          <PanelLeftOpen size={20} />
-        </button>
-      )}
-
-      {/* 顶部：ArticleNavBar 全宽 */}
+      {/* 顶部：ArticleNavBar 全宽（包含侧边栏切换按钮） */}
       <ArticleNavBar />
 
       {/* 底部：TiptapEditor 容器（可滚动） */}

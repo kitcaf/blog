@@ -16,7 +16,7 @@ export function SidebarHeader({ onHide }: SidebarHeaderProps) {
         <div className="w-5 h-5 bg-app-hover rounded flex items-center justify-center text-xs font-medium text-app-fg-deeper">
           A
         </div>
-        <span className="text-sm font-medium truncate text-app-fg-deep">个人工作区</span>
+        <span className="text-sm font-medium truncate text-app-fg-deep">工作区</span>
       </div>
       <button
         className="p-1.5 text-app-fg-light hover:text-app-fg-deeper hover:bg-app-hover rounded-md transition-colors shrink-0"

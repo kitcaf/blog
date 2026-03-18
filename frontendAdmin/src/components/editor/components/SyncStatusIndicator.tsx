@@ -21,7 +21,7 @@ export const SyncStatusIndicator = memo(function SyncStatusIndicator() {
   // 同步失败状态
   if (isSyncError) {
     return (
-      <div 
+      <div
         className="p-1.5 rounded-md bg-red-50 dark:bg-red-950/20 transition-colors"
         title="同步失败"
       >
@@ -33,7 +33,7 @@ export const SyncStatusIndicator = memo(function SyncStatusIndicator() {
   // 同步中状态
   if (isSyncing) {
     return (
-      <div 
+      <div
         className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-950/20 transition-colors"
         title="同步中"
       >
@@ -44,11 +44,11 @@ export const SyncStatusIndicator = memo(function SyncStatusIndicator() {
 
   // 默认状态：已保存到云端
   return (
-    <div 
-      className="p-1.5 rounded-md bg-green-50 dark:bg-green-950/20 transition-colors"
+    <div
+      className="p-1.5 rounded-md "
       title="已保存到云端"
     >
-      <Cloud className="w-4 h-4 text-green-600 dark:text-green-500" />
+      <Cloud className="w-4 h-4" />
     </div>
   );
 });

@@ -220,14 +220,14 @@ export function Sidebar() {
         borderRightWidth: isOpen ? 1 : 0,
       }}
     >
-      <div
-        className="flex flex-col h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity"
-        style={{ width: `${width}px` }}
-      >
+      {/* 固定顶部 */}
+      <div className="shrink-0 p-2" style={{ width: `${width}px` }}>
         <SidebarHeader onHide={() => setIsOpen(false)} />
-        
         <SidebarNav />
+      </div>
 
+      {/* 可滚动中间 */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2" style={{ width: `${width}px` }}>
         <PageTreeSection
           tree={tree}
           isLoading={isLoading}
@@ -239,15 +239,19 @@ export function Sidebar() {
           onRetry={() => window.location.reload()}
           onMoveComplete={refetch}
         />
-
-        <SidebarBottomNav />
       </div>
 
-      <SidebarFooter
-        username={user?.username}
-        email={user?.email}
-        onLogout={handleLogout}
-      />
+      {/* 固定底部 */}
+      <div className="shrink-0" style={{ width: `${width}px` }}>
+        <div className="p-2">
+          <SidebarBottomNav />
+        </div>
+        <SidebarFooter
+          username={user?.username}
+          email={user?.email}
+          onLogout={handleLogout}
+        />
+      </div>
 
       <CreateItemDialog
         isOpen={createDialog.isOpen}

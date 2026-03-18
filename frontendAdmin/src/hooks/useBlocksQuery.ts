@@ -32,7 +32,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import { useBlockStore } from '@/store/useBlockStore';
+import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
 import {
   fetchPageTree,
   fetchPageBlocks,
@@ -40,7 +40,7 @@ import {
   syncBlocks,
   type PageTreeNode,
 } from '@/api/blocks';
-import type { BlockData, BlockSyncPayload } from '@blog/types';
+import type { BlockData } from '@blog/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Query Key 工厂（集中管理，保证缓存失效的精确性）
@@ -193,7 +193,7 @@ interface UseBlockSyncMutationOptions {
 
 interface UseBlockSyncMutationResult {
   /** 触发同步，通常由防抖定时器在检测到 dirty blocks 时调用 */
-  sync: (payload: BlockSyncPayload) => void;
+  sync: (request: PreparedBlockSync) => void;
   /** 当前是否有请求正在进行中 */
   isSyncing: boolean;
   /** 上次同步请求是否以失败告终 */
@@ -204,7 +204,7 @@ interface UseBlockSyncMutationResult {
  * 批量同步 Block 变更。
  *
  * 成功后：
- *  1. 调用 store.clearDirtyState() 重置 dirty 集合
+ *  1. 仅确认本次请求快照对应的 dirty 集合
  *  2. 精确失效当前页面的 Block 缓存（refetchType: 'inactive'），
  *     避免立即重新请求打断编辑体验，仅在用户离开此页面后下次进来时刷新
  *
@@ -220,14 +220,14 @@ export function useBlockSyncMutation(
   options?: UseBlockSyncMutationOptions,
 ): UseBlockSyncMutationResult {
   const queryClient = useQueryClient();
-  const clearDirtyState = useBlockStore((s) => s.clearDirtyState);
+  const acknowledgeSync = useBlockStore((s) => s.acknowledgeSync);
 
   const { mutate, isPending, isError } = useMutation({
-    mutationFn: (payload: BlockSyncPayload) => syncBlocks(payload),
+    mutationFn: (request: PreparedBlockSync) => syncBlocks(request.payload),
 
-    onSuccess: () => {
-      // 1. 清除 Store 的 dirty 标记（本次变更已持久化）
-      clearDirtyState();
+    onSuccess: (_data, request) => {
+      // 1. 仅确认本次请求对应的 dirty 标记，避免误清理飞行中的新编辑
+      acknowledgeSync(request.snapshot);
 
       // 2. 精确失效缓存：告知 React Query 该页面缓存已过期，
       //    但不立即重新请求（等用户下次进来时再拉取）

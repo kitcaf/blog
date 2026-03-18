@@ -1,27 +1,11 @@
 /**
  * @file useBlockStore.ts
- * @description 极简编辑器状态管理 —— 仅负责 Dirty Tracking 和编辑缓存
+ * @description 编辑器 Block 缓存与待同步状态。
  *
- * 职责：
- *  1. 缓存当前页面的 blocks（从 React Query 水合）
- *  2. Dirty Tracking：追踪用户编辑产生的变更
- *  3. 提供 Sync Payload：将变更打包发送给后端
- * 
- * 数据流（优化后）：
- *   路由变化 → MainContent 检测 pageId
- *   → React Query 加载页面 → hydratePage() → blocksById
- *   → 用户编辑 → DirtyTrackerExtension.appendTransaction
- *     ├─ 提取节点数据（content, props）
- *     ├─ updateSingleBlockData() 更新 blocksById
- *     └─ markBlockDirty() 标记 dirtySet
- *   → TiptapEditor.handleEditorUpdate → triggerSync() (防抖 1s)
- *   → getSyncPayload() → API sync → clearDirtyState()
- *   → 切换页面 → reset() 清空旧页面状态
- * 
- * 性能优化：
- *   - 数据提取和标记在 DirtyTrackerExtension 中一次完成
- *   - 只遍历变更范围，O(变更数) 而非 O(文档大小)
- *   - handleEditorUpdate 不再遍历文档，只负责触发同步
+ * 设计原则：
+ *  1. 只保存前端当前页面的 canonical block cache。
+ *  2. 只暴露“标题更新”和“编辑器 flush 提交”两个高层入口。
+ *  3. 待同步状态使用单一 pendingChangesById 维护，避免多套 Set / Map 分散职责。
  */
 
 import { create } from 'zustand';
@@ -33,228 +17,438 @@ import type {
   BlockUpdateDelta,
 } from '@blog/types';
 
-// ─────────────────────────────────────────────
-// Store 类型定义：极简化，只保留编辑器核心功能
-// ─────────────────────────────────────────────
+type PendingChangeKind = 'upsert' | 'delete';
 
-interface EditorStoreState {
-  /** 当前页面的 Block 缓存（归一化存储，O(1) 查找）*/
-  blocksById: Record<string, Block>;
-
-  /** 变脏的 Block ID 集合（用户编辑过的）*/
-  dirtySet: Set<string>;
-
-  /** 被删除的 Block ID 集合（等待同步）*/
-  deletedSet: Set<string>;
+interface PendingChange {
+  kind: PendingChangeKind;
+  revision: number;
 }
 
-interface EditorStoreActions {
+// 同步快照：记录本次同步的版本号
+export interface BlockSyncSnapshot {
+  revisionsById: Record<string, number>; // block ID → 版本号
+}
+
+// 准备好的同步请求：包含 payload 和 snapshot
+export interface PreparedBlockSync {
+  payload: BlockSyncPayload; // API 请求数据
+  snapshot: BlockSyncSnapshot; // 版本快照，用于确认同步
+}
+
+// 编辑器 block 更新草稿
+export interface EditorBlockUpdateDraft {
+  id: string;
+  content: InlineContent[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  props: any;
+  metadata?: {
+    type: string;
+    parentId: string;
+    path: string;
+  };
+}
+
+// 编辑器同步草稿：包含所有变更
+export interface EditorSyncDraft {
+  updates: EditorBlockUpdateDraft[]; // 需要更新的 block
+  deletedIds: string[]; // 需要删除的 block ID
+  pageStructure?: {
+    pageId: string;
+    contentIds: string[]; // 新的子节点顺序
+  };
+}
+
+// Store 状态
+interface BlockStoreState {
+  blocksById: Record<string, Block>; // block 缓存
+  pendingChangesById: Record<string, PendingChange>; // 待同步变更
+  revisionCounter: number; // 全局版本计数器
+}
+
+// Store 操作
+interface BlockStoreActions {
   /**
-   * 水合页面数据（从 React Query 加载后调用）
-   * 会清空 dirty 状态，适用于首次加载或切换页面后
+   * 水合页面数据：从服务器加载数据后调用
+   * 
+   * 会清空所有状态，重新初始化
    */
-  hydratePage: (blocks: BlockData[]) => void;
+  hydratePage: (pageBlock: BlockData, contentBlocks: BlockData[]) => void;
 
   /**
-   * 重置 Store（切换页面时调用，清空旧页面状态）
+   * 重置 Store：页面切换或卸载时调用
    */
   reset: () => void;
 
   /**
-   * 标记 Block 变脏（Tiptap Extension 在用户编辑时调用）
+   * 应用页面标题变更
+   * 
+   * 流程：
+   *   1. 更新 blocksById 中的 title
+   *   2. 标记为 pending upsert
+   *   3. 递增版本号
    */
-  markBlockDirty: (id: string) => void;
+  applyPageTitleChange: (pageId: string, title: string) => void;
 
   /**
-   * 标记 Block 被删除（Tiptap Extension 在检测到删除时调用）
+   * 应用编辑器同步草稿
+   * 
+   * 流程：
+   *   1. 批量更新 blocksById（新增、更新、删除）
+   *   2. 标记所有变更为 pending
+   *   3. 递增版本号
    */
-  markBlockDeleted: (id: string) => void;
+  applyEditorSyncDraft: (draft: EditorSyncDraft) => void;
 
   /**
-   * 更新单个 Block 的数据（由 DirtyTrackerExtension 在检测到变更时立即调用）
+   * 获取同步请求
+   * 
+   * 流程：
+   *   1. 遍历 pendingChangesById
+   *   2. 构造 updated_blocks 和 deleted_blocks
+   *   3. 生成版本快照
+   * 
+   * @returns PreparedBlockSync 或 null（无待同步数据）
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updateSingleBlockData: (id: string, content: InlineContent[], props: any, metadata?: { type: string; parentId: string; path: string }) => void;
+  getSyncRequest: () => PreparedBlockSync | null;
 
   /**
-   * 更新页面的子节点排序（由 DirtyTrackerExtension 调用，避免重复遍历）
+   * 确认同步成功
+   * 
+   * 流程：
+   *   1. 根据 snapshot.revisionsById 找到已同步的变更
+   *   2. 只清除版本号匹配的 pending 记录
+   *   3. 保留版本号不匹配的记录（新变更）
    */
-  updatePageStructure: (pageId: string, newChildIds: string[]) => void;
-
-  /**
-   * 获取同步 Payload（打包所有变更发送给后端）
-   */
-  getSyncPayload: () => BlockSyncPayload;
-
-  /**
-   * 清空 Dirty 状态（同步成功后调用）
-   */
-  clearDirtyState: () => void;
+  acknowledgeSync: (snapshot: BlockSyncSnapshot) => void;
 }
 
-export type BlockStore = EditorStoreState & EditorStoreActions;
+export type BlockStore = BlockStoreState & BlockStoreActions;
 
-// ─────────────────────────────────────────────
-// 内部工具函数
-// ─────────────────────────────────────────────
-
-/** 将 Block 数组转为归一化 Map（O(n)）*/
-function normalizeBlocks(blocks: BlockData[]): Record<string, Block> {
-  return Object.fromEntries(blocks.map((b) => [b.id, b]));
+/**
+ * 工具函数：归一化 blocks 为 Map
+ */
+function normalizeBlocks(pageBlock: BlockData, contentBlocks: BlockData[]): Record<string, Block> {
+  return Object.fromEntries([pageBlock, ...contentBlocks].map((block) => [block.id, block]));
 }
 
-// ─────────────────────────────────────────────
-// Store 实例：极简化，只保留编辑器核心功能
-// ─────────────────────────────────────────────
+/**
+ * 工具函数：标记 pending 变更并递增版本号
+ * 
+ * @returns 新的版本号
+ */
+function markPendingChange(
+  pendingChangesById: Record<string, PendingChange>,
+  id: string,
+  kind: PendingChangeKind,
+  currentCounter: number,
+): number {
+  const nextCounter = currentCounter + 1;
+  pendingChangesById[id] = {
+    kind,
+    revision: nextCounter,
+  };
+  return nextCounter;
+}
+
+/**
+ * 工具函数：构造 block 更新数据
+ * 
+ * Page 类型特殊处理：不包含 content 字段
+ */
+function buildBlockUpdate(block: Block): BlockUpdateDelta {
+  if (block.type === 'page') {
+    return {
+      id: block.id,
+      parent_id: block.parentId,
+      path: block.path,
+      type: block.type,
+      content_ids: block.contentIds,
+      properties: {
+        icon: block.props.icon,
+        title: block.props.title,
+        // Page 不包含 content
+      },
+    };
+  }
+
+  return {
+    id: block.id,
+    parent_id: block.parentId,
+    path: block.path,
+    type: block.type,
+    content_ids: block.contentIds,
+    properties: {
+      ...block.props,
+      content: block.content, // 其他类型包含 content
+    },
+  };
+}
 
 export const useBlockStore = create<BlockStore>()((set, get) => ({
-  // ── 初始状态 ──────────────────────────────
+  // 初始状态
   blocksById: {},
-  dirtySet: new Set(),
-  deletedSet: new Set(),
+  pendingChangesById: {},
+  revisionCounter: 0,
 
-  // ── 初始化与重置 ──────────────────────────
-  hydratePage: (blocks) => {
+  /**
+   * 水合页面数据
+   * 
+   * 从服务器加载数据后调用，重新初始化所有状态
+   */
+  hydratePage: (pageBlock, contentBlocks) => {
     set({
-      blocksById: normalizeBlocks(blocks),
-      dirtySet: new Set(),
-      deletedSet: new Set(),
+      blocksById: normalizeBlocks(pageBlock, contentBlocks),
+      pendingChangesById: {}, // 清空待同步状态
+      revisionCounter: 0, // 重置版本号
     });
   },
 
+  /**
+   * 重置 Store
+   * 
+   * 页面切换或卸载时调用
+   */
   reset: () => {
     set({
       blocksById: {},
-      dirtySet: new Set(),
-      deletedSet: new Set(),
+      pendingChangesById: {},
+      revisionCounter: 0,
     });
   },
 
-  // ── Dirty Tracking ────────────────────────
-  markBlockDirty: (id) => {
+  /**
+   * 应用页面标题变更
+   * 
+   * 流程：
+   *   1. 检查标题是否真的变了
+   *   2. 更新 blocksById
+   *   3. 标记为 pending upsert
+   */
+  applyPageTitleChange: (pageId, title) => {
     set((state) => {
-      if (state.dirtySet.has(id)) return state;
-      const newSet = new Set(state.dirtySet);
-      newSet.add(id);
-      return { dirtySet: newSet };
-    });
-  },
+      const pageBlock = state.blocksById[pageId];
+      if (!pageBlock) {
+        return state; // 页面不存在，跳过
+      }
 
-  markBlockDeleted: (id) => {
-    set((state) => {
-      const nextBlocks = { ...state.blocksById };
-      delete nextBlocks[id];
+      // 获取当前标题
+      const currentTitle =
+        'title' in pageBlock.props && typeof pageBlock.props.title === 'string'
+          ? pageBlock.props.title
+          : '';
 
-      const newDirty = new Set(state.dirtySet);
-      newDirty.delete(id);
+      // 标题未变化，跳过
+      if (currentTitle === title) {
+        return state;
+      }
 
-      const newDeleted = new Set(state.deletedSet).add(id);
+      // 更新标题
+      const nextBlocks = {
+        ...state.blocksById,
+        [pageId]: {
+          ...pageBlock,
+          props: {
+            ...pageBlock.props,
+            title,
+          },
+        } as Block,
+      };
+
+      // 标记为 pending upsert
+      const nextPending = { ...state.pendingChangesById };
+      const nextCounter = markPendingChange(nextPending, pageId, 'upsert', state.revisionCounter);
 
       return {
         blocksById: nextBlocks,
-        dirtySet: newDirty,
-        deletedSet: newDeleted,
+        pendingChangesById: nextPending,
+        revisionCounter: nextCounter,
       };
     });
   },
 
-  // ── 数据更新（由 DirtyTrackerExtension 调用）──────────────
-  updateSingleBlockData: (id, content, props, metadata) => {
+  /**
+   * 应用编辑器同步草稿
+   * 
+   * 批量处理编辑器的所有变更：
+   *   1. 更新 blocks（新增、修改）
+   *   2. 删除 blocks
+   *   3. 更新页面结构（contentIds）
+   *   4. 标记所有变更为 pending
+   */
+  applyEditorSyncDraft: (draft) => {
     set((state) => {
-      const oldBlock = state.blocksById[id];
-      
-      // 逻辑分支 A（现有 Block）
-      if (oldBlock) {
-        return {
-          blocksById: {
-            ...state.blocksById,
-            [id]: { ...oldBlock, content, props: { ...oldBlock.props, ...props } } as Block,
-          },
-        };
+      let didChange = false;
+      let nextCounter = state.revisionCounter;
+      const nextBlocks = { ...state.blocksById };
+      const nextPending = { ...state.pendingChangesById };
+
+      // 处理更新（新增或修改）
+      for (const update of draft.updates) {
+        const existingBlock = nextBlocks[update.id];
+
+        if (existingBlock) {
+          // 修改现有 block
+          nextBlocks[update.id] = {
+            ...existingBlock,
+            content: update.content,
+            props: {
+              ...existingBlock.props,
+              ...update.props,
+            },
+          } as Block;
+        } else if (update.metadata) {
+          // 新增 block
+          nextBlocks[update.id] = {
+            id: update.id,
+            parentId: update.metadata.parentId,
+            path: update.metadata.path,
+            type: update.metadata.type,
+            content: update.content,
+            props: update.props,
+            contentIds: [],
+          } as Block;
+        } else {
+          continue; // 缺少 metadata，跳过
+        }
+
+        // 标记为 pending upsert
+        nextCounter = markPendingChange(nextPending, update.id, 'upsert', nextCounter);
+        didChange = true;
       }
 
-      // 逻辑分支 B（新增 Block）：如果是新 ID，则根据传入的元数据构造完整的新 Block
-      if (metadata) {
-        const newBlock = {
-          id,
-          parentId: metadata.parentId,
-          path: metadata.path,
-          type: metadata.type,
-          content,
-          props,
-          contentIds: [],
-        } as Block;
-        
-        return {
-          blocksById: {
-            ...state.blocksById,
-            [id]: newBlock,
-          },
-        };
+      // 处理删除
+      for (const id of draft.deletedIds) {
+        if (nextBlocks[id]) {
+          delete nextBlocks[id]; // 从缓存中删除
+          didChange = true;
+        }
+
+        // 标记为 pending delete
+        nextCounter = markPendingChange(nextPending, id, 'delete', nextCounter);
       }
 
-      return state;
-    });
-  },
+      // 处理页面结构变化
+      if (draft.pageStructure) {
+        const pageBlock = nextBlocks[draft.pageStructure.pageId];
+        if (pageBlock) {
+          const oldContentIds = pageBlock.contentIds;
+          const hasStructureChange =
+            oldContentIds.length !== draft.pageStructure.contentIds.length ||
+            !oldContentIds.every((id, index) => id === draft.pageStructure?.contentIds[index]);
 
-  updatePageStructure: (pageId, newChildIds) => {
-    set((state) => {
-      const page = state.blocksById[pageId];
-      if (!page) return state;
+          if (hasStructureChange) {
+            // 更新 contentIds
+            nextBlocks[draft.pageStructure.pageId] = {
+              ...pageBlock,
+              contentIds: draft.pageStructure.contentIds,
+            } as Block;
 
-      // 快速比较：长度 + 顺序
-      const oldChildIds = page.contentIds;
-      if (
-        oldChildIds.length === newChildIds.length &&
-        oldChildIds.every((id, i) => id === newChildIds[i])
-      ) {
+            // 标记页面为 pending upsert
+            nextCounter = markPendingChange(
+              nextPending,
+              draft.pageStructure.pageId,
+              'upsert',
+              nextCounter,
+            );
+            didChange = true;
+          }
+        }
+      }
+
+      // 如果没有任何变化，返回原状态
+      if (!didChange) {
         return state;
       }
 
       return {
-        blocksById: {
-          ...state.blocksById,
-          [pageId]: { ...page, contentIds: newChildIds } as Block,
-        },
+        blocksById: nextBlocks,
+        pendingChangesById: nextPending,
+        revisionCounter: nextCounter,
       };
     });
   },
 
-  // ── 同步 ──────────────────────────────────
   /**
-   * updated_blocks: 需要更新或者新增的block
-   * deleted_blocks: 需要删除的block
-   * @returns 
+   * 获取同步请求
+   * 
+   * 遍历 pendingChangesById，构造 API 请求数据和版本快照
+   * 
+   * @returns PreparedBlockSync 或 null（无待同步数据）
    */
-  getSyncPayload: (): BlockSyncPayload => {
-    const { blocksById, dirtySet, deletedSet } = get();
+  getSyncRequest: () => {
+    const { blocksById, pendingChangesById } = get();
+    const updatedBlocks: BlockUpdateDelta[] = [];
+    const deletedBlocks: string[] = [];
+    const revisionsById: Record<string, number> = {};
 
-    const updated_blocks: BlockUpdateDelta[] = Array.from(dirtySet)
-      .map((id) => {
-        const block = blocksById[id];
-        if (!block) return null;
+    // 遍历所有 pending 变更
+    for (const [id, change] of Object.entries(pendingChangesById)) {
+      // 记录版本号（用于确认同步）
+      revisionsById[id] = change.revision;
 
-        return {
-          id,
-          parent_id: block.parentId,
-          path: block.path,
-          type: block.type,
-          content_ids: block.contentIds,
-          properties: {
-            ...block.props,
-            content: block.content,
-          },
-        };
-      })
-      .filter(Boolean) as BlockUpdateDelta[];
+      if (change.kind === 'delete') {
+        // 删除操作
+        deletedBlocks.push(id);
+        continue;
+      }
+
+      // 更新操作：从 blocksById 获取最新数据
+      const block = blocksById[id];
+      if (!block) {
+        continue; // block 不存在，跳过
+      }
+
+      updatedBlocks.push(buildBlockUpdate(block));
+    }
+
+    // 如果没有待同步数据，返回 null
+    if (updatedBlocks.length === 0 && deletedBlocks.length === 0) {
+      return null;
+    }
 
     return {
-      updated_blocks,
-      deleted_blocks: Array.from(deletedSet),
+      payload: {
+        updated_blocks: updatedBlocks,
+        deleted_blocks: deletedBlocks,
+      },
+      snapshot: {
+        revisionsById, // 版本快照
+      },
     };
   },
 
-  clearDirtyState: () => {
-    set({ dirtySet: new Set(), deletedSet: new Set() });
+  /**
+   * 确认同步成功
+   * 
+   * 根据版本快照清除已同步的 pending 记录
+   * 只清除版本号匹配的记录，保留新变更
+   */
+  acknowledgeSync: (snapshot) => {
+    set((state) => {
+      let didChange = false;
+      const nextPending = { ...state.pendingChangesById };
+
+      // 遍历快照中的版本号
+      for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
+        const currentChange = nextPending[id];
+        
+        // 版本号不匹配，说明有新变更，不清除
+        if (!currentChange || currentChange.revision !== revision) {
+          continue;
+        }
+
+        // 版本号匹配，清除 pending 记录
+        delete nextPending[id];
+        didChange = true;
+      }
+
+      if (!didChange) {
+        return state; // 没有变化，返回原状态
+      }
+
+      return {
+        pendingChangesById: nextPending,
+      };
+    });
   },
 }));

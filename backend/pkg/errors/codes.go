@@ -79,6 +79,15 @@ const (
 	ErrBlockNotFound    ErrorCode = 6301 // Block 不存在（内部）
 	ErrInvalidBlockType ErrorCode = 6302 // Block 类型无效（内部）
 	ErrSyncFailed       ErrorCode = 6303 // 同步失败（内部）
+
+	// 搜索业务 (6400-6499)
+	ErrSearchQueryEmpty     ErrorCode = 6401 // 搜索关键词为空（内部）
+	ErrSearchQueryTooLong   ErrorCode = 6402 // 搜索关键词过长（内部）
+	ErrSearchIndexFailed    ErrorCode = 6403 // 索引创建失败（内部）
+	ErrSearchQueryFailed    ErrorCode = 6404 // 搜索查询失败（内部）
+	ErrSearchNoResults      ErrorCode = 6405 // 无搜索结果（内部）
+	ErrSearchInvalidPath    ErrorCode = 6406 // 路径格式无效（内部）
+	ErrSearchContentExtract ErrorCode = 6407 // 内容提取失败（内部）
 )
 
 // IsUserFacingError 判断是否为用户可见错误
@@ -144,7 +153,7 @@ func (e ErrorCode) GetHTTPStatus() int {
 	case e >= 6100 && e < 6200:
 		return 403 // 工作空间业务错误（已删除，保留范围）
 	case e >= 6200:
-		return 404 // 页面/Block 业务错误
+		return 404 // 页面/Block/搜索 业务错误
 	default:
 		return 500
 	}
@@ -221,6 +230,15 @@ var internalMessages = map[ErrorCode]string{
 	ErrBlockNotFound:    "Block not found",
 	ErrInvalidBlockType: "Invalid block type",
 	ErrSyncFailed:       "Sync failed",
+
+	// 搜索业务
+	ErrSearchQueryEmpty:     "Search query is empty",
+	ErrSearchQueryTooLong:   "Search query is too long",
+	ErrSearchIndexFailed:    "Search index creation failed",
+	ErrSearchQueryFailed:    "Search query failed",
+	ErrSearchNoResults:      "No search results found",
+	ErrSearchInvalidPath:    "Invalid path format",
+	ErrSearchContentExtract: "Content extraction failed",
 }
 
 // getBusinessErrorUserMessage 根据业务错误返回用户友好消息
@@ -245,6 +263,18 @@ func getBusinessErrorUserMessage(code ErrorCode) string {
 	case code >= 6300 && code < 6400:
 		// Block 相关业务错误
 		return "内容不存在或已被删除"
+	case code >= 6400 && code < 6500:
+		// 搜索相关业务错误
+		switch code {
+		case ErrSearchQueryEmpty:
+			return "请输入搜索关键词"
+		case ErrSearchQueryTooLong:
+			return "搜索关键词过长，请缩短后重试"
+		case ErrSearchNoResults:
+			return "未找到相关内容"
+		default:
+			return "搜索失败，请稍后重试"
+		}
 	default:
 		return "操作失败，请稍后重试"
 	}

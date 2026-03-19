@@ -3,9 +3,9 @@ package services
 import (
 	"blog-backend/internal/models"
 	"blog-backend/internal/repository"
+	"blog-backend/pkg/errors"
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -30,7 +30,7 @@ func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error
 	// 1. 获取 Block 数据
 	block, err := s.blockRepo.GetBlockByID(ctx, blockID)
 	if err != nil {
-		return fmt.Errorf("failed to get block: %w", err)
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to get block")
 	}
 
 	// 2. 只索引内容块（跳过 root 和 folder）
@@ -41,13 +41,13 @@ func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error
 	// 3. 提取 page_id 和 user_id（从 path）
 	pageID, userID, err := extractIDsFromPath(block.Path)
 	if err != nil {
-		return fmt.Errorf("failed to extract IDs from path: %w", err)
+		return errors.WrapWithDetail(errors.ErrSearchInvalidPath, err, "invalid block path")
 	}
 
 	// 4. 提取纯文本内容
 	content, err := extractTextContent(block.Properties)
 	if err != nil {
-		return fmt.Errorf("failed to extract content: %w", err)
+		return errors.WrapWithDetail(errors.ErrSearchContentExtract, err, "failed to extract content")
 	}
 
 	// 5. 计算 block_order（从 parent 的 content_ids 中获取位置）
@@ -70,7 +70,11 @@ func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error
 	}
 
 	// 7. UPSERT 到数据库
-	return s.searchRepo.UpsertBlockIndex(ctx, index)
+	if err := s.searchRepo.UpsertBlockIndex(ctx, index); err != nil {
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to upsert index")
+	}
+
+	return nil
 }
 
 // DeleteBlockIndex 删除 Block 索引
@@ -79,19 +83,28 @@ func (s *SearchService) DeleteBlockIndex(ctx context.Context, blockID uuid.UUID)
 }
 
 // SearchPages 搜索 Page（聚合结果）
-// 返回按 Page 聚合后的搜索结果
-func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query string, limit int) ([]*models.PageSearchResult, error) {
-	// 1. 搜索匹配的 Block（返回 Top 100）
-	blocks, err := s.searchRepo.SearchBlocks(ctx, userID, query, 100)
+// 返回按 Page 聚合后的所有搜索结果
+func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query string) ([]*models.PageSearchResult, error) {
+	// 1. 验证查询参数
+	if strings.TrimSpace(query) == "" {
+		return nil, errors.New(errors.ErrSearchQueryEmpty, "search query is empty")
+	}
+
+	if len(query) > 200 {
+		return nil, errors.New(errors.ErrSearchQueryTooLong, "search query exceeds 200 characters")
+	}
+
+	// 2. 搜索匹配的 Block（返回所有匹配结果，最多 1000 条）
+	blocks, err := s.searchRepo.SearchBlocks(ctx, userID, query, 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search blocks: %w", err)
+		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to search blocks")
 	}
 
 	if len(blocks) == 0 {
 		return []*models.PageSearchResult{}, nil
 	}
 
-	// 2. 按 Page 聚合
+	// 3. 按 Page 聚合
 	pageMap := make(map[uuid.UUID]*pageAggregation)
 	for _, block := range blocks {
 		if _, exists := pageMap[block.PageID]; !exists {
@@ -103,42 +116,47 @@ func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query
 		pageMap[block.PageID].Blocks = append(pageMap[block.PageID].Blocks, block)
 	}
 
-	// 3. 计算 Page 分数并排序
+	// 4. 计算 Page 分数并排序
 	var pageResults []*models.PageSearchResult
 	for _, agg := range pageMap {
 		result := s.calculatePageScore(agg)
 		pageResults = append(pageResults, result)
 	}
 
-	// 4. 按 PageScore 排序
+	// 5. 按 PageScore 排序
 	sortPageResults(pageResults)
-
-	// 5. 限制返回数量
-	if len(pageResults) > limit {
-		pageResults = pageResults[:limit]
-	}
 
 	// 6. 补充 Page 信息（JOIN blocks 表）
 	if err := s.enrichPageInfo(ctx, pageResults); err != nil {
-		return nil, fmt.Errorf("failed to enrich page info: %w", err)
+		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to enrich page info")
 	}
 
 	return pageResults, nil
 }
 
 // SearchPublishedPages 搜索已发布的 Page（前台搜索）
-func (s *SearchService) SearchPublishedPages(ctx context.Context, query string, limit int) ([]*models.PageSearchResult, error) {
-	// 实现逻辑与 SearchPages 类似，但使用 SearchPublishedBlocks
-	blocks, err := s.searchRepo.SearchPublishedBlocks(ctx, query, 100)
+// 返回所有匹配的已发布页面
+func (s *SearchService) SearchPublishedPages(ctx context.Context, query string) ([]*models.PageSearchResult, error) {
+	// 1. 验证查询参数
+	if strings.TrimSpace(query) == "" {
+		return nil, errors.New(errors.ErrSearchQueryEmpty, "search query is empty")
+	}
+
+	if len(query) > 200 {
+		return nil, errors.New(errors.ErrSearchQueryTooLong, "search query exceeds 200 characters")
+	}
+
+	// 2. 搜索匹配的已发布 Block（返回所有匹配结果，最多 1000 条）
+	blocks, err := s.searchRepo.SearchPublishedBlocks(ctx, query, 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search published blocks: %w", err)
+		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to search published blocks")
 	}
 
 	if len(blocks) == 0 {
 		return []*models.PageSearchResult{}, nil
 	}
 
-	// 按 Page 聚合并计算分数
+	// 3. 按 Page 聚合并计算分数
 	pageMap := make(map[uuid.UUID]*pageAggregation)
 	for _, block := range blocks {
 		if _, exists := pageMap[block.PageID]; !exists {
@@ -158,12 +176,8 @@ func (s *SearchService) SearchPublishedPages(ctx context.Context, query string, 
 
 	sortPageResults(pageResults)
 
-	if len(pageResults) > limit {
-		pageResults = pageResults[:limit]
-	}
-
 	if err := s.enrichPageInfo(ctx, pageResults); err != nil {
-		return nil, fmt.Errorf("failed to enrich page info: %w", err)
+		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to enrich page info")
 	}
 
 	return pageResults, nil
@@ -182,17 +196,17 @@ type pageAggregation struct {
 func extractIDsFromPath(path string) (pageID, userID uuid.UUID, err error) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 2 {
-		return uuid.Nil, uuid.Nil, fmt.Errorf("invalid path format: %s", path)
+		return uuid.Nil, uuid.Nil, errors.New(errors.ErrSearchInvalidPath, "path must have at least 2 segments")
 	}
 
 	userID, err = uuid.Parse(parts[0])
 	if err != nil {
-		return uuid.Nil, uuid.Nil, fmt.Errorf("invalid user_id in path: %w", err)
+		return uuid.Nil, uuid.Nil, errors.WrapWithDetail(errors.ErrSearchInvalidPath, err, "invalid user_id in path")
 	}
 
 	pageID, err = uuid.Parse(parts[1])
 	if err != nil {
-		return uuid.Nil, uuid.Nil, fmt.Errorf("invalid page_id in path: %w", err)
+		return uuid.Nil, uuid.Nil, errors.WrapWithDetail(errors.ErrSearchInvalidPath, err, "invalid page_id in path")
 	}
 
 	return pageID, userID, nil

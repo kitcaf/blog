@@ -11,6 +11,7 @@
  * 数据流：
  *   用户编辑 → editor.on('update') → needsEditorFlushRef = true → scheduleFlushAndSync()
  *   → 防抖 1s → flushAndSync()
+ *     ├─ isAllDirty(editor) 检查是否需要全量同步
  *     ├─ readDirtyTrackerCandidateIds(editor) 读取候选 ID
  *     ├─ collectEditorSyncDraft() 基于最终文档提取变更
  *     ├─ store.applyEditorSyncDraft() 批量写入 Store
@@ -21,7 +22,11 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import type { BlockData } from '@blog/types';
 import { hydrateToTiptap } from '../converter';
-import { readDirtyTrackerCandidateIds, resetDirtyTracker } from '../extensions/DirtyTrackerExtension';
+import { 
+  readDirtyTrackerCandidateIds, 
+  resetDirtyTracker,
+  isAllDirty 
+} from '../extensions/DirtyTrackerExtension';
 import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
 import { collectEditorSyncDraft } from './collectEditorSyncDraft';
 
@@ -60,11 +65,12 @@ export function useEditorSyncController({
    * 
    * 执行流程：
    *   1. 如果 needsEditorFlushRef 为 true，从编辑器提取变更
-   *   2. 读取 DirtyTracker 收集的候选 ID
-   *   3. 调用 collectEditorSyncDraft 基于最终文档 diff 变更
-   *   4. 将变更批量写入 Store (applyEditorSyncDraft)
-   *   5. 从 Store 获取待同步数据 (getSyncRequest)
-   *   6. 发起 API 同步请求
+   *   2. 检查 isAllDirty，决定是全量同步还是增量同步
+   *   3. 读取 DirtyTracker 收集的候选 ID（增量模式）
+   *   4. 调用 collectEditorSyncDraft 基于最终文档 diff 变更
+   *   5. 将变更批量写入 Store (applyEditorSyncDraft)
+   *   6. 从 Store 获取待同步数据 (getSyncRequest)
+   *   7. 发起 API 同步请求
    */
   const flushAndSync = useCallback(() => {
     if (!pageId) {
@@ -78,12 +84,30 @@ export function useEditorSyncController({
       const store = useBlockStore.getState();
       const pageBlock = store.blocksById[pageId];
       
-      // 步骤 2：读取 DirtyTracker 收集的候选 ID（可能变更的 block）
-      const candidateIds = readDirtyTrackerCandidateIds(editor);
-      resetDirtyTracker(editor); // 清空候选集合
+      // 步骤 2：检查是否需要全量同步
+      const needsFullSync = isAllDirty(editor);
+      
+      // 步骤 3：读取候选 ID（全量模式下会创建包含所有 ID 的集合）
+      let candidateIds: Set<string>;
+      if (needsFullSync) {
+        // 全量同步：收集文档中所有 block ID
+        candidateIds = new Set<string>();
+        editor.state.doc.descendants((node) => {
+          const id = node.attrs?.blockId;
+          if (typeof id === 'string' && id.length > 0) {
+            candidateIds.add(id);
+          }
+          return true;
+        });
+      } else {
+        // 增量同步：使用 DirtyTracker 收集的候选 ID
+        candidateIds = readDirtyTrackerCandidateIds(editor);
+      }
+      
+      resetDirtyTracker(editor); // 清空候选集合和 isAllDirty 标记
 
       if (pageBlock) {
-        // 步骤 3：基于最终文档快照 diff 变更
+        // 步骤 4：基于最终文档快照 diff 变更
         const draft = collectEditorSyncDraft({
           editor,
           pageId,
@@ -92,14 +116,14 @@ export function useEditorSyncController({
           blocksById: store.blocksById,
         });
 
-        // 步骤 4：如果有变更，批量写入 Store
+        // 步骤 5：如果有变更，批量写入 Store
         if (draft.updates.length > 0 || draft.deletedIds.length > 0 || draft.pageStructure) {
           store.applyEditorSyncDraft(draft);
         }
       }
     }
 
-    // 步骤 5 & 6：从 Store 获取待同步数据并发起请求
+    // 步骤 6 & 7：从 Store 获取待同步数据并发起请求
     const request = useBlockStore.getState().getSyncRequest();
     if (request) {
       sync(request); // 调用 API 同步

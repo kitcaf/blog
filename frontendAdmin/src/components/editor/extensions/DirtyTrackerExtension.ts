@@ -21,9 +21,10 @@ import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey, type Selection, type Transaction } from '@tiptap/pm/state';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 
-// Plugin 状态：只存储候选 ID 集合
+// Plugin 状态：存储候选 ID 集合和全量标记
 interface DirtyTrackerPluginState {
   candidateIds: Set<string>; // 可能变更的 block ID 集合
+  isAllDirty: boolean; // 是否需要全量同步（大文档保护）
 }
 
 // Plugin 元数据：用于控制 reset
@@ -32,6 +33,10 @@ interface DirtyTrackerMeta {
 }
 
 const DIRTY_TRACKER_PLUGIN_KEY = new PluginKey<DirtyTrackerPluginState>('dirtyTracker');
+
+// 性能保护阈值：变更范围超过文档长度的 50% 时触发全量同步
+const CHANGE_RATIO_THRESHOLD = 0.5;
+const CHANGE_NUMBER_THRESHOLD = 200; // 经验值
 
 /**
  * 工具函数：限制位置在文档范围内
@@ -154,7 +159,7 @@ function collectSelectionCandidateIds(doc: ProseMirrorNode, selection: Selection
 }
 
 /**
- * 工具函数：收集 Transaction 的候选 ID
+ * 工具函数：收集 Transaction 的候选 ID（带性能保护）
  * 
  * 遍历事务的所有 Step，收集变更范围的候选 ID
  * 
@@ -163,23 +168,53 @@ function collectSelectionCandidateIds(doc: ProseMirrorNode, selection: Selection
  *   2. 对旧文档的变更范围收集 ID（删除场景）
  *   3. 对新文档的变更范围收集 ID（新增/修改场景）
  * 
+ * 性能保护：
+ *   - 如果变更范围超过文档长度的 50%，返回 true（触发 isAllDirty）
+ * 
  * @param tr - ProseMirror 事务
  * @param target - 目标集合（会被修改）
+ * @returns 是否超过阈值（需要触发 isAllDirty）
  */
-function collectTransactionCandidateIds(tr: Transaction, target: Set<string>) {
-  tr.steps.forEach((step, stepIndex) => {
-    const stepMap = step.getMap(); // 获取 Step 的映射
-    const oldDoc = tr.docs[stepIndex] ?? tr.before; // 旧文档
-    const newDoc = stepIndex + 1 < tr.docs.length ? tr.docs[stepIndex + 1] : tr.doc; // 新文档
+function collectTransactionCandidateIds(tr: Transaction, target: Set<string>): boolean {
+  const docSize = tr.doc.content.size;
+  if (docSize === 0) return false;
+
+  let totalChangeRange = 0;
+  // 经验值如果太多了也直接return
+  if (tr.steps.length > CHANGE_NUMBER_THRESHOLD) {
+    return true
+  }
+
+  // 遍历所有 steps，累计变更范围
+  for (let stepIndex = 0; stepIndex < tr.steps.length; stepIndex++) {
+    const step = tr.steps[stepIndex];
+    const stepMap = step.getMap();
+    const oldDoc = tr.docs[stepIndex] ?? tr.before;
+    const newDoc = stepIndex + 1 < tr.docs.length ? tr.docs[stepIndex + 1] : tr.doc;
 
     // 遍历 StepMap 的所有变更范围
     stepMap.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      // 累计变更范围（取旧文档和新文档的最大值）
+      totalChangeRange += Math.max(oldEnd - oldStart, newEnd - newStart);
+
+      // 快速检查：如果变更范围超过阈值，立即返回
+      if (totalChangeRange > docSize * CHANGE_RATIO_THRESHOLD) {
+        return true; // 触发 isAllDirty
+      }
+
       // 收集旧文档的变更范围（处理删除）
       collectRangeCandidateIds(oldDoc, oldStart, oldEnd, target);
       // 收集新文档的变更范围（处理新增/修改）
       collectRangeCandidateIds(newDoc, newStart, newEnd, target);
     });
-  });
+
+    // 每个 step 后检查一次
+    if (totalChangeRange > docSize * CHANGE_RATIO_THRESHOLD) {
+      return true;
+    }
+  }
+
+  return false; // 未超过阈值
 }
 
 /**
@@ -190,12 +225,31 @@ function getDirtyTrackerState(editor: Editor): DirtyTrackerPluginState | undefin
 }
 
 /**
+ * 公开 API：检查是否需要全量同步
+ * 
+ * 在 flushAndSync 时调用，判断是否需要遍历整个文档
+ * 
+ * @param editor - Tiptap 编辑器实例
+ * @returns 是否需要全量同步
+ */
+export function isAllDirty(editor: Editor | null): boolean {
+  if (!editor) {
+    return false;
+  }
+
+  const pluginState = getDirtyTrackerState(editor);
+  return pluginState?.isAllDirty ?? false;
+}
+
+/**
  * 公开 API：读取候选 ID 集合
  * 
  * 在 flushAndSync 时调用，获取可能变更的 block ID
  * 
+ * 注意：如果 isAllDirty 为 true，应该遍历整个文档而不是只处理候选 ID
+ * 
  * @param editor - Tiptap 编辑器实例
- * @returns 候选 ID 集合（副本）
+ * @returns 候选 ID 集合（直接返回，外层不应修改）
  */
 export function readDirtyTrackerCandidateIds(editor: Editor | null): Set<string> {
   if (!editor) {
@@ -207,12 +261,12 @@ export function readDirtyTrackerCandidateIds(editor: Editor | null): Set<string>
     return new Set<string>();
   }
 
-  // 这里先选择不返回副本，而是直接返回，pluginState.candidateIds外层不能被修改
+  // 直接返回，外层不应修改（性能优化）
   return pluginState.candidateIds;
 }
 
 /**
- * 公开 API：重置候选 ID 集合
+ * 公开 API：重置候选 ID 集合和 isAllDirty 标记
  * 
  * 在以下场景调用：
  *   1. flushAndSync 后，清空已处理的候选 ID
@@ -221,14 +275,14 @@ export function readDirtyTrackerCandidateIds(editor: Editor | null): Set<string>
  * 
  * @param editor - Tiptap 编辑器实例
  */
-export function resetDirtyTracker(editor: Editor | null) {
+export function resetDirtyTracker(editor: Editor | null): void {
   if (!editor) {
     return;
   }
 
   const pluginState = getDirtyTrackerState(editor);
-  // 如果没有候选 ID，跳过（避免不必要的事务）
-  if (!pluginState || pluginState.candidateIds.size === 0) {
+  // 如果没有候选 ID 且不是 isAllDirty，跳过（避免不必要的事务）
+  if (!pluginState || (pluginState.candidateIds.size === 0 && !pluginState.isAllDirty)) {
     return;
   }
 
@@ -245,6 +299,8 @@ export function resetDirtyTracker(editor: Editor | null) {
  * Tiptap 扩展：DirtyTracker
  * 
  * 通过 ProseMirror Plugin 实现轻量级的变更追踪
+ * 
+ * 性能保护：变更范围超过文档长度的 50% 时，标记 isAllDirty 进行全量同步
  */
 export const DirtyTrackerExtension = Extension.create({
   name: 'dirtyTracker',
@@ -260,6 +316,7 @@ export const DirtyTrackerExtension = Extension.create({
            */
           init: () => ({
             candidateIds: new Set<string>(),
+            isAllDirty: false,
           }),
 
           /**
@@ -268,10 +325,12 @@ export const DirtyTrackerExtension = Extension.create({
            * 执行流程：
            *   1. 检查是否是 reset 控制命令
            *   2. 检查是否是用户文档变更
-           *   3. 收集候选 ID：
+           *   3. 如果已经是 isAllDirty，直接返回
+           *   4. 收集候选 ID（带性能保护）：
            *      - Transaction 的变更范围
            *      - 旧 Selection 的边界
            *      - 新 Selection 的边界
+           *   5. 如果变更范围超过 50%，标记 isAllDirty
            * 
            * @param tr - 当前事务
            * @param pluginState - 当前 Plugin 状态
@@ -280,17 +339,16 @@ export const DirtyTrackerExtension = Extension.create({
            * @returns 新的 Plugin 状态
            */
           apply: (tr, pluginState, oldState, newState) => {
-            // console.log('插件-旧编辑器状态', oldState)
-            // console.log('插件-新编辑器状态', newState)
-            // 检查是否是 reset 控制命令
+            // 1. 检查是否是 reset 控制命令
             const control = tr.getMeta(DIRTY_TRACKER_PLUGIN_KEY) as DirtyTrackerMeta | undefined;
             if (control?.type === 'reset') {
               return {
-                candidateIds: new Set<string>(), // 清空候选 ID
+                candidateIds: new Set<string>(),
+                isAllDirty: false,
               };
             }
 
-            // 检查是否是用户文档变更
+            // 2. 检查是否是用户文档变更
             // 跳过系统操作（preventUpdate、isIdInjection）
             const isUserDocChange =
               tr.docChanged && !tr.getMeta('preventUpdate') && !tr.getMeta('isIdInjection');
@@ -299,20 +357,33 @@ export const DirtyTrackerExtension = Extension.create({
               return pluginState; // 不是用户变更，保持原状态
             }
 
-            // 收集候选 ID
+            // 3. 如果已经是 isAllDirty，直接返回（无需继续收集）
+            if (pluginState.isAllDirty) {
+              return pluginState;
+            }
+
+            // 4. 收集候选 ID
             const nextCandidateIds = new Set(pluginState.candidateIds); // 保留旧候选 ID
 
-            // 1. 收集 Transaction 的变更范围
-            collectTransactionCandidateIds(tr, nextCandidateIds);
+            // 4.1 收集 Transaction 的变更范围（带性能保护）
+            const exceedsThreshold = collectTransactionCandidateIds(tr, nextCandidateIds);
+            if (exceedsThreshold) {
+              // 变更范围超过 50%，标记为全量同步
+              return {
+                candidateIds: new Set<string>(), // 清空候选 ID（节省内存）
+                isAllDirty: true,
+              };
+            }
 
-            // 2. 收集旧 Selection 的边界（处理删除场景）
+            // 4.2 收集旧 Selection 的边界（处理删除场景）
             collectSelectionCandidateIds(oldState.doc, oldState.selection, nextCandidateIds);
 
-            // 3. 收集新 Selection 的边界（处理新增/修改场景）
+            // 4.3 收集新 Selection 的边界（处理新增/修改场景）
             collectSelectionCandidateIds(newState.doc, newState.selection, nextCandidateIds);
 
             return {
               candidateIds: nextCandidateIds,
+              isAllDirty: false,
             };
           },
         },

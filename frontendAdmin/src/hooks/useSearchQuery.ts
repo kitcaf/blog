@@ -25,7 +25,7 @@ export function useSearchQuery(query: string, enabled: boolean = true) {
     queryFn: () => searchPages(query.trim()),
     enabled: enabled && query.trim().length > 0,
     staleTime: 30_000, // 30 秒内认为数据新鲜，不重新请求
-    gcTime: 5 * 60 * 1000, // 5 分钟后清理缓存
+    gcTime: 2 * 60 * 1000, // 5 分钟后清理缓存
     retry: 1, // 失败后重试 1 次
   });
 }

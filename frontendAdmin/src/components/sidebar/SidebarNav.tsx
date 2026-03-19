@@ -6,10 +6,18 @@
 import { Search, Home, Settings, Trash } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 
-export function SidebarNav() {
+interface SidebarNavProps {
+  onSearchClick?: () => void;
+}
+
+export function SidebarNav({ onSearchClick }: SidebarNavProps) {
   return (
     <nav className="space-y-0.5">
-      <SidebarItem icon={<Search size={16} />} label="搜索" />
+      <SidebarItem 
+        icon={<Search size={16} />} 
+        label="搜索" 
+        onClick={onSearchClick}
+      />
       <SidebarItem icon={<Home size={16} />} label="主页" active />
     </nav>
   );

@@ -20,10 +20,12 @@ import { useNavigate } from 'react-router-dom';
 import { useSidebarStore } from '@/store/useSidebarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePageTreeQuery } from '@/hooks/useBlocksQuery';
+import { useGlobalShortcut } from '@/hooks/useGlobalShortcut';
 import { createFolder, createPage, deletePage } from '@/api/blocks';
 import { toast } from 'sonner';
 import { CreateItemDialog } from './CreateItemDialog';
 import { ConfirmDialog } from './ConfirmDialog';
+import { SearchDialog } from './SearchDialog';
 import {
   SidebarHeader,
   SidebarNav,
@@ -62,7 +64,13 @@ export function Sidebar() {
     title: '',
   });
 
+  // 搜索对话框状态
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   const [isCreating, setIsCreating] = useState(false);
+
+  // 全局快捷键：Ctrl+P 切换搜索（打开/关闭）
+  useGlobalShortcut('p', () => setIsSearchOpen((prev) => !prev), { ctrl: true });
 
   // 退出登录
   const handleLogout = useCallback(async () => {
@@ -223,7 +231,7 @@ export function Sidebar() {
       {/* 固定顶部 */}
       <div className="shrink-0 p-2" style={{ width: `${width}px` }}>
         <SidebarHeader onHide={() => setIsOpen(false)} />
-        <SidebarNav />
+        <SidebarNav onSearchClick={() => setIsSearchOpen(true)} />
       </div>
 
       {/* 可滚动中间 */}
@@ -270,6 +278,8 @@ export function Sidebar() {
         onClose={() => setDeleteDialog({ ...deleteDialog, isOpen: false })}
         onConfirm={handleConfirmDelete}
       />
+
+      <SearchDialog isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </aside>
   );
 }

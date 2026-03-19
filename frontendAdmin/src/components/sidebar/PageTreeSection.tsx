@@ -112,7 +112,7 @@ export function PageTreeSection({
     <div className="mt-6 flex flex-col gap-1 flex-1 overflow-hidden">
       {/* 标题和新建按钮 */}
       <div className="mb-1 px-2 flex justify-between items-center shrink-0">
-        <span className="text-xs font-medium text-app-fg-light">我的空间</span>
+        <span className="text-xs font-medium text-app-fg-light">文章编辑区</span>
         <div className="flex gap-1">
           <button
             onClick={() => onCreateFolder(null)}

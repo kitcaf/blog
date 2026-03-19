@@ -2,10 +2,14 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"blog-backend/internal/config"
 	"blog-backend/internal/database"
 	"blog-backend/internal/router"
+	"blog-backend/internal/services"
 	"blog-backend/pkg/errors"
 )
 
@@ -30,10 +34,34 @@ func main() {
 	// 4. 连接 Redis 缓存（可选）
 	rdb := database.ConnectRedis(cfg)
 
-	// 5. 初始化路由
-	r := router.Setup(cfg, db, rdb)
+	// 5. 启动搜索索引器（后台 Worker）
+	var searchIndexer *services.SearchIndexer
+	if rdb != nil {
+		searchIndexer = services.NewSearchIndexer(rdb, db)
+		if err := searchIndexer.Start(); err != nil {
+			log.Printf("⚠️  Failed to start search indexer: %v", err)
+		}
+	} else {
+		log.Println("⚠️  Redis not available, search indexer disabled")
+	}
 
-	// 6. 启动 HTTP 服务器
+	// 6. 初始化路由（传入 searchIndexer）
+	r := router.Setup(cfg, db, rdb, searchIndexer)
+
+	// 7. 优雅关闭处理
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+
+		log.Println("\n🛑 Shutting down gracefully...")
+		if searchIndexer != nil {
+			searchIndexer.Stop()
+		}
+		os.Exit(0)
+	}()
+
+	// 8. 启动 HTTP 服务器
 	addr := ":" + cfg.Server.Port
 	log.Printf("🌐 Server starting on http://localhost%s", addr)
 	if err := r.Run(addr); err != nil {

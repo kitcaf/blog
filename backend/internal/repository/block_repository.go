@@ -2,6 +2,7 @@ package repository
 
 import (
 	"blog-backend/internal/models"
+	"context"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -537,4 +538,29 @@ func sortChildrenByContentIDs(children []*models.PageTreeNode, contentIDs []stri
 	})
 
 	return children
+}
+
+// GetBlockByID 根据 ID 获取 Block（内部使用，无用户隔离）
+func (r *BlockRepository) GetBlockByID(ctx context.Context, blockID uuid.UUID) (*models.Block, error) {
+	var block models.Block
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND deleted_at IS NULL", blockID).
+		First(&block).Error
+	if err != nil {
+		return nil, err
+	}
+	return &block, nil
+}
+
+// GetBlocksByIDs 批量获取 Block（内部使用，无用户隔离）
+func (r *BlockRepository) GetBlocksByIDs(ctx context.Context, blockIDs []uuid.UUID) ([]*models.Block, error) {
+	if len(blockIDs) == 0 {
+		return []*models.Block{}, nil
+	}
+
+	var blocks []*models.Block
+	err := r.db.WithContext(ctx).
+		Where("id IN ? AND deleted_at IS NULL", blockIDs).
+		Find(&blocks).Error
+	return blocks, err
 }

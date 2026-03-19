@@ -47,6 +47,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Block{},
+		&models.BlockSearchIndex{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
@@ -60,6 +61,8 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 
 // createCustomIndexes 创建自定义索引
 func createCustomIndexes(db *gorm.DB) {
+	// ========== Blocks 表索引 ==========
+
 	// 物化路径前缀索引（优化 LIKE '/prefix/%' 查询）
 	db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_blocks_path_pattern 
@@ -79,6 +82,27 @@ func createCustomIndexes(db *gorm.DB) {
 		CREATE INDEX IF NOT EXISTS idx_blocks_page_published 
 		ON blocks ((properties->>'is_published')) 
 		WHERE type = 'page'
+	`)
+
+	// ========== BlockSearchIndex 表索引 ==========
+
+	// 全文搜索 GIN 索引
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_search_gin 
+		ON block_search_index USING gin(search_vector)
+	`)
+
+	// 发布态部分索引（只索引已发布的内容）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_published 
+		ON block_search_index (published_at) 
+		WHERE published_at IS NOT NULL
+	`)
+
+	// 时间排序索引（降序）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_source_updated_desc 
+		ON block_search_index (source_updated_at DESC)
 	`)
 
 	log.Println("✓ Custom indexes created")

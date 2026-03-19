@@ -14,7 +14,7 @@ import (
 )
 
 // Setup 初始化路由
-func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
+func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *services.SearchIndexer) *gin.Engine {
 	// 设置运行模式
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -38,11 +38,18 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// 初始化 services
 	authService := services.NewAuthService(userRepo, cfg, rdb)
 	blockService := services.NewBlockService(blockRepo, rdb)
+	searchService := services.NewSearchService(db)
+
+	// 设置搜索索引器到 BlockService（避免循环依赖）
+	if searchIndexer != nil {
+		blockService.SetSearchIndexer(searchIndexer)
+	}
 
 	// 初始化 handlers
 	authHandler := handlers.NewAuthHandler(authService, blockService)
 	blockHandler := handlers.NewBlockHandler(blockService)
 	pageHandler := handlers.NewPageHandler(blockService)
+	searchHandler := handlers.NewSearchHandler(searchService)
 
 	// 健康检查和版本信息
 	r.GET("/api/health", handlers.HealthCheck(db, rdb))
@@ -55,6 +62,8 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		public.GET("/pages", pageHandler.GetPublicPages)
 		// 根据 URL slug 获取指定公开页面的内容（包含其区块）
 		public.GET("/pages/:slug/blocks", pageHandler.GetPageBySlug)
+		// 搜索已发布的页面
+		public.GET("/search", searchHandler.SearchPublicPages)
 	}
 
 	// 认证接口
@@ -71,6 +80,9 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	admin := r.Group("/api/admin")
 	admin.Use(middleware.AuthMiddleware(cfg))
 	{
+		// 搜索（管理后台）
+		admin.GET("/search", searchHandler.SearchPages)
+
 		// 页面管理
 		pages := admin.Group("/pages")
 		{

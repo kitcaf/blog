@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"time"
 
 	"blog-backend/internal/models"
@@ -14,15 +15,22 @@ import (
 )
 
 type BlockService struct {
-	blockRepo *repository.BlockRepository
-	rdb       *redis.Client
+	blockRepo     *repository.BlockRepository
+	rdb           *redis.Client
+	searchIndexer *SearchIndexer
 }
 
 func NewBlockService(blockRepo *repository.BlockRepository, rdb *redis.Client) *BlockService {
 	return &BlockService{
-		blockRepo: blockRepo,
-		rdb:       rdb,
+		blockRepo:     blockRepo,
+		rdb:           rdb,
+		searchIndexer: nil, // 将在 main.go 中通过 SetSearchIndexer 设置
 	}
+}
+
+// SetSearchIndexer 设置搜索索引器（避免循环依赖）
+func (s *BlockService) SetSearchIndexer(indexer *SearchIndexer) {
+	s.searchIndexer = indexer
 }
 
 // GetBlocksByPageID 获取页面的所有 Block（带用户隔离）
@@ -144,7 +152,10 @@ func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) erro
 // 2. 软删除指定的块
 // 3. 收集所有受影响的父块 ID
 // 4. 批量更新父块的 content_ids（基于实际子块查询）
+// 5. 异步发布索引任务到 Redis Stream（不阻塞用户操作）
 func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
+	ctx := context.Background()
+
 	// 收集所有受影响的父块 ID
 	affectedParents := make(map[uuid.UUID]bool)
 
@@ -160,6 +171,21 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 		if err := s.blockRepo.Upsert(userID, updatedBlocks); err != nil {
 			return err
 		}
+
+		// 异步发布索引任务（只索引内容块，跳过 root 和 folder）
+		if s.searchIndexer != nil {
+			for _, block := range updatedBlocks {
+				if block.Type != "root" && block.Type != "folder" {
+					// 发布到 Redis Stream，不等待结果
+					go func(blockID uuid.UUID) {
+						if err := s.searchIndexer.PublishIndexTask(ctx, "upsert", blockID); err != nil {
+							// 记录错误但不影响主流程
+							log.Printf("Failed to publish index task for block %s: %v", blockID, err)
+						}
+					}(block.ID)
+				}
+			}
+		}
 	}
 
 	// 软删除
@@ -174,6 +200,17 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 
 		if err := s.blockRepo.SoftDelete(userID, deletedIDs); err != nil {
 			return err
+		}
+
+		// 异步发布删除索引任务
+		if s.searchIndexer != nil {
+			for _, blockID := range deletedIDs {
+				go func(id uuid.UUID) {
+					if err := s.searchIndexer.PublishIndexTask(ctx, "delete", id); err != nil {
+						log.Printf("Failed to publish delete index task for block %s: %v", id, err)
+					}
+				}(blockID)
+			}
 		}
 	}
 
@@ -191,7 +228,6 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 
 	// 清除相关缓存
 	if s.rdb != nil {
-		ctx := context.Background()
 		for _, block := range updatedBlocks {
 			if block.Type == "page" && block.Slug != nil {
 				cacheKey := "page:blocks:" + *block.Slug

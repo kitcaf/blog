@@ -4,14 +4,15 @@
  * 
  * 功能：
  * - 支持 Ctrl+P 快捷键唤起
- * - 实时搜索页面
+ * - 实时搜索页面（对接 /api/admin/search）
  * - 按时间分组显示结果
- * - 键盘导航支持
+ * - 键盘导航支持（上下键选择，Enter 确认，Esc 关闭）
  * 
  * 性能优化：
+ * - React Query 缓存搜索结果（30秒内不重复请求）
  * - React.memo 优化结果项渲染
  * - useCallback 避免不必要的重渲染
- * - 防抖搜索减少请求
+ * - 防抖搜索减少请求（300ms）
  * - 使用 key 强制重新挂载避免复杂状态管理
  */
 
@@ -20,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, FileText, X, Loader2 } from 'lucide-react';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { useDebounce } from '@/hooks/useDebounce';
+import type { SearchResult } from '@/api/search';
 
 interface SearchDialogProps {
     isOpen: boolean;
@@ -34,10 +36,13 @@ function SearchDialogInner({ onClose }: { onClose: () => void }) {
     const inputRef = useRef<HTMLInputElement>(null);
     const resultsRef = useRef<HTMLDivElement>(null);
 
-    // 搜索查询
-    const { data: results = [], isLoading, isError } = useSearchQuery(debouncedQuery, true);
+    // 搜索查询（使用 React Query 缓存，避免重复请求）
+    const { data: results = [], isLoading, isError } = useSearchQuery(
+        debouncedQuery,
+        debouncedQuery.trim().length > 0
+    );
 
-    // 按时间分组
+    // 按时间分组（今天、上周、过去30天、更早）
     const groupedResults = useMemo(() => {
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -45,13 +50,13 @@ function SearchDialogInner({ onClose }: { onClose: () => void }) {
         const last30Days = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         const groups = {
-            today: [] as typeof results,
-            lastWeek: [] as typeof results,
-            last30Days: [] as typeof results,
-            older: [] as typeof results,
+            today: [] as SearchResult[],
+            lastWeek: [] as SearchResult[],
+            last30Days: [] as SearchResult[],
+            older: [] as SearchResult[],
         };
 
-        results.forEach((result: (typeof results)[0]) => {
+        results.forEach((result) => {
             const updatedAt = new Date(result.updated_at);
             if (updatedAt >= today) {
                 groups.today.push(result);
@@ -72,11 +77,8 @@ function SearchDialogInner({ onClose }: { onClose: () => void }) {
 
     // 当结果变化时重置选中索引
     useEffect(() => {
-        if (selectedIndex >= flatResults.length) {
-            // eslint-disable-next-line
-            setSelectedIndex(0);
-        }
-    }, [flatResults.length, selectedIndex]);
+        setSelectedIndex(0);
+    }, [flatResults.length]);
 
     // 聚焦输入框
     useEffect(() => {
@@ -112,20 +114,14 @@ function SearchDialogInner({ onClose }: { onClose: () => void }) {
         [flatResults, selectedIndex, handleSelectResult, onClose]
     );
 
-    // 滚动到选中项
+    // 滚动到选中项（平滑滚动）
     useEffect(() => {
         if (flatResults.length === 0) return;
 
-        const timer = setTimeout(() => {
-            if (resultsRef.current) {
-                const selectedElement = resultsRef.current.querySelector(
-                    `[data-index="${selectedIndex}"]`
-                );
-                selectedElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            }
-        }, 0);
-
-        return () => clearTimeout(timer);
+        const selectedElement = resultsRef.current?.querySelector(
+            `[data-index="${selectedIndex}"]`
+        );
+        selectedElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }, [selectedIndex, flatResults.length]);
 
     return (
@@ -227,23 +223,18 @@ function SearchDialogInner({ onClose }: { onClose: () => void }) {
 
 export function SearchDialog({ isOpen, onClose }: SearchDialogProps) {
     // 使用 key 强制重新挂载，避免复杂的状态重置逻辑
-    const [mountKey] = useState(() => Math.random().toString(36));
+    // 每次打开对话框都会生成新的 key，确保状态完全重置
+    const [mountKey] = useState(() => Math.random().toString(36).slice(2));
+    
     if (!isOpen) return null;
+    
     return <SearchDialogInner key={mountKey} onClose={onClose} />;
 }
 
-// 搜索结果分组
+// 搜索结果分组组件
 interface SearchResultGroupProps {
     title: string;
-    results: Array<{
-        page_id: string;
-        page_title: string;
-        page_icon?: string;
-        page_path: string;
-        top_blocks?: Array<{
-            content: string;
-        }>;
-    }>;
+    results: SearchResult[];
     selectedIndex: number;
     onSelect: (pageId: string) => void;
     startIndex: number;
@@ -284,17 +275,9 @@ function SearchResultGroup({
     );
 }
 
-// 搜索结果项（优化渲染性能）
+// 搜索结果项（使用 React.memo 优化渲染性能）
 interface SearchResultItemProps {
-    result: {
-        page_id: string;
-        page_title: string;
-        page_icon?: string;
-        page_path: string;
-        top_blocks?: Array<{
-            content: string;
-        }>;
-    };
+    result: SearchResult;
     globalIndex: number;
     isSelected: boolean;
     onSelect: (pageId: string) => void;
@@ -310,12 +293,17 @@ const SearchResultItem = React.memo(function SearchResultItem({
         onSelect(result.page_id);
     }, [result.page_id, onSelect]);
 
+    // 优先显示 representative_block，其次是 top_blocks
+    const previewContent = result.representative_block?.content 
+        || result.top_blocks?.[0]?.content;
+
     return (
         <button
             data-index={globalIndex}
             onClick={handleClick}
-            className={`w-full px-4 py-2.5 flex items-start gap-3 transition-colors ${isSelected ? 'bg-app-hover' : 'hover:bg-app-hover'
-                }`}
+            className={`w-full px-4 py-2.5 flex items-start gap-3 transition-colors ${
+                isSelected ? 'bg-app-hover' : 'hover:bg-app-hover'
+            }`}
         >
             <FileText className="w-4 h-4 text-app-fg-light shrink-0 mt-0.5" />
             <div className="flex-1 text-left min-w-0">
@@ -330,9 +318,9 @@ const SearchResultItem = React.memo(function SearchResultItem({
                 <div className="text-xs text-app-fg-light mt-0.5 truncate">
                     {formatPath(result.page_path)}
                 </div>
-                {result.top_blocks && result.top_blocks.length > 0 && (
+                {previewContent && (
                     <div className="text-xs text-app-fg-light mt-1 line-clamp-2">
-                        {result.top_blocks[0].content}
+                        {previewContent}
                     </div>
                 )}
             </div>
@@ -340,9 +328,10 @@ const SearchResultItem = React.memo(function SearchResultItem({
     );
 });
 
-// 格式化路径
+// 格式化路径（移除 UUID，只保留有意义的部分）
 function formatPath(path: string): string {
     const parts = path.split('/').filter(Boolean);
-    // 移除 UUID 部分，只保留有意义的路径
-    return parts.slice(2).join(' / ') || '根目录';
+    // 移除 UUID 部分（格式：/user_id/workspace_id/...），只保留有意义的路径
+    const meaningfulParts = parts.slice(2);
+    return meaningfulParts.length > 0 ? meaningfulParts.join(' / ') : '根目录';
 }

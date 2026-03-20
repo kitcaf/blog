@@ -180,7 +180,7 @@ function collectTransactionCandidateIds(tr: Transaction, target: Set<string>): b
   if (docSize === 0) return false;
 
   let totalChangeRange = 0;
-  // 经验值如果太多了也直接return
+  // 经验值如果太多了也直接
   if (tr.steps.length > CHANGE_NUMBER_THRESHOLD) {
     return true
   }

@@ -564,3 +564,17 @@ func (r *BlockRepository) GetBlocksByIDs(ctx context.Context, blockIDs []uuid.UU
 		Find(&blocks).Error
 	return blocks, err
 }
+
+// GetRootBlockIDByUserID 获取用户根节点 ID。
+// 兼容历史 search index 中把 root_id 写入 user_id 的情况。
+func (r *BlockRepository) GetRootBlockIDByUserID(ctx context.Context, userID uuid.UUID) (uuid.UUID, error) {
+	var root models.Block
+	err := r.db.WithContext(ctx).
+		Where("type = ? AND created_by = ? AND deleted_at IS NULL", "root", userID).
+		First(&root).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	return root.ID, nil
+}

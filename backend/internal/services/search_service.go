@@ -6,6 +6,8 @@ import (
 	"blog-backend/pkg/errors"
 	"context"
 	"encoding/json"
+	goerrors "errors"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -38,10 +40,10 @@ func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error
 		return nil
 	}
 
-	// 3. 提取 page_id 和 user_id（从 path）
-	pageID, userID, err := extractIDsFromPath(block.Path)
+	// 3. 解析索引归属信息
+	pageID, userID, err := s.resolveIndexScope(ctx, block)
 	if err != nil {
-		return errors.WrapWithDetail(errors.ErrSearchInvalidPath, err, "invalid block path")
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to resolve block search scope")
 	}
 
 	// 4. 提取纯文本内容
@@ -94,15 +96,39 @@ func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query
 		return nil, errors.New(errors.ErrSearchQueryTooLong, "search query exceeds 200 characters")
 	}
 
-	// 2. 搜索匹配的 Block（返回所有匹配结果，最多 1000 条）
-	blocks, err := s.searchRepo.SearchBlocks(ctx, userID, query, 1000)
+	ownerIDs, err := s.getSearchOwnerIDs(ctx, userID)
 	if err != nil {
-		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to search blocks")
+		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to resolve search owner ids")
+	}
+
+	// 2. 搜索匹配的 Block（兼容历史索引中错误写成 root_id 的 user_id）
+	blocks := make([]*repository.BlockSearchResult, 0, 128)
+	seenBlockIDs := make(map[uuid.UUID]struct{})
+	for _, ownerID := range ownerIDs {
+		matchedBlocks, searchErr := s.searchRepo.SearchBlocks(ctx, ownerID, query, 1000)
+		if searchErr != nil {
+			return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, searchErr, "failed to search blocks")
+		}
+
+		for _, block := range matchedBlocks {
+			if _, exists := seenBlockIDs[block.BlockID]; exists {
+				continue
+			}
+			seenBlockIDs[block.BlockID] = struct{}{}
+			blocks = append(blocks, block)
+		}
 	}
 
 	if len(blocks) == 0 {
 		return []*models.PageSearchResult{}, nil
 	}
+
+	sort.Slice(blocks, func(i, j int) bool {
+		if blocks[i].Rank == blocks[j].Rank {
+			return blocks[i].SourceUpdatedAt.After(blocks[j].SourceUpdatedAt)
+		}
+		return blocks[i].Rank > blocks[j].Rank
+	})
 
 	// 3. 按 Page 聚合
 	pageMap := make(map[uuid.UUID]*pageAggregation)
@@ -191,25 +217,73 @@ type pageAggregation struct {
 	Blocks []*repository.BlockSearchResult
 }
 
-// extractIDsFromPath 从 path 提取 page_id 和 user_id
-// path 格式：/{user_id}/{page_id}/...
-func extractIDsFromPath(path string) (pageID, userID uuid.UUID, err error) {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) < 2 {
-		return uuid.Nil, uuid.Nil, errors.New(errors.ErrSearchInvalidPath, "path must have at least 2 segments")
+// resolveIndexScope 为索引记录解析 page_id 和 user_id。
+// page_id 取最近的 page 祖先，user_id 优先取块自身的创建者。
+func (s *SearchService) resolveIndexScope(ctx context.Context, block *models.Block) (pageID, userID uuid.UUID, err error) {
+	current := block
+	visited := make(map[uuid.UUID]struct{})
+
+	for current != nil {
+		if _, exists := visited[current.ID]; exists {
+			return uuid.Nil, uuid.Nil, errors.New(errors.ErrSearchIndexFailed, "cyclic block parent chain detected")
+		}
+		visited[current.ID] = struct{}{}
+
+		if userID == uuid.Nil {
+			userID = extractOwnerID(current)
+		}
+		if pageID == uuid.Nil && current.Type == "page" {
+			pageID = current.ID
+		}
+		if pageID != uuid.Nil && userID != uuid.Nil {
+			return pageID, userID, nil
+		}
+		if current.ParentID == nil {
+			break
+		}
+
+		current, err = s.blockRepo.GetBlockByID(ctx, *current.ParentID)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, err
+		}
 	}
 
-	userID, err = uuid.Parse(parts[0])
-	if err != nil {
-		return uuid.Nil, uuid.Nil, errors.WrapWithDetail(errors.ErrSearchInvalidPath, err, "invalid user_id in path")
+	if pageID == uuid.Nil {
+		return uuid.Nil, uuid.Nil, errors.New(errors.ErrSearchIndexFailed, "page ancestor not found")
 	}
-
-	pageID, err = uuid.Parse(parts[1])
-	if err != nil {
-		return uuid.Nil, uuid.Nil, errors.WrapWithDetail(errors.ErrSearchInvalidPath, err, "invalid page_id in path")
+	if userID == uuid.Nil {
+		return uuid.Nil, uuid.Nil, errors.New(errors.ErrSearchIndexFailed, "block owner not found")
 	}
 
 	return pageID, userID, nil
+}
+
+func extractOwnerID(block *models.Block) uuid.UUID {
+	if block.CreatedBy != nil {
+		return *block.CreatedBy
+	}
+	if block.LastEditedBy != nil {
+		return *block.LastEditedBy
+	}
+	return uuid.Nil
+}
+
+func (s *SearchService) getSearchOwnerIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	ownerIDs := []uuid.UUID{userID}
+
+	rootID, err := s.blockRepo.GetRootBlockIDByUserID(ctx, userID)
+	if err != nil {
+		if goerrors.Is(err, gorm.ErrRecordNotFound) {
+			return ownerIDs, nil
+		}
+		return nil, err
+	}
+
+	if rootID != uuid.Nil && rootID != userID {
+		ownerIDs = append(ownerIDs, rootID)
+	}
+
+	return ownerIDs, nil
 }
 
 // extractTextContent 从 properties JSONB 提取纯文本
@@ -332,14 +406,12 @@ func (s *SearchService) calculatePageScore(agg *pageAggregation) *models.PageSea
 
 // sortPageResults 按 PageScore 降序排序
 func sortPageResults(results []*models.PageSearchResult) {
-	// 简单的冒泡排序（生产环境应使用 sort.Slice）
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[i].PageScore < results[j].PageScore {
-				results[i], results[j] = results[j], results[i]
-			}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].PageScore == results[j].PageScore {
+			return results[i].UpdatedAt.After(results[j].UpdatedAt)
 		}
-	}
+		return results[i].PageScore > results[j].PageScore
+	})
 }
 
 // enrichPageInfo 补充 Page 信息（从 blocks 表）

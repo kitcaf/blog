@@ -4,6 +4,7 @@ import (
 	"blog-backend/internal/models"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,8 +29,8 @@ func (r *SearchRepository) UpsertBlockIndex(ctx context.Context, index *models.B
 			content, search_vector, source_updated_at, published_at,
 			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, to_tsvector('simple', $6), $7, $8,
+			?, ?, ?, ?, ?,
+			?, to_tsvector('simple', ?), ?, ?,
 			NOW(), NOW()
 		)
 		ON CONFLICT (block_id) DO UPDATE SET
@@ -50,6 +51,7 @@ func (r *SearchRepository) UpsertBlockIndex(ctx context.Context, index *models.B
 		index.UserID,
 		index.BlockType,
 		index.BlockOrder,
+		index.Content,
 		index.Content,
 		index.SourceUpdatedAt,
 		index.PublishedAt,
@@ -92,24 +94,44 @@ type BlockSearchResult struct {
 func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, query string, limit int) ([]*BlockSearchResult, error) {
 	var results []*BlockSearchResult
 
-	// 使用 PostgreSQL 全文搜索
-	// to_tsquery('simple', query) 将查询转换为 tsquery
-	// search_vector @@ query 表示匹配
-	// ts_rank(search_vector, query) 计算相关度分数
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return results, nil
+	}
+
+	fmt.Printf("[DEBUG] SearchBlocks - Query: %q, UserID: %s, Limit: %d\n",
+		query, userID.String(), limit)
+
 	sql := `
-		SELECT 
-			block_id, page_id, user_id, block_type, block_order,
-			content, source_updated_at, published_at,
-			ts_rank(search_vector, to_tsquery('simple', $1)) as rank
-		FROM block_search_index
-		WHERE 
-			user_id = $2
-			AND search_vector @@ to_tsquery('simple', $1)
-		ORDER BY rank DESC, source_updated_at DESC
-		LIMIT $3
+		WITH search_query AS (
+			SELECT plainto_tsquery('simple', ?) AS ts_query
+		)
+		SELECT
+			bsi.block_id,
+			bsi.page_id,
+			bsi.user_id,
+			bsi.block_type,
+			bsi.block_order,
+			bsi.content,
+			bsi.source_updated_at,
+			bsi.published_at,
+			ts_rank(bsi.search_vector, sq.ts_query) AS rank
+		FROM block_search_index AS bsi
+		CROSS JOIN search_query AS sq
+		WHERE
+			bsi.user_id = ?
+			AND bsi.search_vector @@ sq.ts_query
+		ORDER BY rank DESC, bsi.source_updated_at DESC
+		LIMIT ?
 	`
 
 	err := r.db.WithContext(ctx).Raw(sql, query, userID, limit).Scan(&results).Error
+	if err != nil {
+		fmt.Printf("[ERROR] SearchBlocks - SQL error: %v, Query: %q\n", err, query)
+	} else {
+		fmt.Printf("[DEBUG] SearchBlocks - Found %d results\n", len(results))
+	}
+
 	return results, err
 }
 
@@ -117,17 +139,32 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query string, limit int) ([]*BlockSearchResult, error) {
 	var results []*BlockSearchResult
 
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return results, nil
+	}
+
 	sql := `
-		SELECT 
-			block_id, page_id, user_id, block_type, block_order,
-			content, source_updated_at, published_at,
-			ts_rank(search_vector, to_tsquery('simple', $1)) as rank
-		FROM block_search_index
-		WHERE 
-			published_at IS NOT NULL
-			AND search_vector @@ to_tsquery('simple', $1)
-		ORDER BY rank DESC, source_updated_at DESC
-		LIMIT $2
+		WITH search_query AS (
+			SELECT plainto_tsquery('simple', ?) AS ts_query
+		)
+		SELECT
+			bsi.block_id,
+			bsi.page_id,
+			bsi.user_id,
+			bsi.block_type,
+			bsi.block_order,
+			bsi.content,
+			bsi.source_updated_at,
+			bsi.published_at,
+			ts_rank(bsi.search_vector, sq.ts_query) AS rank
+		FROM block_search_index AS bsi
+		CROSS JOIN search_query AS sq
+		WHERE
+			bsi.published_at IS NOT NULL
+			AND bsi.search_vector @@ sq.ts_query
+		ORDER BY rank DESC, bsi.source_updated_at DESC
+		LIMIT ?
 	`
 
 	err := r.db.WithContext(ctx).Raw(sql, query, limit).Scan(&results).Error

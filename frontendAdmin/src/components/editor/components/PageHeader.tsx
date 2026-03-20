@@ -19,19 +19,20 @@ export const PageHeader = memo(function PageHeader({
   isPageLoaded,
 }: PageHeaderProps) {
   const [localTitle, setLocalTitle] = useState(initialTitle);
-  const isEditingRef = useRef(false);
+  const [isEditing, setIsEditing] = useState(false);
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
 
-  // 当外部标题变化时（如从服务器重新加载），仅在非编辑状态下同步
-  useEffect(() => {
-    if (!isEditingRef.current) {
+  if (initialTitle !== prevInitialTitle) {
+    setPrevInitialTitle(initialTitle);
+    if (!isEditing) {
       setLocalTitle(initialTitle);
     }
-  }, [initialTitle]);
+  }
 
   // 处理输入
   const handleChange = useCallback((val: string) => {
-    isEditingRef.current = true;
+    setIsEditing(true);
     setLocalTitle(val);
     onTitleChange(val);
   }, [onTitleChange]);
@@ -40,7 +41,7 @@ export const PageHeader = memo(function PageHeader({
   const handleBlur = useCallback(() => {
     // 延迟重置编辑标志，给同步留出时间
     setTimeout(() => {
-      isEditingRef.current = false;
+      setIsEditing(false);
     }, 1200);
   }, []);
 

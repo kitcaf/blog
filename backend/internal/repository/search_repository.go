@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -99,12 +100,17 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 		return results, nil
 	}
 
-	fmt.Printf("[DEBUG] SearchBlocks - Query: %q, UserID: %s, Limit: %d\n",
-		query, userID.String(), limit)
+	tsQuery := buildPrefixTSQuery(query)
+	if tsQuery == "" {
+		return results, nil
+	}
+
+	fmt.Printf("[DEBUG] SearchBlocks - Query: %q, TSQuery: %q, UserID: %s, Limit: %d\n",
+		query, tsQuery, userID.String(), limit)
 
 	sql := `
 		WITH search_query AS (
-			SELECT plainto_tsquery('simple', ?) AS ts_query
+			SELECT to_tsquery('simple', ?) AS ts_query
 		)
 		SELECT
 			bsi.block_id,
@@ -125,9 +131,9 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 		LIMIT ?
 	`
 
-	err := r.db.WithContext(ctx).Raw(sql, query, userID, limit).Scan(&results).Error
+	err := r.db.WithContext(ctx).Raw(sql, tsQuery, userID, limit).Scan(&results).Error
 	if err != nil {
-		fmt.Printf("[ERROR] SearchBlocks - SQL error: %v, Query: %q\n", err, query)
+		fmt.Printf("[ERROR] SearchBlocks - SQL error: %v, TSQuery: %q\n", err, tsQuery)
 	} else {
 		fmt.Printf("[DEBUG] SearchBlocks - Found %d results\n", len(results))
 	}
@@ -144,9 +150,14 @@ func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query stri
 		return results, nil
 	}
 
+	tsQuery := buildPrefixTSQuery(query)
+	if tsQuery == "" {
+		return results, nil
+	}
+
 	sql := `
 		WITH search_query AS (
-			SELECT plainto_tsquery('simple', ?) AS ts_query
+			SELECT to_tsquery('simple', ?) AS ts_query
 		)
 		SELECT
 			bsi.block_id,
@@ -167,8 +178,49 @@ func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query stri
 		LIMIT ?
 	`
 
-	err := r.db.WithContext(ctx).Raw(sql, query, limit).Scan(&results).Error
+	err := r.db.WithContext(ctx).Raw(sql, tsQuery, limit).Scan(&results).Error
 	return results, err
+}
+
+func buildPrefixTSQuery(query string) string {
+	tokens := tokenizeSearchQuery(query)
+	if len(tokens) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		parts = append(parts, token+":*")
+	}
+
+	return strings.Join(parts, " & ")
+}
+
+func tokenizeSearchQuery(query string) []string {
+	var (
+		tokens  []string
+		current strings.Builder
+	)
+
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, current.String())
+		current.Reset()
+	}
+
+	for _, r := range strings.TrimSpace(query) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
+			current.WriteRune(unicode.ToLower(r))
+		default:
+			flush()
+		}
+	}
+
+	flush()
+	return tokens
 }
 
 // GetBlockIndexByID 根据 BlockID 获取索引

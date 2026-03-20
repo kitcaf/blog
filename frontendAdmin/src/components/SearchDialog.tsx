@@ -225,9 +225,9 @@ export function SearchDialog({ isOpen, onClose }: SearchDialogProps) {
     // 使用 key 强制重新挂载，避免复杂的状态重置逻辑
     // 每次打开对话框都会生成新的 key，确保状态完全重置
     const [mountKey] = useState(() => Math.random().toString(36).slice(2));
-    
+
     if (!isOpen) return null;
-    
+
     return <SearchDialogInner key={mountKey} onClose={onClose} />;
 }
 
@@ -294,18 +294,16 @@ const SearchResultItem = React.memo(function SearchResultItem({
     }, [result.page_id, onSelect]);
 
     // 优先显示 representative_block，其次是 top_blocks
-    const previewContent = result.representative_block?.content 
+    const previewContent = result.representative_block?.content
         || result.top_blocks?.[0]?.content;
 
     return (
         <button
             data-index={globalIndex}
             onClick={handleClick}
-            className={`w-full px-4 py-2.5 flex items-start gap-3 transition-colors ${
-                isSelected ? 'bg-app-hover' : 'hover:bg-app-hover'
-            }`}
+            className={`w-full px-4 py-2.5 flex items-start gap-3 transition-colors ${isSelected ? 'bg-app-hover' : 'hover:bg-app-hover'
+                }`}
         >
-            <FileText className="w-4 h-4 text-app-fg-light shrink-0 mt-0.5" />
             <div className="flex-1 text-left min-w-0">
                 <div className="flex items-center gap-2">
                     {result.page_icon && (
@@ -314,9 +312,6 @@ const SearchResultItem = React.memo(function SearchResultItem({
                     <span className="text-sm font-medium text-app-fg-deeper truncate">
                         {result.page_title}
                     </span>
-                </div>
-                <div className="text-xs text-app-fg-light mt-0.5 truncate">
-                    {formatPath(result.page_path)}
                 </div>
                 {previewContent && (
                     <div className="text-xs text-app-fg-light mt-1 line-clamp-2">
@@ -328,10 +323,3 @@ const SearchResultItem = React.memo(function SearchResultItem({
     );
 });
 
-// 格式化路径（移除 UUID，只保留有意义的部分）
-function formatPath(path: string): string {
-    const parts = path.split('/').filter(Boolean);
-    // 移除 UUID 部分（格式：/user_id/workspace_id/...），只保留有意义的路径
-    const meaningfulParts = parts.slice(2);
-    return meaningfulParts.length > 0 ? meaningfulParts.join(' / ') : '根目录';
-}

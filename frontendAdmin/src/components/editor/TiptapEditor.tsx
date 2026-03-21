@@ -1,6 +1,6 @@
 import { useCallback, memo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import type { BlockData } from '@blog/types';
+import { splitPageDocumentBlocks } from "./utils"
 import { editorExtensions } from './extensions';
 import { useEditorSyncController } from './sync/useEditorSyncController';
 import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
@@ -10,29 +10,6 @@ import { PageHeaderContainer } from './components/PageHeaderContainer';
 interface TiptapEditorProps {
   className?: string;
   pageId?: string;
-}
-
-function splitPageDocumentBlocks(blocks: BlockData[], pageId?: string) {
-  const [pageBlock, ...contentBlocks] = blocks;
-
-  if (!pageBlock || pageBlock.type !== 'page') {
-    return {
-      pageBlock: null,
-      contentBlocks: blocks,
-    };
-  }
-
-  if (pageId && pageBlock.id !== pageId) {
-    return {
-      pageBlock: null,
-      contentBlocks: blocks,
-    };
-  }
-
-  return {
-    pageBlock,
-    contentBlocks,
-  };
 }
 
 function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {

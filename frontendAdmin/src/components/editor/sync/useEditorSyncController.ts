@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import type { BlockData } from '@blog/types';
 import { hydrateToTiptap } from '../converter';
@@ -29,6 +30,9 @@ import {
 } from '../extensions/DirtyTrackerExtension';
 import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
 import { collectEditorSyncDraft } from './collectEditorSyncDraft';
+import { blockQueryKeys } from '@/hooks/useBlocksQuery';
+import { updateTreeNodeTitle } from '@/utils/treeHelpers';
+import type { PageTreeNode } from '@/api/blocks';
 
 const DEBOUNCE_MS = 1000; // 防抖延迟：1秒
 
@@ -53,6 +57,8 @@ export function useEditorSyncController({
   isBlocksLoading,
   sync,
 }: UseEditorSyncControllerParams): UseEditorSyncControllerResult {
+  const queryClient = useQueryClient();
+  
   // 防抖定时器：延迟触发同步，避免频繁请求
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 已初始化的页面 ID：防止重复初始化
@@ -150,11 +156,13 @@ export function useEditorSyncController({
   }, [flushAndSync, pageId]);
 
   /**
-   * 标题变更同步入口
+   * 标题变更同步入口（带乐观更新）
    * 
    * 流程：
-   *   1. 调用 Store 的 applyPageTitleChange 更新标题
-   *   2. 触发防抖同步（会在 1 秒后发起 API 请求）
+   *   1. 立即更新侧边栏缓存（乐观更新）
+   *   2. 调用 Store 的 applyPageTitleChange 更新标题
+   *   3. 触发防抖同步（会在 1 秒后发起 API 请求）
+   *   4. API 失败时 React Query 自动回滚缓存
    */
   const scheduleTitleSync = useCallback(
     (title: string) => {
@@ -162,12 +170,37 @@ export function useEditorSyncController({
         return;
       }
 
+      // 乐观更新：立即更新侧边栏缓存
+      queryClient.setQueryData(
+        blockQueryKeys.pageTree(),
+        (old: { flatPages: BlockData[]; tree: PageTreeNode[] } | undefined) => {
+          if (!old) return old;
+          
+          return {
+            flatPages: old.flatPages.map((block) =>
+              block.id === pageId ? { ...block, props: { ...block.props, title } } : block
+            ),
+            tree: updateTreeNodeTitle(old.tree, pageId, title),
+          };
+        }
+      );
+
+      // 更新页面详情缓存
+      queryClient.setQueryData(
+        blockQueryKeys.pageDetail(pageId),
+        (old: BlockData | undefined) => {
+          if (!old) return old;
+          return { ...old, props: { ...old.props, title } };
+        }
+      );
+
       // 更新 Store 中的标题
       useBlockStore.getState().applyPageTitleChange(pageId, title);
+      
       // 触发防抖同步
       scheduleFlushAndSync();
     },
-    [pageId, scheduleFlushAndSync],
+    [pageId, scheduleFlushAndSync, queryClient],
   );
 
   /**

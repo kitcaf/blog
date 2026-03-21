@@ -53,6 +53,22 @@ export function SearchDialog({ isOpen, onClose }: SearchDialogProps) {
         prevIsOpenRef.current = isOpen;
     }, [isOpen]);
 
+    // 当搜索结果变化时，选中第一个结果项（使用 ref 避免级联渲染）
+    const prevFlattenedLengthRef = useRef(0);
+    useEffect(() => {
+        if (flattenedItems.length !== prevFlattenedLengthRef.current) {
+            prevFlattenedLengthRef.current = flattenedItems.length;
+            
+            // 使用 queueMicrotask 延迟状态更新
+            queueMicrotask(() => {
+                const firstIndex = flattenedItems.findIndex(item => item.type === 'result');
+                if (firstIndex >= 0) {
+                    setSelectedIndex(firstIndex);
+                }
+            });
+        }
+    }, [flattenedItems]);
+
     // 选择结果
     const handleSelectResult = useCallback((pageId: string) => {
         navigate(`/page/${pageId}`);

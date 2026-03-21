@@ -141,10 +141,11 @@ export async function fetchPageTree(): Promise<{
 /**
  * GET /admin/pages/:pageId/blocks
  *
- * 返回指定 page 下的所有内容块（段落、标题、图片等），
- * 注意：不含 page 块本身，后端只返回其直接/间接子块。
- * 
- * 也就是获取文章包含的所有block，不包括它们的父级 type='page' block
+ * 返回指定 page 的完整文档块列表：
+ * - 第 1 项固定为 page block 本身
+ * - 后续项为正文内容块（段落、标题、图片等）
+ *
+ * 管理端编辑器依赖这个约定，将标题区域与正文区域拆分渲染。
  * @param pageId - 目标 Page Block 的 UUID
  */
 export async function fetchPageBlocks(pageId: string): Promise<BlockData[]> {

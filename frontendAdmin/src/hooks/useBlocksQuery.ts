@@ -22,7 +22,7 @@
  *
  * 三个 Hook：
  *   usePageTreeQuery   → GET /api/admin/blocks/tree      (侧边栏目录)
- *   usePageBlocksQuery → GET /api/admin/pages/:id/blocks (文章内容)
+ *   usePageBlocksQuery → GET /api/admin/pages/:id/blocks (page block + 文章内容)
  *   usePageDetailQuery → GET /api/admin/pages/:id        (页面元数据)
  */
 
@@ -105,7 +105,7 @@ export function usePageTreeQuery(
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface UsePageBlocksQueryResult {
-  /** 文章的所有内容块（段落、标题、图片等，不含 page 块本身） */
+  /** 页面完整文档快照：第 1 项是 page block，后续是正文块 */
   blocks: BlockData[];
   isLoading: boolean;
   isError: boolean;
@@ -114,12 +114,13 @@ interface UsePageBlocksQueryResult {
 }
 
 /**
- * 加载指定 Page 的所有内容 Block。
+ * 加载指定 Page 的完整文档 Block 列表。
  *
  * - 触发时机：路由参数 pageId 变化（用户点击侧边栏或直接访问 URL）
  * - gcTime=5min：切换到其他页面后仍缓存，快速切换回来无需重新请求
  * - enabled=!!pageId：pageId 为 null 时不发请求
  * - refetchOnMount=false：编辑场景下，本地 Store 是 source of truth，避免重新获取
+ * - 返回约定：数组第 1 项始终是 page block，本地编辑器据此拆分标题和正文
  *
  * @param pageId - 目标 Page 的 UUID（为 null 时 hook 静默）
  */

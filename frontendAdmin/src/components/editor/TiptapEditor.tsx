@@ -1,22 +1,45 @@
 import { useCallback, memo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { BlockData } from '@blog/types';
 import { editorExtensions } from './extensions';
 import { useEditorSyncController } from './sync/useEditorSyncController';
 import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
-import { usePageBlocksQuery, usePageDetailQuery } from '@/hooks/useBlocksQuery';
-import { PageHeader } from './components/PageHeader';
+import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
+import { PageHeaderContainer } from './components/PageHeaderContainer';
 
 interface TiptapEditorProps {
   className?: string;
   pageId?: string;
 }
 
-function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
-  const { page, isLoading: pageLoading } = usePageDetailQuery(pageId ?? null);
-  const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
-  console.log("初始数据", blocks)
-  const { sync } = useBlockSyncRunner(pageId ?? null);
+function splitPageDocumentBlocks(blocks: BlockData[], pageId?: string) {
+  const [pageBlock, ...contentBlocks] = blocks;
 
+  if (!pageBlock || pageBlock.type !== 'page') {
+    return {
+      pageBlock: null,
+      contentBlocks: blocks,
+    };
+  }
+
+  if (pageId && pageBlock.id !== pageId) {
+    return {
+      pageBlock: null,
+      contentBlocks: blocks,
+    };
+  }
+
+  return {
+    pageBlock,
+    contentBlocks,
+  };
+}
+
+function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
+  const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
+  const { sync } = useBlockSyncRunner(pageId ?? null);
+  const { pageBlock, contentBlocks } = splitPageDocumentBlocks(blocks, pageId);
+  console.log("渲染Tiptap", blocks)
   const editor = useEditor(
     {
       extensions: editorExtensions,
@@ -29,27 +52,20 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
     [pageId],
   );
 
-  const { scheduleTitleSync } = useEditorSyncController({
+  const { scheduleSync, flushSync } = useEditorSyncController({
     editor,
     pageId,
-    page,
-    blocks,
+    pageBlock,
+    contentBlocks,
     isBlocksLoading: blocksLoading,
     sync,
   });
-
-  const handleTitleChange = useCallback(
-    (newTitle: string) => {
-      scheduleTitleSync(newTitle);
-    },
-    [scheduleTitleSync],
-  );
 
   const handleTitleEnter = useCallback(() => {
     editor?.commands.focus('start');
   }, [editor]);
 
-  if (pageLoading || blocksLoading) {
+  if (blocksLoading) {
     return (
       <div className={`${className} flex items-center justify-center min-h-[400px]`}>
         <div className="text-app-fg-light text-sm">加载中...</div>
@@ -61,14 +77,27 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
     return null;
   }
 
+  if (!pageBlock) {
+    return (
+      <div className={`${className} flex items-center justify-center min-h-[400px]`}>
+        <div className="text-app-fg-light text-sm">页面数据异常</div>
+      </div>
+    );
+  }
+
   return (
     <div className={className}>
       <div className="px-16">
-        <PageHeader
-          initialTitle={page && 'title' in page.props ? (page.props.title as string) : '未命名'}
-          onTitleChange={handleTitleChange}
+        <PageHeaderContainer
+          key={pageId ?? 'page-header'}
+          pageId={pageId}
+          fallbackTitle={
+            'title' in pageBlock.props ? (pageBlock.props.title as string) : '未命名'
+          }
+          isPageLoaded
           onEnter={handleTitleEnter}
-          isPageLoaded={Boolean(page)}
+          scheduleSync={scheduleSync}
+          flushSync={flushSync}
         />
       </div>
       <div className="px-16 pb-12">

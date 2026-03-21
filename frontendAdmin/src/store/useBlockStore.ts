@@ -87,7 +87,7 @@ interface BlockStoreActions {
    *   2. 标记为 pending upsert
    *   3. 递增版本号
    */
-  applyPageTitleChange: (pageId: string, title: string) => void;
+  applyPageTitleChange: (pageId: string, title: string) => boolean;
 
   /**
    * 应用编辑器同步草稿
@@ -225,24 +225,25 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
    *   3. 标记为 pending upsert
    */
   applyPageTitleChange: (pageId, title) => {
+    let didChange = false;
+
     set((state) => {
       const pageBlock = state.blocksById[pageId];
       if (!pageBlock) {
-        return state; // 页面不存在，跳过
+        return state;
       }
 
-      // 获取当前标题
       const currentTitle =
         'title' in pageBlock.props && typeof pageBlock.props.title === 'string'
           ? pageBlock.props.title
           : '';
 
-      // 标题未变化，跳过
       if (currentTitle === title) {
         return state;
       }
 
-      // 更新标题
+      didChange = true;
+
       const nextBlocks = {
         ...state.blocksById,
         [pageId]: {
@@ -254,7 +255,6 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
         } as Block,
       };
 
-      // 标记为 pending upsert
       const nextPending = { ...state.pendingChangesById };
       const nextCounter = markPendingChange(nextPending, pageId, 'upsert', state.revisionCounter);
 
@@ -264,6 +264,8 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
         revisionCounter: nextCounter,
       };
     });
+
+    return didChange;
   },
 
   /**

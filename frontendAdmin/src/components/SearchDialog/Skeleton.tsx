@@ -3,8 +3,6 @@
  * @description 搜索骨架加载组件
  */
 
-import React from 'react';
-
 export default function SearchSkeleton() {
     return (
         <div className="space-y-4">

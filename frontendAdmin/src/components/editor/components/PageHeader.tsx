@@ -1,69 +1,46 @@
-import { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { AutoResizeTextarea } from './AutoResizeTextarea';
 
 interface PageHeaderProps {
-  initialTitle: string;
-  onTitleChange: (newTitle: string) => void;
+  value: string;
+  onChange: (newTitle: string) => void;
   onEnter: () => void;
+  onBlur?: () => void;
   isPageLoaded: boolean;
 }
 
 /**
- * 页面头部组件（标题编辑）
- * 性能优化：通过 memo 和内部 state 隔离标题输入导致的重绘，避免 Tiptap 主体频繁更新
+ * 页面头部纯展示组件。
+ * 只负责渲染标题输入框，不关心数据来源和同步时机。
  */
 export const PageHeader = memo(function PageHeader({
-  initialTitle,
-  onTitleChange,
+  value,
+  onChange,
   onEnter,
+  onBlur,
   isPageLoaded,
 }: PageHeaderProps) {
-  const [localTitle, setLocalTitle] = useState(initialTitle);
-  const [isEditing, setIsEditing] = useState(false);
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
-
-  if (initialTitle !== prevInitialTitle) {
-    setPrevInitialTitle(initialTitle);
-    if (!isEditing) {
-      setLocalTitle(initialTitle);
-    }
-  }
-
-  // 处理输入
-  const handleChange = useCallback((val: string) => {
-    setIsEditing(true);
-    setLocalTitle(val);
-    onTitleChange(val);
-  }, [onTitleChange]);
-
-  // 处理失焦
-  const handleBlur = useCallback(() => {
-    // 延迟重置编辑标志，给同步留出时间
-    setTimeout(() => {
-      setIsEditing(false);
-    }, 1200);
-  }, []);
 
   // 初始加载自动聚焦
   useEffect(() => {
-    if (isPageLoaded && initialTitle === '未命名') {
+    if (isPageLoaded && value === '未命名') {
       const timer = setTimeout(() => {
         titleTextareaRef.current?.focus();
         titleTextareaRef.current?.select();
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isPageLoaded, initialTitle]);
+  }, [isPageLoaded, value]);
 
   return (
     <div className="page-metadata">
       <AutoResizeTextarea
         textareaRef={titleTextareaRef}
-        value={localTitle}
-        onChange={handleChange}
+        value={value}
+        onChange={onChange}
         onEnter={onEnter}
-        onBlur={handleBlur}
+        onBlur={onBlur}
         placeholder="未命名"
         className="w-full text-4xl font-bold bg-transparent border-none outline-none resize-none
                    text-app-fg-deep placeholder:text-app-fg-light/40

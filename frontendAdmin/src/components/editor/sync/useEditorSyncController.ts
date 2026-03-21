@@ -6,10 +6,10 @@
  *   1. 监听编辑器 update 事件，标记需要 flush
  *   2. 防抖后触发 flushAndSync：从编辑器提取变更 → 写入 Store → 发起同步
  *   3. 管理页面切换时的初始化和清理
- *   4. 提供标题变更的同步入口
+ *   4. 暴露共享的同步调度器，供标题等其他控制器复用
  * 
  * 数据流：
- *   用户编辑 → editor.on('update') → needsEditorFlushRef = true → scheduleFlushAndSync()
+ *   用户编辑 → editor.on('update') → needsEditorFlushRef = true → scheduleSync()
  *   → 防抖 1s → flushAndSync()
  *     ├─ isAllDirty(editor) 检查是否需要全量同步
  *     ├─ readDirtyTrackerCandidateIds(editor) 读取候选 ID
@@ -19,7 +19,6 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import type { BlockData } from '@blog/types';
 import { hydrateToTiptap } from '../converter';
@@ -30,37 +29,35 @@ import {
 } from '../extensions/DirtyTrackerExtension';
 import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
 import { collectEditorSyncDraft } from './collectEditorSyncDraft';
-import { blockQueryKeys } from '@/hooks/useBlocksQuery';
-import { updateTreeNodeTitle } from '@/utils/treeHelpers';
-import type { PageTreeNode } from '@/api/blocks';
 
 const DEBOUNCE_MS = 1000; // 防抖延迟：1秒
 
 interface UseEditorSyncControllerParams {
   editor: Editor | null;
   pageId?: string;
-  page: BlockData | null;
-  blocks: BlockData[];
+  pageBlock: BlockData | null;
+  contentBlocks: BlockData[];
   isBlocksLoading: boolean;
   sync: (request: PreparedBlockSync) => void;
 }
 
 interface UseEditorSyncControllerResult {
-  scheduleTitleSync: (title: string) => void;
+  scheduleSync: () => void;
+  flushSync: () => void;
 }
 
 export function useEditorSyncController({
   editor,
   pageId,
-  page,
-  blocks,
+  pageBlock,
+  contentBlocks,
   isBlocksLoading,
   sync,
 }: UseEditorSyncControllerParams): UseEditorSyncControllerResult {
-  const queryClient = useQueryClient();
-  
   // 防抖定时器：延迟触发同步，避免频繁请求
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 已水合到 Store 的页面 ID：同页内避免重复 hydrate 覆盖本地 pending 状态
+  const hydratedPageRef = useRef<string | null>(null);
   // 已初始化的页面 ID：防止重复初始化
   const initializedPageRef = useRef<string | null>(null);
   // 是否需要从编辑器提取数据：标记编辑器有变更
@@ -88,7 +85,7 @@ export function useEditorSyncController({
       needsEditorFlushRef.current = false; // 重置标记
 
       const store = useBlockStore.getState();
-      const pageBlock = store.blocksById[pageId];
+      const currentPageBlock = store.blocksById[pageId];
       
       // 步骤 2：检查是否需要全量同步
       const needsFullSync = isAllDirty(editor);
@@ -112,12 +109,12 @@ export function useEditorSyncController({
       
       resetDirtyTracker(editor); // 清空候选集合和 isAllDirty 标记
 
-      if (pageBlock) {
+      if (currentPageBlock) {
         // 步骤 4：基于最终文档快照 diff 变更
         const draft = collectEditorSyncDraft({
           editor,
           pageId,
-          pageBlock,
+          pageBlock: currentPageBlock,
           candidateIds,
           blocksById: store.blocksById,
         });
@@ -141,7 +138,7 @@ export function useEditorSyncController({
    * 
    * 每次调用会重置定时器，确保在用户停止编辑 1 秒后才执行同步
    */
-  const scheduleFlushAndSync = useCallback(() => {
+  const scheduleSync = useCallback(() => {
     if (!pageId) {
       return;
     }
@@ -155,61 +152,22 @@ export function useEditorSyncController({
     syncTimerRef.current = setTimeout(flushAndSync, DEBOUNCE_MS);
   }, [flushAndSync, pageId]);
 
-  /**
-   * 标题变更同步入口（带乐观更新）
-   * 
-   * 流程：
-   *   1. 立即更新侧边栏缓存（乐观更新）
-   *   2. 调用 Store 的 applyPageTitleChange 更新标题
-   *   3. 触发防抖同步（会在 1 秒后发起 API 请求）
-   *   4. API 失败时 React Query 自动回滚缓存
-   */
-  const scheduleTitleSync = useCallback(
-    (title: string) => {
-      if (!pageId) {
-        return;
-      }
+  const flushSync = useCallback(() => {
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
 
-      // 乐观更新：立即更新侧边栏缓存
-      queryClient.setQueryData(
-        blockQueryKeys.pageTree(),
-        (old: { flatPages: BlockData[]; tree: PageTreeNode[] } | undefined) => {
-          if (!old) return old;
-          
-          return {
-            flatPages: old.flatPages.map((block) =>
-              block.id === pageId ? { ...block, props: { ...block.props, title } } : block
-            ),
-            tree: updateTreeNodeTitle(old.tree, pageId, title),
-          };
-        }
-      );
-
-      // 更新页面详情缓存
-      queryClient.setQueryData(
-        blockQueryKeys.pageDetail(pageId),
-        (old: BlockData | undefined) => {
-          if (!old) return old;
-          return { ...old, props: { ...old.props, title } };
-        }
-      );
-
-      // 更新 Store 中的标题
-      useBlockStore.getState().applyPageTitleChange(pageId, title);
-      
-      // 触发防抖同步
-      scheduleFlushAndSync();
-    },
-    [pageId, scheduleFlushAndSync, queryClient],
-  );
+    flushAndSync();
+  }, [flushAndSync]);
 
   /**
    * Effect 1: 页面数据水合
    * 
-   * 当页面或 blocks 数据加载完成后，将数据注入 Store
+   * 当页面数据加载完成后，将 page block 和正文 block 注入 Store
    */
   useEffect(() => {
-    if (!pageId || !page) {
+    if (!pageId || !pageBlock) {
       useBlockStore.getState().reset(); // 无页面时重置 Store
       return;
     }
@@ -218,9 +176,14 @@ export function useEditorSyncController({
       return;
     }
 
+    if (hydratedPageRef.current === pageId) {
+      return;
+    }
+
     // 将服务器数据水合到 Store
-    useBlockStore.getState().hydratePage(page, blocks);
-  }, [blocks, isBlocksLoading, page, pageId]);
+    useBlockStore.getState().hydratePage(pageBlock, contentBlocks);
+    hydratedPageRef.current = pageId;
+  }, [contentBlocks, isBlocksLoading, pageBlock, pageId]);
 
   /**
    * Effect 2: 页面切换时重置运行时状态
@@ -228,6 +191,7 @@ export function useEditorSyncController({
    * 清理旧页面的状态，防止数据污染
    */
   useEffect(() => {
+    hydratedPageRef.current = null; // 重置水合标记
     initializedPageRef.current = null; // 重置初始化标记
     needsEditorFlushRef.current = false; // 重置 flush 标记
 
@@ -244,13 +208,10 @@ export function useEditorSyncController({
   /**
    * Effect 3: 初始化编辑器内容
    * 
-   * 将 blocks 数据转换为 Tiptap 文档并注入编辑器
-   * 
-   * 注意：直接使用 blocks 参数，而不是从 Store 读取
-   * 因为 Store 的水合可能还没完成
+   * 将正文 block 转换为 Tiptap 文档并注入编辑器
    */
   useEffect(() => {
-    if (!editor || !pageId || !page || isBlocksLoading) {
+    if (!editor || !pageId || !pageBlock || isBlocksLoading) {
       return;
     }
 
@@ -260,20 +221,20 @@ export function useEditorSyncController({
     }
 
     const { blocksById } = useBlockStore.getState();
-    const pageBlock = blocksById[pageId];
-    if (!pageBlock) {
+    const storePageBlock = blocksById[pageId];
+    if (!storePageBlock) {
       return;
     }
 
-    const contentBlocks = pageBlock.contentIds
+    const editorContentBlocks = storePageBlock.contentIds
       .map((id) => blocksById[id])
       .filter((block): block is NonNullable<typeof block> => Boolean(block));
 
     // 转换为 Tiptap 文档格式并注入编辑器
-    editor.commands.setContent(hydrateToTiptap(contentBlocks), { emitUpdate: false });
+    editor.commands.setContent(hydrateToTiptap(editorContentBlocks), { emitUpdate: false });
     resetDirtyTracker(editor); // 清空候选 ID
     initializedPageRef.current = pageId; // 标记已初始化
-  }, [blocks, editor, isBlocksLoading, page, pageId]);
+  }, [contentBlocks, editor, isBlocksLoading, pageBlock, pageId]);
 
   /**
    * Effect 4: 监听编辑器更新事件
@@ -298,7 +259,7 @@ export function useEditorSyncController({
       // 标记编辑器有变更
       needsEditorFlushRef.current = true;
       // 触发防抖同步
-      scheduleFlushAndSync();
+      scheduleSync();
     };
 
     editor.on('update', handleEditorUpdate);
@@ -306,7 +267,7 @@ export function useEditorSyncController({
     return () => {
       editor.off('update', handleEditorUpdate);
     };
-  }, [editor, scheduleFlushAndSync]);
+  }, [editor, scheduleSync]);
 
   /**
    * Effect 5: 组件卸载时清理定时器
@@ -320,6 +281,7 @@ export function useEditorSyncController({
   }, []);
 
   return {
-    scheduleTitleSync,
+    scheduleSync,
+    flushSync,
   };
 }

@@ -25,12 +25,37 @@ import { hydrateToTiptap } from '../converter';
 import { 
   readDirtyTrackerCandidateIds, 
   resetDirtyTracker,
-  isAllDirty 
+  isAllDirty,
+  isStructureDirty,
 } from '../extensions/DirtyTrackerExtension';
 import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
 import { collectEditorSyncDraft } from './collectEditorSyncDraft';
 
 const DEBOUNCE_MS = 1000; // 防抖延迟：1秒
+const IDLE_TIMEOUT_MS = 1200;
+
+type IdleCallbackHandle = number;
+
+function scheduleIdleWork(callback: () => void): IdleCallbackHandle {
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    return window.requestIdleCallback(() => callback(), { timeout: IDLE_TIMEOUT_MS });
+  }
+
+  return globalThis.setTimeout(callback, 0);
+}
+
+function cancelIdleWork(handle: IdleCallbackHandle | null): void {
+  if (handle === null) {
+    return;
+  }
+
+  if (typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+    window.cancelIdleCallback(handle);
+    return;
+  }
+
+  globalThis.clearTimeout(handle);
+}
 
 interface UseEditorSyncControllerParams {
   editor: Editor | null;
@@ -56,6 +81,7 @@ export function useEditorSyncController({
 }: UseEditorSyncControllerParams): UseEditorSyncControllerResult {
   // 防抖定时器：延迟触发同步，避免频繁请求
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleFlushRef = useRef<IdleCallbackHandle | null>(null);
   // 已水合到 Store 的页面 ID：同页内避免重复 hydrate 覆盖本地 pending 状态
   const hydratedPageRef = useRef<string | null>(null);
   // 已初始化的页面 ID：防止重复初始化
@@ -89,6 +115,7 @@ export function useEditorSyncController({
       
       // 步骤 2：检查是否需要全量同步
       const needsFullSync = isAllDirty(editor);
+      const structureDirty = needsFullSync || isStructureDirty(editor);
       
       // 步骤 3：读取候选 ID（全量模式下会创建包含所有 ID 的集合）
       let candidateIds: Set<string>;
@@ -117,6 +144,7 @@ export function useEditorSyncController({
           pageBlock: currentPageBlock,
           candidateIds,
           blocksById: store.blocksById,
+          structureDirty,
         });
 
         // 步骤 5：如果有变更，批量写入 Store
@@ -133,6 +161,14 @@ export function useEditorSyncController({
     }
   }, [editor, pageId, sync]);
 
+  const scheduleIdleFlush = useCallback(() => {
+    cancelIdleWork(idleFlushRef.current);
+    idleFlushRef.current = scheduleIdleWork(() => {
+      idleFlushRef.current = null;
+      flushAndSync();
+    });
+  }, [flushAndSync]);
+
   /**
    * 调度 flush 和同步：防抖触发
    * 
@@ -148,9 +184,12 @@ export function useEditorSyncController({
       clearTimeout(syncTimerRef.current);
     }
 
-    // 1 秒后执行 flushAndSync
-    syncTimerRef.current = setTimeout(flushAndSync, DEBOUNCE_MS);
-  }, [flushAndSync, pageId]);
+    // 1 秒后将重活放到空闲窗口，尽量避开输入热路径
+    syncTimerRef.current = setTimeout(() => {
+      syncTimerRef.current = null;
+      scheduleIdleFlush();
+    }, DEBOUNCE_MS);
+  }, [pageId, scheduleIdleFlush]);
 
   const flushSync = useCallback(() => {
     if (syncTimerRef.current) {
@@ -158,6 +197,8 @@ export function useEditorSyncController({
       syncTimerRef.current = null;
     }
 
+    cancelIdleWork(idleFlushRef.current);
+    idleFlushRef.current = null;
     flushAndSync();
   }, [flushAndSync]);
 
@@ -200,6 +241,9 @@ export function useEditorSyncController({
       clearTimeout(syncTimerRef.current);
       syncTimerRef.current = null;
     }
+
+    cancelIdleWork(idleFlushRef.current);
+    idleFlushRef.current = null;
 
     // 清空 DirtyTracker 的候选 ID
     resetDirtyTracker(editor);
@@ -277,6 +321,8 @@ export function useEditorSyncController({
       if (syncTimerRef.current) {
         clearTimeout(syncTimerRef.current);
       }
+
+      cancelIdleWork(idleFlushRef.current);
     };
   }, []);
 

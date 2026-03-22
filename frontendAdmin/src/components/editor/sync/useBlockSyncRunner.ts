@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BlockData } from '@blog/types';
 import { syncBlocks } from '@/api/blocks';
@@ -31,39 +31,65 @@ function patchActivePageDetailCache(
 
 export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRunnerResult {
   const queryClient = useQueryClient();
+  const inFlightRef = useRef(false);
+  const needsResyncRef = useRef(false);
 
   const sync = useCallback(
     (request: PreparedBlockSync) => {
+      if (inFlightRef.current) {
+        needsResyncRef.current = true;
+        return;
+      }
+
+      inFlightRef.current = true;
       useSyncStore.getState().setSyncing(true);
+      let activeSnapshot = request.snapshot;
 
-      void syncBlocks(request.payload)
-        .then(async () => {
-          useBlockStore.getState().acknowledgeSync(request.snapshot);
+      const runSync = async (currentRequest: PreparedBlockSync): Promise<void> => {
+        activeSnapshot = currentRequest.snapshot;
+        await syncBlocks(currentRequest.payload);
+        useBlockStore.getState().acknowledgeSync(currentRequest.snapshot);
 
-          if (!activePageId) {
-            return;
-          }
+        if (!activePageId) {
+          return;
+        }
 
-          patchActivePageDetailCache(queryClient, activePageId);
+        patchActivePageDetailCache(queryClient, activePageId);
 
-          await Promise.all([
-            queryClient.invalidateQueries({
-              queryKey: blockQueryKeys.pageBlocks(activePageId),
-              refetchType: 'inactive',
-            }),
-            queryClient.invalidateQueries({
-              queryKey: blockQueryKeys.pageDetail(activePageId),
-              refetchType: 'inactive',
-            }),
-          ]);
-        })
-        .then(() => {
-          useSyncStore.getState().setSyncing(false);
-        })
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: blockQueryKeys.pageBlocks(activePageId),
+            refetchType: 'inactive',
+          }),
+          queryClient.invalidateQueries({
+            queryKey: blockQueryKeys.pageDetail(activePageId),
+            refetchType: 'inactive',
+          }),
+        ]);
+      };
+
+      const drainQueue = async () => {
+        let nextRequest: PreparedBlockSync | null = request;
+
+        while (nextRequest) {
+          needsResyncRef.current = false;
+          await runSync(nextRequest);
+          nextRequest = needsResyncRef.current
+            ? useBlockStore.getState().getSyncRequest()
+            : null;
+        }
+      };
+
+      void drainQueue()
         .catch((error: unknown) => {
+          useBlockStore.getState().releaseSyncRequest(activeSnapshot);
           const syncError = error instanceof Error ? error : new Error('同步失败');
           console.error('[BlockSync] 同步失败:', syncError.message);
           useSyncStore.getState().setError(true);
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+          useSyncStore.getState().setSyncing(false);
         });
     },
     [activePageId, queryClient],

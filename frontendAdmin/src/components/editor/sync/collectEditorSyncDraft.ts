@@ -18,10 +18,10 @@
 import type { Editor } from '@tiptap/core';
 import type { Block } from '@blog/types';
 import {
-  parseTiptapNodeToInlineContent,
-  parseTiptapNodeToProps,
-  parseTiptapNodeType,
-} from '../converter';
+  collectDocumentBlocks,
+  hasBlockChanged,
+  haveSameIds,
+} from '../utils/editorSyncDraft';
 import type { EditorBlockUpdateDraft, EditorSyncDraft } from '@/store/useBlockStore';
 
 interface CollectEditorSyncDraftParams {
@@ -30,48 +30,7 @@ interface CollectEditorSyncDraftParams {
   pageBlock: Block; // 当前页面的 block
   candidateIds: Set<string>; // DirtyTracker 收集的候选 ID
   blocksById: Record<string, Block>; // Store 中的 block 缓存
-}
-
-/**
- * 比较两个 ID 数组是否完全相同（顺序和内容）
- */
-function haveSameIds(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((id, index) => id === right[index]);
-}
-
-/**
- * 判断 block 是否真正发生了变更
- * 
- * 比较维度：
- *   1. metadata（type, parentId, path）
- *   2. content（InlineContent 数组）
- *   3. props（属性对象）
- * 
- * 注意：使用 JSON.stringify 进行快速比较，性能可优化
- */
-function hasBlockChanged(existingBlock: Block | undefined, nextBlock: EditorBlockUpdateDraft): boolean {
-  // 新增 block，肯定变更
-  if (!existingBlock) {
-    return true;
-  }
-
-  // 比较 metadata
-  if (
-    existingBlock.type !== nextBlock.metadata?.type ||
-    existingBlock.parentId !== nextBlock.metadata?.parentId ||
-    existingBlock.path !== nextBlock.metadata?.path
-  ) {
-    return true;
-  }
-
-  // 比较 content（使用 JSON.stringify 快速比较）
-  if (JSON.stringify(existingBlock.content) !== JSON.stringify(nextBlock.content)) {
-    return true;
-  }
-
-  // 比较 props（合并后比较）
-  const mergedProps = { ...existingBlock.props, ...nextBlock.props };
-  return JSON.stringify(existingBlock.props) !== JSON.stringify(mergedProps);
+  structureDirty: boolean;
 }
 
 /**
@@ -95,47 +54,25 @@ export function collectEditorSyncDraft({
   pageBlock,
   candidateIds,
   blocksById,
+  structureDirty,
 }: CollectEditorSyncDraftParams): EditorSyncDraft {
   // 收集结果
   const orderedBlockIds: string[] = []; // 文档中所有 block 的顺序
   const currentDocIdSet = new Set<string>(); // 当前文档中存在的 block ID
   const rawUpdates: EditorBlockUpdateDraft[] = []; // 候选 block 的原始数据
+  const remainingCandidateIds = new Set(candidateIds);
 
-  /**
-   * 步骤 1 & 2：遍历文档，收集 ID 和提取候选数据
-   * 
-   * 性能优化：一次遍历完成所有工作
-   */
-  editor.state.doc.descendants((node) => {
-    const id = node.attrs?.blockId;
-    if (typeof id !== 'string' || id.length === 0) {
-      return true; // 跳过没有 blockId 的节点
-    }
-
-    // 收集 ID 和顺序（用于结构检测）
-    orderedBlockIds.push(id);
-    currentDocIdSet.add(id);
-
-    // 判断是否需要提取数据：候选 ID 或新 block
-    const shouldExtract = candidateIds.has(id) || !blocksById[id];
-    if (!shouldExtract) {
-      return true; // 跳过不需要提取的节点
-    }
-
-    // 提取节点数据
-    const jsonNode = node.toJSON();
-    rawUpdates.push({
-      id,
-      content: parseTiptapNodeToInlineContent(jsonNode), // 提取 InlineContent
-      props: parseTiptapNodeToProps(jsonNode), // 提取 props
-      metadata: {
-        type: parseTiptapNodeType(node.type.name), // 转换节点类型
-        parentId: pageId,
-        path: `${pageBlock.path}${id}/`, // 构造路径
-      },
-    });
-
-    return true; // 继续遍历
+  collectDocumentBlocks({
+    content: editor.getJSON().content,
+    pageId,
+    pagePath: pageBlock.path,
+    candidateIds,
+    blocksById,
+    orderedBlockIds,
+    currentDocIdSet,
+    rawUpdates,
+    remainingCandidateIds,
+    collectStructure: structureDirty,
   });
 
   /**
@@ -150,7 +87,9 @@ export function collectEditorSyncDraft({
    * 
    * 在旧结构（pageBlock.contentIds）中存在，但在新文档中不存在
    */
-  const deletedIds = pageBlock.contentIds.filter((id) => !currentDocIdSet.has(id));
+  const deletedIds = structureDirty
+    ? pageBlock.contentIds.filter((id) => !currentDocIdSet.has(id))
+    : [];
 
   /**
    * 步骤 5：检测结构变化
@@ -160,7 +99,7 @@ export function collectEditorSyncDraft({
   return {
     updates,
     deletedIds,
-    pageStructure: haveSameIds(pageBlock.contentIds, orderedBlockIds)
+    pageStructure: !structureDirty || haveSameIds(pageBlock.contentIds, orderedBlockIds)
       ? undefined // 结构未变化
       : {
         pageId,

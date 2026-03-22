@@ -5,7 +5,7 @@
  * 设计原则：
  *  1. 只保存前端当前页面的 canonical block cache。
  *  2. 只暴露“标题更新”和“编辑器 flush 提交”两个高层入口。
- *  3. 待同步状态使用单一 pendingChangesById 维护，避免多套 Set / Map 分散职责。
+ *  3. dirty 状态与同步队列状态分离：pending 记录本地脏数据，queued 记录已入队 revision。
  */
 
 import { create } from 'zustand';
@@ -26,6 +26,7 @@ interface PendingChange {
 
 // 同步快照：记录本次同步的版本号
 export interface BlockSyncSnapshot {
+  batchId: number; // 同步批次版本
   revisionsById: Record<string, number>; // block ID → 版本号
 }
 
@@ -62,7 +63,9 @@ export interface EditorSyncDraft {
 interface BlockStoreState {
   blocksById: Record<string, Block>; // block 缓存
   pendingChangesById: Record<string, PendingChange>; // 待同步变更
+  queuedRevisionsById: Record<string, number>; // 已入队/飞行中的 revision
   revisionCounter: number; // 全局版本计数器
+  syncBatchCounter: number; // 同步批次计数器
 }
 
 // Store 操作
@@ -120,6 +123,15 @@ interface BlockStoreActions {
    *   3. 保留版本号不匹配的记录（新变更）
    */
   acknowledgeSync: (snapshot: BlockSyncSnapshot) => void;
+
+  /**
+   * 释放失败批次
+   *
+   * 流程：
+   *   1. 根据 snapshot 释放对应 queued revision
+   *   2. 保留 pending 变更，等待下一次重新入队
+   */
+  releaseSyncRequest: (snapshot: BlockSyncSnapshot) => void;
 }
 
 export type BlockStore = BlockStoreState & BlockStoreActions;
@@ -188,7 +200,9 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
   // 初始状态
   blocksById: {},
   pendingChangesById: {},
+  queuedRevisionsById: {},
   revisionCounter: 0,
+  syncBatchCounter: 0,
 
   /**
    * 水合页面数据
@@ -199,7 +213,9 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     set({
       blocksById: normalizeBlocks(pageBlock, contentBlocks),
       pendingChangesById: {}, // 清空待同步状态
+      queuedRevisionsById: {},
       revisionCounter: 0, // 重置版本号
+      syncBatchCounter: 0,
     });
   },
 
@@ -212,7 +228,9 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     set({
       blocksById: {},
       pendingChangesById: {},
+      queuedRevisionsById: {},
       revisionCounter: 0,
+      syncBatchCounter: 0,
     });
   },
 
@@ -378,13 +396,17 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
    * @returns PreparedBlockSync 或 null（无待同步数据）
    */
   getSyncRequest: () => {
-    const { blocksById, pendingChangesById } = get();
+    const { blocksById, pendingChangesById, queuedRevisionsById, syncBatchCounter } = get();
     const updatedBlocks: BlockUpdateDelta[] = [];
     const deletedBlocks: string[] = [];
     const revisionsById: Record<string, number> = {};
 
     // 遍历所有 pending 变更
     for (const [id, change] of Object.entries(pendingChangesById)) {
+      if (queuedRevisionsById[id] === change.revision) {
+        continue;
+      }
+
       // 记录版本号（用于确认同步）
       revisionsById[id] = change.revision;
 
@@ -408,12 +430,22 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
       return null;
     }
 
+    const batchId = syncBatchCounter + 1;
+    set((state) => ({
+      queuedRevisionsById: {
+        ...state.queuedRevisionsById,
+        ...revisionsById,
+      },
+      syncBatchCounter: batchId,
+    }));
+
     return {
       payload: {
         updated_blocks: updatedBlocks,
         deleted_blocks: deletedBlocks,
       },
       snapshot: {
+        batchId,
         revisionsById, // 版本快照
       },
     };
@@ -429,19 +461,23 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     set((state) => {
       let didChange = false;
       const nextPending = { ...state.pendingChangesById };
+      const nextQueued = { ...state.queuedRevisionsById };
 
       // 遍历快照中的版本号
       for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
         const currentChange = nextPending[id];
+        const queuedRevision = nextQueued[id];
         
         // 版本号不匹配，说明有新变更，不清除
-        if (!currentChange || currentChange.revision !== revision) {
-          continue;
+        if (queuedRevision === revision) {
+          delete nextQueued[id];
+          didChange = true;
         }
 
-        // 版本号匹配，清除 pending 记录
-        delete nextPending[id];
-        didChange = true;
+        if (currentChange && currentChange.revision === revision) {
+          delete nextPending[id];
+          didChange = true;
+        }
       }
 
       if (!didChange) {
@@ -450,6 +486,31 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
 
       return {
         pendingChangesById: nextPending,
+        queuedRevisionsById: nextQueued,
+      };
+    });
+  },
+
+  releaseSyncRequest: (snapshot) => {
+    set((state) => {
+      let didChange = false;
+      const nextQueued = { ...state.queuedRevisionsById };
+
+      for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
+        if (nextQueued[id] !== revision) {
+          continue;
+        }
+
+        delete nextQueued[id];
+        didChange = true;
+      }
+
+      if (!didChange) {
+        return state;
+      }
+
+      return {
+        queuedRevisionsById: nextQueued,
       };
     });
   },

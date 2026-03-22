@@ -16,7 +16,6 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
   const { sync } = useBlockSyncRunner(pageId ?? null);
   const { pageBlock, contentBlocks } = splitPageDocumentBlocks(blocks, pageId);
-  console.log("渲染Tiptap", blocks)
   const editor = useEditor(
     {
       extensions: editorExtensions,

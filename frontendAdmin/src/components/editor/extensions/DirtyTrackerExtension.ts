@@ -18,13 +18,18 @@
  */
 
 import { Extension, type Editor } from '@tiptap/core';
-import { Plugin, PluginKey, type Selection, type Transaction } from '@tiptap/pm/state';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import {
+  collectSelectionCandidateIds,
+  collectTransactionCandidateIds,
+  hasStructureChanged,
+} from '../utils/dirtyTracker';
 
 // Plugin 状态：存储候选 ID 集合和全量标记
 interface DirtyTrackerPluginState {
   candidateIds: Set<string>; // 可能变更的 block ID 集合
   isAllDirty: boolean; // 是否需要全量同步（大文档保护）
+  structureDirty: boolean; // 页面结构是否变化（增删、重排、拆合块）
 }
 
 // Plugin 元数据：用于控制 reset
@@ -33,189 +38,6 @@ interface DirtyTrackerMeta {
 }
 
 const DIRTY_TRACKER_PLUGIN_KEY = new PluginKey<DirtyTrackerPluginState>('dirtyTracker');
-
-// 性能保护阈值：变更范围超过文档长度的 50% 时触发全量同步
-const CHANGE_RATIO_THRESHOLD = 0.5;
-const CHANGE_NUMBER_THRESHOLD = 200; // 经验值
-
-/**
- * 工具函数：限制位置在文档范围内
- * 
- * 防止越界访问导致错误
- */
-function clampPosition(doc: ProseMirrorNode, pos: number): number {
-  return Math.max(0, Math.min(pos, doc.content.size));
-}
-
-/**
- * 工具函数：获取包含指定位置的最近 block ID
- * 
- * 从指定位置向上遍历节点树，找到第一个有 blockId 的节点
- * 
- * @param doc - ProseMirror 文档
- * @param rawPos - 原始位置
- * @returns block ID 或 null
- */
-function getEnclosingBlockId(doc: ProseMirrorNode, rawPos: number): string | null {
-  const pos = clampPosition(doc, rawPos);
-  const $pos = doc.resolve(pos); // 解析位置为 ResolvedPos
-
-  // 从当前深度向上遍历
-  for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    const node = $pos.node(depth);
-    const id = node.attrs?.blockId;
-    if (typeof id === 'string' && id.length > 0) {
-      return id; // 找到第一个有 blockId 的节点
-    }
-  }
-
-  return null; // 没有找到
-}
-
-/**
- * 工具函数：收集范围内所有 block ID
- * 
- * 遍历指定范围内的所有节点，收集有 blockId 的节点
- * 
- * @param doc - ProseMirror 文档
- * @param from - 起始位置
- * @param to - 结束位置
- * @param target - 目标集合（会被修改）
- */
-function collectIdsFromRange(doc: ProseMirrorNode, from: number, to: number, target: Set<string>) {
-  doc.nodesBetween(clampPosition(doc, from), clampPosition(doc, to), (node) => {
-    const id = node.attrs?.blockId;
-    if (typeof id === 'string' && id.length > 0) {
-      target.add(id);
-    }
-    return true; // 继续遍历
-  });
-}
-
-/**
- * 工具函数：收集边界位置的候选 ID
- * 
- * 收集 from, to 及其前后位置的包含 block
- * 这样可以捕获边界编辑（如在段落开头/结尾输入）
- * 
- * @param doc - ProseMirror 文档
- * @param from - 起始位置
- * @param to - 结束位置
- * @param target - 目标集合（会被修改）
- */
-function collectBoundaryCandidateIds(doc: ProseMirrorNode, from: number, to: number, target: Set<string>) {
-  const boundaryPositions = [from, to, from - 1, to + 1]; // 边界及前后位置
-  for (const pos of boundaryPositions) {
-    const id = getEnclosingBlockId(doc, pos);
-    if (id) {
-      target.add(id);
-    }
-  }
-}
-
-/**
- * 工具函数：收集范围的候选 ID（范围 + 边界）
- * 
- * 组合策略：
- *   1. 如果 from !== to，收集范围内所有 block
- *   2. 收集边界位置的 block
- * 
- * @param doc - ProseMirror 文档
- * @param from - 起始位置
- * @param to - 结束位置
- * @param target - 目标集合（会被修改）
- */
-function collectRangeCandidateIds(doc: ProseMirrorNode, from: number, to: number, target: Set<string>) {
-  // 如果有范围（非光标），收集范围内所有 block
-  if (from !== to) {
-    collectIdsFromRange(doc, from, to, target);
-  }
-
-  // 收集边界位置的 block
-  collectBoundaryCandidateIds(doc, from, to, target);
-}
-
-/**
- * 工具函数：收集 Selection 的候选 ID
- * 
- * 处理用户选区：
- *   1. 如果有选区（非空），收集选区内所有 block
- *   2. 收集选区边界的 block
- * 
- * @param doc - ProseMirror 文档
- * @param selection - 用户选区
- * @param target - 目标集合（会被修改）
- */
-function collectSelectionCandidateIds(doc: ProseMirrorNode, selection: Selection, target: Set<string>) {
-  const { from, to, empty } = selection;
-
-  // 如果有选区（非空），收集选区内所有 block
-  if (!empty) {
-    collectIdsFromRange(doc, from, to, target);
-  }
-
-  // 收集选区边界的 block
-  collectBoundaryCandidateIds(doc, from, to, target);
-}
-
-/**
- * 工具函数：收集 Transaction 的候选 ID（带性能保护）
- * 
- * 遍历事务的所有 Step，收集变更范围的候选 ID
- * 
- * 策略：
- *   1. 遍历每个 Step 的 StepMap
- *   2. 对旧文档的变更范围收集 ID（删除场景）
- *   3. 对新文档的变更范围收集 ID（新增/修改场景）
- * 
- * 性能保护：
- *   - 如果变更范围超过文档长度的 50%，返回 true（触发 isAllDirty）
- * 
- * @param tr - ProseMirror 事务
- * @param target - 目标集合（会被修改）
- * @returns 是否超过阈值（需要触发 isAllDirty）
- */
-function collectTransactionCandidateIds(tr: Transaction, target: Set<string>): boolean {
-  const docSize = tr.doc.content.size;
-  if (docSize === 0) return false;
-
-  let totalChangeRange = 0;
-  // 经验值如果太多了也直接
-  if (tr.steps.length > CHANGE_NUMBER_THRESHOLD) {
-    return true
-  }
-
-  // 遍历所有 steps，累计变更范围
-  for (let stepIndex = 0; stepIndex < tr.steps.length; stepIndex++) {
-    const step = tr.steps[stepIndex];
-    const stepMap = step.getMap();
-    const oldDoc = tr.docs[stepIndex] ?? tr.before;
-    const newDoc = stepIndex + 1 < tr.docs.length ? tr.docs[stepIndex + 1] : tr.doc;
-
-    // 遍历 StepMap 的所有变更范围
-    stepMap.forEach((oldStart, oldEnd, newStart, newEnd) => {
-      // 累计变更范围（取旧文档和新文档的最大值）
-      totalChangeRange += Math.max(oldEnd - oldStart, newEnd - newStart);
-
-      // 快速检查：如果变更范围超过阈值，立即返回
-      if (totalChangeRange > docSize * CHANGE_RATIO_THRESHOLD) {
-        return true; // 触发 isAllDirty
-      }
-
-      // 收集旧文档的变更范围（处理删除）
-      collectRangeCandidateIds(oldDoc, oldStart, oldEnd, target);
-      // 收集新文档的变更范围（处理新增/修改）
-      collectRangeCandidateIds(newDoc, newStart, newEnd, target);
-    });
-
-    // 每个 step 后检查一次
-    if (totalChangeRange > docSize * CHANGE_RATIO_THRESHOLD) {
-      return true;
-    }
-  }
-
-  return false; // 未超过阈值
-}
 
 /**
  * 工具函数：获取 Plugin 状态
@@ -239,6 +61,15 @@ export function isAllDirty(editor: Editor | null): boolean {
 
   const pluginState = getDirtyTrackerState(editor);
   return pluginState?.isAllDirty ?? false;
+}
+
+export function isStructureDirty(editor: Editor | null): boolean {
+  if (!editor) {
+    return false;
+  }
+
+  const pluginState = getDirtyTrackerState(editor);
+  return pluginState?.structureDirty ?? false;
 }
 
 /**
@@ -281,8 +112,11 @@ export function resetDirtyTracker(editor: Editor | null): void {
   }
 
   const pluginState = getDirtyTrackerState(editor);
-  // 如果没有候选 ID 且不是 isAllDirty，跳过（避免不必要的事务）
-  if (!pluginState || (pluginState.candidateIds.size === 0 && !pluginState.isAllDirty)) {
+  // 如果没有候选 ID 且不是 isAllDirty / structureDirty，跳过（避免不必要的事务）
+  if (
+    !pluginState ||
+    (pluginState.candidateIds.size === 0 && !pluginState.isAllDirty && !pluginState.structureDirty)
+  ) {
     return;
   }
 
@@ -317,6 +151,7 @@ export const DirtyTrackerExtension = Extension.create({
           init: () => ({
             candidateIds: new Set<string>(),
             isAllDirty: false,
+            structureDirty: false,
           }),
 
           /**
@@ -345,6 +180,7 @@ export const DirtyTrackerExtension = Extension.create({
               return {
                 candidateIds: new Set<string>(),
                 isAllDirty: false,
+                structureDirty: false,
               };
             }
 
@@ -364,6 +200,8 @@ export const DirtyTrackerExtension = Extension.create({
 
             // 4. 收集候选 ID
             const nextCandidateIds = new Set(pluginState.candidateIds); // 保留旧候选 ID
+            const structureDirty =
+              pluginState.structureDirty || hasStructureChanged(oldState.doc, newState.doc);
 
             // 4.1 收集 Transaction 的变更范围（带性能保护）
             const exceedsThreshold = collectTransactionCandidateIds(tr, nextCandidateIds);
@@ -372,6 +210,7 @@ export const DirtyTrackerExtension = Extension.create({
               return {
                 candidateIds: new Set<string>(), // 清空候选 ID（节省内存）
                 isAllDirty: true,
+                structureDirty: true,
               };
             }
 
@@ -384,6 +223,7 @@ export const DirtyTrackerExtension = Extension.create({
             return {
               candidateIds: nextCandidateIds,
               isAllDirty: false,
+              structureDirty,
             };
           },
         },

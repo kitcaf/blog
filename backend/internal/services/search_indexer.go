@@ -15,26 +15,41 @@ import (
 const (
 	// Redis Stream 名称
 	StreamKeyBlockIndex = "stream:block:index"
+	// 死信 Stream 名称
+	StreamKeyBlockIndexDLQ = "stream:block:index:dlq"
 	// Consumer Group 名称
 	ConsumerGroupIndex = "indexer-group"
 	// Consumer 名称
 	ConsumerNameIndex = "indexer-1"
 
-	indexActionUpsertBlock  = "upsert_block"
-	indexActionDeleteBlock  = "delete_block"
-	indexActionDeleteBlocks = "delete_blocks"
-	indexActionDeletePage   = "delete_page"
-	indexActionReindexPage  = "reindex_page"
+	indexActionBatchUpsert = "batch_upsert"
+	indexActionDeletePage  = "delete_page"
 )
 
-const pendingRetryIdle = time.Minute
+const (
+	pendingRetryIdle = time.Minute
+	maxIndexRetry    = 5
+)
+
+// BlockIndexData 单个 Block 的索引数据
+type BlockIndexData struct {
+	BlockID         uuid.UUID  `json:"block_id"`
+	PageID          uuid.UUID  `json:"page_id"`
+	UserID          uuid.UUID  `json:"user_id"`
+	BlockType       string     `json:"block_type"`
+	BlockOrder      int        `json:"block_order"`
+	Content         string     `json:"content"`
+	SourceUpdatedAt time.Time  `json:"source_updated_at"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+}
 
 // IndexMessage 索引消息结构
 type IndexMessage struct {
-	Action   string      `json:"action"`
-	BlockID  *uuid.UUID  `json:"block_id,omitempty"`
-	BlockIDs []uuid.UUID `json:"block_ids,omitempty"`
-	PageID   *uuid.UUID  `json:"page_id,omitempty"`
+	Action    string           `json:"action"`
+	IndexData []BlockIndexData `json:"index_data,omitempty"`
+	DeleteIDs []uuid.UUID      `json:"delete_ids,omitempty"`
+	PageID    *uuid.UUID       `json:"page_id,omitempty"`
+	Retry     int              `json:"retry,omitempty"`
 }
 
 // SearchIndexer 搜索索引器（异步处理）
@@ -74,27 +89,21 @@ func (si *SearchIndexer) Stop() {
 	si.cancel()
 }
 
-func (si *SearchIndexer) PublishBlockUpsertTask(ctx context.Context, blockID uuid.UUID) error {
-	return si.publishTask(ctx, IndexMessage{Action: indexActionUpsertBlock, BlockID: &blockID})
-}
-
-func (si *SearchIndexer) PublishBlockDeleteTask(ctx context.Context, blockID uuid.UUID) error {
-	return si.publishTask(ctx, IndexMessage{Action: indexActionDeleteBlock, BlockID: &blockID})
-}
-
-func (si *SearchIndexer) PublishBlockBatchDeleteTask(ctx context.Context, blockIDs []uuid.UUID) error {
-	if len(blockIDs) == 0 {
+// PublishBatchIndexTask 发布批量索引任务（传递完整数据）
+func (si *SearchIndexer) PublishBatchIndexTask(ctx context.Context, indexData []BlockIndexData, deleteIDs []uuid.UUID) error {
+	if len(indexData) == 0 && len(deleteIDs) == 0 {
 		return nil
 	}
-	return si.publishTask(ctx, IndexMessage{Action: indexActionDeleteBlocks, BlockIDs: blockIDs})
+	return si.publishTask(ctx, IndexMessage{
+		Action:    indexActionBatchUpsert,
+		IndexData: indexData,
+		DeleteIDs: deleteIDs,
+	})
 }
 
+// PublishPageDeleteTask 发布页面删除任务
 func (si *SearchIndexer) PublishPageDeleteTask(ctx context.Context, pageID uuid.UUID) error {
 	return si.publishTask(ctx, IndexMessage{Action: indexActionDeletePage, PageID: &pageID})
-}
-
-func (si *SearchIndexer) PublishPageReindexTask(ctx context.Context, pageID uuid.UUID) error {
-	return si.publishTask(ctx, IndexMessage{Action: indexActionReindexPage, PageID: &pageID})
 }
 
 func (si *SearchIndexer) publishTask(ctx context.Context, msg IndexMessage) error {
@@ -215,32 +224,14 @@ func (si *SearchIndexer) handleMessage(message redis.XMessage) {
 
 	var err error
 	switch msg.Action {
-	case indexActionUpsertBlock:
-		if msg.BlockID == nil {
-			err = fmt.Errorf("missing block_id")
-			break
-		}
-		err = si.searchService.IndexBlock(ctx, *msg.BlockID)
-	case indexActionDeleteBlock:
-		if msg.BlockID == nil {
-			err = fmt.Errorf("missing block_id")
-			break
-		}
-		err = si.searchService.DeleteBlockIndex(ctx, *msg.BlockID)
-	case indexActionDeleteBlocks:
-		err = si.searchService.BatchDeleteBlockIndexes(ctx, msg.BlockIDs)
+	case indexActionBatchUpsert:
+		err = si.searchService.BatchUpsertIndexes(ctx, msg.IndexData, msg.DeleteIDs)
 	case indexActionDeletePage:
 		if msg.PageID == nil {
 			err = fmt.Errorf("missing page_id")
 			break
 		}
 		err = si.searchService.DeleteBlockIndexesByPageID(ctx, *msg.PageID)
-	case indexActionReindexPage:
-		if msg.PageID == nil {
-			err = fmt.Errorf("missing page_id")
-			break
-		}
-		err = si.searchService.ReindexPage(ctx, *msg.PageID)
 	default:
 		log.Printf("Unknown action: %s", msg.Action)
 		si.ackMessage(message.ID)
@@ -248,13 +239,52 @@ func (si *SearchIndexer) handleMessage(message redis.XMessage) {
 	}
 
 	if err != nil {
-		log.Printf("Failed to process message %s (action=%s): %v", message.ID, msg.Action, err)
+		si.handleMessageFailure(message, msg, err)
 		return
 	}
 
-	// 成功处理，ACK 消息。
-	// 失败消息会保留在 pending 列表，后续由 reclaimPendingMessages 重新认领。
 	si.ackMessage(message.ID)
+}
+
+func (si *SearchIndexer) handleMessageFailure(message redis.XMessage, msg IndexMessage, processErr error) {
+	log.Printf("Failed to process message %s (action=%s, retry=%d): %v", message.ID, msg.Action, msg.Retry, processErr)
+
+	if msg.Retry >= maxIndexRetry {
+		if err := si.publishDeadLetter(si.ctx, msg, processErr); err != nil {
+			log.Printf("Failed to publish dead-letter message %s: %v", message.ID, err)
+			return
+		}
+		si.ackMessage(message.ID)
+		return
+	}
+
+	msg.Retry++
+	if err := si.publishTask(si.ctx, msg); err != nil {
+		log.Printf("Failed to republish message %s for retry: %v", message.ID, err)
+		return
+	}
+
+	si.ackMessage(message.ID)
+}
+
+func (si *SearchIndexer) publishDeadLetter(ctx context.Context, msg IndexMessage, processErr error) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal dead-letter message: %w", err)
+	}
+
+	_, err = si.rdb.XAdd(ctx, &redis.XAddArgs{
+		Stream: StreamKeyBlockIndexDLQ,
+		Values: map[string]interface{}{
+			"data":  string(data),
+			"error": processErr.Error(),
+		},
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("failed to publish dead-letter message: %w", err)
+	}
+
+	return nil
 }
 
 // ackMessage 确认消息

@@ -58,13 +58,6 @@ func (r *SearchRepository) UpsertBlockIndex(ctx context.Context, index *models.B
 	).Error
 }
 
-// DeleteBlockIndex 删除 Block 索引
-func (r *SearchRepository) DeleteBlockIndex(ctx context.Context, blockID uuid.UUID) error {
-	return r.db.WithContext(ctx).
-		Where("block_id = ?", blockID).
-		Delete(&models.BlockSearchIndex{}).Error
-}
-
 // BatchDeleteBlockIndexes 批量删除 Block 索引
 func (r *SearchRepository) BatchDeleteBlockIndexes(ctx context.Context, blockIDs []uuid.UUID) error {
 	if len(blockIDs) == 0 {
@@ -218,48 +211,4 @@ func tokenizeSearchQuery(query string) []string {
 
 	flush()
 	return tokens
-}
-
-// GetBlockIndexByID 根据 BlockID 获取索引
-func (r *SearchRepository) GetBlockIndexByID(ctx context.Context, blockID uuid.UUID) (*models.BlockSearchIndex, error) {
-	var index models.BlockSearchIndex
-	err := r.db.WithContext(ctx).
-		Where("block_id = ?", blockID).
-		First(&index).Error
-
-	if err != nil {
-		return nil, err
-	}
-	return &index, nil
-}
-
-// CountBlockIndexesByPage 统计某个 Page 下的索引数量
-func (r *SearchRepository) CountBlockIndexesByPage(ctx context.Context, pageID uuid.UUID) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).
-		Model(&models.BlockSearchIndex{}).
-		Where("page_id = ?", pageID).
-		Count(&count).Error
-	return count, err
-}
-
-// GetBlockIndexesByPage 获取某个 Page 下的所有索引
-func (r *SearchRepository) GetBlockIndexesByPage(ctx context.Context, pageID uuid.UUID) ([]*models.BlockSearchIndex, error) {
-	var indexes []*models.BlockSearchIndex
-	err := r.db.WithContext(ctx).
-		Where("page_id = ?", pageID).
-		Order("block_order ASC").
-		Find(&indexes).Error
-	return indexes, err
-}
-
-// UpdatePageInfoForBlocks 批量更新某个 Page 下所有 Block 的 Page 信息
-// 用于 Page 标题、图标等信息变更时同步更新索引
-// 注意：由于我们不冗余 Page 信息，这个方法暂时不需要
-// 保留此方法以备将来需要更新其他 Page 级字段
-func (r *SearchRepository) UpdatePageInfoForBlocks(ctx context.Context, pageID uuid.UUID, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).
-		Model(&models.BlockSearchIndex{}).
-		Where("page_id = ?", pageID).
-		Updates(updates).Error
 }

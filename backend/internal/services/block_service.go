@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"blog-backend/internal/models"
 	"blog-backend/internal/repository"
+	pkgerrors "blog-backend/pkg/errors"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -107,15 +110,72 @@ func (s *BlockService) UpdatePage(userID uuid.UUID, block *models.Block) error {
 		return err
 	}
 
+	// 页面更新时，异步重新索引整个页面
 	if s.searchIndexer != nil && block.Type == "page" {
 		go func(pageID uuid.UUID) {
-			if err := s.searchIndexer.PublishPageReindexTask(context.Background(), pageID); err != nil {
+			// 获取页面下的所有 Block 并重新索引
+			if err := s.publishPageReindexTask(context.Background(), userID, pageID); err != nil {
 				log.Printf("Failed to publish page reindex task for page %s: %v", pageID, err)
 			}
 		}(block.ID)
 	}
 
 	return nil
+}
+
+// publishPageReindexTask 发布页面重新索引任务
+func (s *BlockService) publishPageReindexTask(ctx context.Context, userID, pageID uuid.UUID) error {
+	// 获取页面信息
+	page, err := s.blockRepo.FindByID(userID, pageID)
+	if err != nil {
+		return err
+	}
+
+	// 获取页面下的所有 Block
+	blocks, err := s.blockRepo.FindByPath(userID, page.Path)
+	if err != nil {
+		return err
+	}
+
+	// 构建 BlockOrder 映射
+	orderMap := make(map[uuid.UUID]int)
+	for _, block := range blocks {
+		var contentIDs []string
+		if err := json.Unmarshal(block.ContentIDs, &contentIDs); err == nil {
+			for idx, id := range contentIDs {
+				if childID, parseErr := uuid.Parse(id); parseErr == nil {
+					orderMap[childID] = idx
+				}
+			}
+		}
+	}
+
+	// 构建索引数据
+	indexData := make([]BlockIndexData, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Type == "root" || block.Type == "folder" {
+			continue
+		}
+
+		content, err := extractTextContent(block.Properties)
+		if err != nil {
+			continue
+		}
+
+		indexData = append(indexData, BlockIndexData{
+			BlockID:         block.ID,
+			PageID:          pageID,
+			UserID:          userID,
+			BlockType:       block.Type,
+			BlockOrder:      orderMap[block.ID],
+			Content:         content,
+			SourceUpdatedAt: block.UpdatedAt,
+			PublishedAt:     page.PublishedAt,
+		})
+	}
+
+	// 发布索引任务
+	return s.searchIndexer.PublishBatchIndexTask(ctx, indexData, nil)
 }
 
 // DeletePage 删除页面（软删除当前节点，级联软删子节点，并从父节点 content_ids 移除）
@@ -160,15 +220,28 @@ func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) erro
 
 // SyncBlocks 增量同步 Block 数据（带用户隔离）
 // 核心逻辑：
-// 1. 批量 UPSERT 更新/新增的块
-// 2. 软删除指定的块
-// 3. 收集所有受影响的父块 ID
-// 4. 批量更新父块的 content_ids（基于实际子块查询）
-// 5. 异步发布索引任务到 Redis Stream（不阻塞用户操作）
+// 1. 快速验证数据合法性（防止恶意数据）
+// 2. 批量 UPSERT 更新/新增的块
+// 3. 软删除指定的块
+// 4. 收集所有受影响的父块 ID
+// 5. 批量更新父块的 content_ids（基于实际子块查询）
+// 6. 异步发布索引任务到 Redis Stream（传递完整数据，不阻塞用户操作）
 func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
 	ctx := context.Background()
-	affectedParents := make(map[uuid.UUID]bool)
 
+	// 1. 快速验证数据合法性
+	if err := quickValidateBlocks(userID, updatedBlocks); err != nil {
+		return err
+	}
+
+	// 2. 解析 PageID（所有 Block 必须属于同一个 Page）
+	pageID, err := s.resolveSyncPageID(ctx, userID, updatedBlocks, deletedIDs)
+	if err != nil {
+		return err
+	}
+
+	// 3. 收集受影响的父节点
+	affectedParents := make(map[uuid.UUID]bool)
 	if len(updatedBlocks) > 0 {
 		for _, block := range updatedBlocks {
 			if block.ParentID != nil {
@@ -179,33 +252,12 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 		if err := s.blockRepo.Upsert(userID, updatedBlocks); err != nil {
 			return err
 		}
-
-		if s.searchIndexer != nil {
-			for _, block := range updatedBlocks {
-				switch block.Type {
-				case "root", "folder":
-					continue
-				case "page":
-					go func(pageID uuid.UUID) {
-						if err := s.searchIndexer.PublishPageReindexTask(context.Background(), pageID); err != nil {
-							log.Printf("Failed to publish page reindex task for page %s: %v", pageID, err)
-						}
-					}(block.ID)
-				default:
-					go func(blockID uuid.UUID) {
-						if err := s.searchIndexer.PublishBlockUpsertTask(context.Background(), blockID); err != nil {
-							log.Printf("Failed to publish index task for block %s: %v", blockID, err)
-						}
-					}(block.ID)
-				}
-			}
-		}
 	}
 
 	if len(deletedIDs) > 0 {
 		for _, id := range deletedIDs {
-			block, err := s.blockRepo.FindByID(userID, id)
-			if err == nil && block.ParentID != nil {
+			block, findErr := s.blockRepo.FindByID(userID, id)
+			if findErr == nil && block.ParentID != nil {
 				affectedParents[*block.ParentID] = true
 			}
 		}
@@ -213,27 +265,29 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 		if err := s.blockRepo.SoftDelete(userID, deletedIDs); err != nil {
 			return err
 		}
-
-		if s.searchIndexer != nil {
-			go func(ids []uuid.UUID) {
-				if err := s.searchIndexer.PublishBlockBatchDeleteTask(context.Background(), ids); err != nil {
-					log.Printf("Failed to publish batch delete search index task: %v", err)
-				}
-			}(append([]uuid.UUID(nil), deletedIDs...))
-		}
 	}
 
+	// 4. 更新父节点的 content_ids
 	if len(affectedParents) > 0 {
 		parentIDs := make([]uuid.UUID, 0, len(affectedParents))
 		for parentID := range affectedParents {
 			parentIDs = append(parentIDs, parentID)
 		}
-
 		if err := s.blockRepo.RebuildContentIDs(userID, parentIDs); err != nil {
 			return err
 		}
 	}
 
+	// 5. 异步发布索引任务（传递完整数据）
+	if s.searchIndexer != nil && pageID != uuid.Nil {
+		go func() {
+			if err := s.publishIndexTask(context.Background(), userID, pageID, updatedBlocks, deletedIDs); err != nil {
+				log.Printf("Failed to publish index task: %v", err)
+			}
+		}()
+	}
+
+	// 6. 清除 Redis 缓存
 	if s.rdb != nil {
 		for _, block := range updatedBlocks {
 			if block.Type == "page" && block.Slug != nil {
@@ -244,6 +298,164 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 	}
 
 	return nil
+}
+
+// quickValidateBlocks 快速验证 Block 数据（防止恶意数据）
+func quickValidateBlocks(userID uuid.UUID, blocks []models.Block) error {
+	validTypes := map[string]bool{
+		"root": true, "folder": true, "page": true,
+		"paragraph": true, "heading": true, "code": true,
+		"image": true, "list": true, "quote": true,
+		"divider": true, "callout": true,
+	}
+
+	for _, block := range blocks {
+		// 1. 验证 UUID 格式
+		if block.ID == uuid.Nil {
+			return pkgerrors.New(pkgerrors.ErrInvalidInput, "invalid block id")
+		}
+
+		// 2. 验证 type
+		if !validTypes[block.Type] {
+			return pkgerrors.New(pkgerrors.ErrInvalidInput, "invalid block type: "+block.Type)
+		}
+
+		// 3. 验证 path 长度（防止 DoS）
+		if len(block.Path) > 1000 {
+			return pkgerrors.New(pkgerrors.ErrInvalidInput, "path too long")
+		}
+
+		// 4. 验证 properties 大小（防止 DoS）
+		if len(block.Properties) > 1024*1024 { // 1MB
+			return pkgerrors.New(pkgerrors.ErrInvalidInput, "properties too large")
+		}
+	}
+
+	return nil
+}
+
+// publishIndexTask 发布索引任务（传递完整数据）
+func (s *BlockService) publishIndexTask(ctx context.Context, userID, pageID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
+	// 1. 获取 Page 信息（只查询一次）
+	page, err := s.blockRepo.FindByID(userID, pageID)
+	if err != nil {
+		return err
+	}
+
+	// 2. 构建 BlockOrder 映射（只解析一次 ContentIDs）
+	orderMap := make(map[uuid.UUID]int)
+	var contentIDs []string
+	if err := json.Unmarshal(page.ContentIDs, &contentIDs); err == nil {
+		for idx, id := range contentIDs {
+			if childID, parseErr := uuid.Parse(id); parseErr == nil {
+				orderMap[childID] = idx
+			}
+		}
+	}
+
+	// 3. 构建索引数据（传递完整数据，避免 Worker 查询数据库）
+	indexData := make([]BlockIndexData, 0, len(updatedBlocks))
+	for _, block := range updatedBlocks {
+		// 跳过不需要索引的类型
+		if block.Type == "root" || block.Type == "folder" {
+			continue
+		}
+
+		// 提取文本内容
+		content, err := extractTextContent(block.Properties)
+		if err != nil {
+			log.Printf("Failed to extract content from block %s: %v", block.ID, err)
+			continue
+		}
+
+		// 获取 BlockOrder
+		blockOrder := orderMap[block.ID]
+
+		indexData = append(indexData, BlockIndexData{
+			BlockID:         block.ID,
+			PageID:          pageID,
+			UserID:          userID,
+			BlockType:       block.Type,
+			BlockOrder:      blockOrder,
+			Content:         content,
+			SourceUpdatedAt: block.UpdatedAt,
+			PublishedAt:     page.PublishedAt,
+		})
+	}
+
+	// 4. 发布到 Redis Stream
+	return s.searchIndexer.PublishBatchIndexTask(ctx, indexData, deletedIDs)
+}
+
+func (s *BlockService) resolveSyncPageID(ctx context.Context, userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) (uuid.UUID, error) {
+	var pageID uuid.UUID
+
+	checkPageID := func(candidate uuid.UUID) error {
+		if candidate == uuid.Nil {
+			return nil
+		}
+		if pageID == uuid.Nil {
+			pageID = candidate
+			return nil
+		}
+		if pageID != candidate {
+			return fmt.Errorf("sync blocks must belong to a single page")
+		}
+		return nil
+	}
+
+	for i := range updatedBlocks {
+		candidate, err := s.resolvePageIDFromBlock(ctx, &updatedBlocks[i])
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if err := checkPageID(candidate); err != nil {
+			return uuid.Nil, err
+		}
+	}
+
+	for _, blockID := range deletedIDs {
+		block, err := s.blockRepo.FindByID(userID, blockID)
+		if err != nil {
+			continue
+		}
+		candidate, err := s.resolvePageIDFromBlock(ctx, block)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if err := checkPageID(candidate); err != nil {
+			return uuid.Nil, err
+		}
+	}
+
+	return pageID, nil
+}
+
+func (s *BlockService) resolvePageIDFromBlock(ctx context.Context, block *models.Block) (uuid.UUID, error) {
+	current := block
+	visited := make(map[uuid.UUID]struct{})
+
+	for current != nil {
+		if _, exists := visited[current.ID]; exists {
+			return uuid.Nil, fmt.Errorf("cyclic block parent chain detected")
+		}
+		visited[current.ID] = struct{}{}
+
+		if current.Type == "page" {
+			return current.ID, nil
+		}
+		if current.ParentID == nil {
+			break
+		}
+
+		next, err := s.blockRepo.GetBlockByID(ctx, *current.ParentID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		current = next
+	}
+
+	return uuid.Nil, nil
 }
 
 // GetChildren 获取某个节点的直接子节点（侧边栏使用，带用户隔离）
@@ -310,4 +522,31 @@ func (s *BlockService) MoveBlock(userID, blockID uuid.UUID, newParentID *uuid.UU
 // 当移动一个节点时，需要更新其所有子孙节点的 path
 func (s *BlockService) UpdateDescendantPaths(userID uuid.UUID, oldPath, newPath string) error {
 	return s.blockRepo.UpdateDescendantPaths(userID, oldPath, newPath)
+}
+
+// extractTextContent 从 properties JSONB 提取纯文本
+// 支持 Tiptap 的 content 数组格式
+func extractTextContent(properties json.RawMessage) (string, error) {
+	var props map[string]interface{}
+	if err := json.Unmarshal(properties, &props); err != nil {
+		return "", err
+	}
+
+	var textParts []string
+
+	if title, ok := props["title"].(string); ok && title != "" {
+		textParts = append(textParts, title)
+	}
+
+	if content, ok := props["content"].([]interface{}); ok {
+		for _, item := range content {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				if text, ok := itemMap["text"].(string); ok {
+					textParts = append(textParts, text)
+				}
+			}
+		}
+	}
+
+	return strings.Join(textParts, " "), nil
 }

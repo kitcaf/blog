@@ -3,7 +3,6 @@ package repository
 import (
 	"blog-backend/internal/models"
 	"context"
-	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -77,6 +76,13 @@ func (r *SearchRepository) BatchDeleteBlockIndexes(ctx context.Context, blockIDs
 		Delete(&models.BlockSearchIndex{}).Error
 }
 
+// DeleteBlockIndexesByPageID 删除某个 Page 下的所有索引
+func (r *SearchRepository) DeleteBlockIndexesByPageID(ctx context.Context, pageID uuid.UUID) error {
+	return r.db.WithContext(ctx).
+		Where("page_id = ?", pageID).
+		Delete(&models.BlockSearchIndex{}).Error
+}
+
 // BlockSearchResult 搜索结果（包含分数）
 type BlockSearchResult struct {
 	BlockID         uuid.UUID  `json:"block_id"`
@@ -87,7 +93,7 @@ type BlockSearchResult struct {
 	Content         string     `json:"content"`
 	SourceUpdatedAt time.Time  `json:"source_updated_at"`
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
-	Rank            float64    `json:"rank"` // 搜索分数
+	Rank            float64    `json:"rank"`
 }
 
 // SearchBlocks 全文搜索 Block
@@ -105,12 +111,9 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 		return results, nil
 	}
 
-	fmt.Printf("[DEBUG] SearchBlocks - Query: %q, TSQuery: %q, UserID: %s, Limit: %d\n",
-		query, tsQuery, userID.String(), limit)
-
 	sql := `
 		WITH search_query AS (
-			SELECT to_tsquery('simple', ?) AS ts_query
+			SELECT to_tsquery('simple', $1) AS ts_query
 		)
 		SELECT
 			bsi.block_id,
@@ -125,19 +128,13 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 		FROM block_search_index AS bsi
 		CROSS JOIN search_query AS sq
 		WHERE
-			bsi.user_id = ?
+			bsi.user_id = $2
 			AND bsi.search_vector @@ sq.ts_query
 		ORDER BY rank DESC, bsi.source_updated_at DESC
-		LIMIT ?
+		LIMIT $3
 	`
 
 	err := r.db.WithContext(ctx).Raw(sql, tsQuery, userID, limit).Scan(&results).Error
-	if err != nil {
-		fmt.Printf("[ERROR] SearchBlocks - SQL error: %v, TSQuery: %q\n", err, tsQuery)
-	} else {
-		fmt.Printf("[DEBUG] SearchBlocks - Found %d results\n", len(results))
-	}
-
 	return results, err
 }
 
@@ -157,7 +154,7 @@ func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query stri
 
 	sql := `
 		WITH search_query AS (
-			SELECT to_tsquery('simple', ?) AS ts_query
+			SELECT to_tsquery('simple', $1) AS ts_query
 		)
 		SELECT
 			bsi.block_id,
@@ -175,7 +172,7 @@ func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query stri
 			bsi.published_at IS NOT NULL
 			AND bsi.search_vector @@ sq.ts_query
 		ORDER BY rank DESC, bsi.source_updated_at DESC
-		LIMIT ?
+		LIMIT $2
 	`
 
 	err := r.db.WithContext(ctx).Raw(sql, tsQuery, limit).Scan(&results).Error
@@ -265,37 +262,4 @@ func (r *SearchRepository) UpdatePageInfoForBlocks(ctx context.Context, pageID u
 		Model(&models.BlockSearchIndex{}).
 		Where("page_id = ?", pageID).
 		Updates(updates).Error
-}
-
-// RebuildIndex 重建索引（用于修复或升级）
-// 从 blocks 表读取数据并重建 block_search_index 表
-func (r *SearchRepository) RebuildIndex(ctx context.Context, userID *uuid.UUID) error {
-	// 构建查询条件
-	query := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("type NOT IN ?", []string{"root", "folder"}) // 只索引内容块
-
-	if userID != nil {
-		// 如果指定了 userID，只重建该用户的索引
-		// 通过 path 字段提取 workspace_id（path 的第二段）
-		query = query.Where("split_part(path, '/', 2) = ?", userID.String())
-	}
-
-	// 获取需要索引的 Block
-	var blocks []models.Block
-	if err := query.Find(&blocks).Error; err != nil {
-		return fmt.Errorf("failed to fetch blocks: %w", err)
-	}
-
-	// 批量插入索引
-	for _, block := range blocks {
-		// 提取 page_id（从 path 的第三段）
-		// 提取 user_id（从 path 的第二段）
-		// 提取纯文本内容（从 properties）
-		// TODO: 实现内容提取逻辑
-
-		// 暂时跳过，等待实现内容提取逻辑
-		_ = block
-	}
-
-	return nil
 }

@@ -14,21 +14,21 @@ import (
 )
 
 func main() {
-	log.Println("🚀 Starting Blog Backend Server...")
+	log.Println("Starting Blog Backend Server...")
 
 	// 1. 加载配置
 	cfg := config.Load()
 
 	// 2. 初始化错误日志系统
 	if err := errors.InitErrorLogger("logs"); err != nil {
-		log.Fatalf("❌ Failed to initialize error logger: %v", err)
+		log.Fatalf("Failed to initialize error logger: %v", err)
 	}
-	log.Println("✅ Error logger initialized (logs/error.log)")
+	log.Println("Error logger initialized (logs/error.log)")
 
 	// 3. 连接 PostgreSQL 数据库
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to database: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
 	// 4. 连接 Redis 缓存（可选）
@@ -39,10 +39,10 @@ func main() {
 	if rdb != nil {
 		searchIndexer = services.NewSearchIndexer(rdb, db)
 		if err := searchIndexer.Start(); err != nil {
-			log.Printf("⚠️  Failed to start search indexer: %v", err)
+			log.Printf("Failed to start search indexer: %v", err)
 		}
 	} else {
-		log.Println("⚠️  Redis not available, search indexer disabled")
+		log.Println("Redis not available, search indexer disabled")
 	}
 
 	// 6. 初始化路由（传入 searchIndexer）
@@ -54,7 +54,7 @@ func main() {
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		<-sigChan
 
-		log.Println("\n🛑 Shutting down gracefully...")
+		log.Println("\n Shutting down gracefully...")
 		if searchIndexer != nil {
 			searchIndexer.Stop()
 		}
@@ -65,6 +65,6 @@ func main() {
 	addr := ":" + cfg.Server.Port
 	log.Printf("🌐 Server starting on http://localhost%s", addr)
 	if err := r.Run(addr); err != nil {
-		log.Fatalf("❌ Failed to start server: %v", err)
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }

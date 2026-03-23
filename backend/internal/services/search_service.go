@@ -29,37 +29,35 @@ func NewSearchService(db *gorm.DB) *SearchService {
 // IndexBlock 索引单个 Block
 // 从 Block 提取内容并创建/更新索引
 func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error {
-	// 1. 获取 Block 数据
 	block, err := s.blockRepo.GetBlockByID(ctx, blockID)
 	if err != nil {
 		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to get block")
 	}
 
-	// 2. 只索引内容块（跳过 root 和 folder）
 	if block.Type == "root" || block.Type == "folder" {
 		return nil
 	}
 
-	// 3. 解析索引归属信息
 	pageID, userID, err := s.resolveIndexScope(ctx, block)
 	if err != nil {
 		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to resolve block search scope")
 	}
 
-	// 4. 提取纯文本内容
+	pageBlock, err := s.blockRepo.GetBlockByID(ctx, pageID)
+	if err != nil {
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to get page block")
+	}
+
 	content, err := extractTextContent(block.Properties)
 	if err != nil {
 		return errors.WrapWithDetail(errors.ErrSearchContentExtract, err, "failed to extract content")
 	}
 
-	// 5. 计算 block_order（从 parent 的 content_ids 中获取位置）
 	blockOrder, err := s.getBlockOrder(ctx, block)
 	if err != nil {
-		// 如果获取失败，使用默认值 0
 		blockOrder = 0
 	}
 
-	// 6. 创建索引记录
 	index := &models.BlockSearchIndex{
 		BlockID:         blockID,
 		PageID:          pageID,
@@ -68,10 +66,9 @@ func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error
 		BlockOrder:      blockOrder,
 		Content:         content,
 		SourceUpdatedAt: block.UpdatedAt,
-		PublishedAt:     block.PublishedAt,
+		PublishedAt:     pageBlock.PublishedAt,
 	}
 
-	// 7. UPSERT 到数据库
 	if err := s.searchRepo.UpsertBlockIndex(ctx, index); err != nil {
 		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to upsert index")
 	}
@@ -79,17 +76,63 @@ func (s *SearchService) IndexBlock(ctx context.Context, blockID uuid.UUID) error
 	return nil
 }
 
-// DeleteBlockIndex 删除 Block 索引
+// DeleteBlockIndex 删除单个 Block 索引
 func (s *SearchService) DeleteBlockIndex(ctx context.Context, blockID uuid.UUID) error {
 	return s.searchRepo.DeleteBlockIndex(ctx, blockID)
 }
 
+// BatchDeleteBlockIndexes 批量删除 Block 索引
+func (s *SearchService) BatchDeleteBlockIndexes(ctx context.Context, blockIDs []uuid.UUID) error {
+	return s.searchRepo.BatchDeleteBlockIndexes(ctx, blockIDs)
+}
+
+// DeleteBlockIndexesByPageID 删除某个 Page 下的所有索引
+func (s *SearchService) DeleteBlockIndexesByPageID(ctx context.Context, pageID uuid.UUID) error {
+	return s.searchRepo.DeleteBlockIndexesByPageID(ctx, pageID)
+}
+
+// ReindexPage 重建某个 Page 下的所有搜索索引
+// 先删旧索引，再按当前主表状态重建，保证 published_at 与页面状态一致。
+func (s *SearchService) ReindexPage(ctx context.Context, pageID uuid.UUID) error {
+	page, err := s.blockRepo.GetBlockByID(ctx, pageID)
+	if err != nil {
+		if goerrors.Is(err, gorm.ErrRecordNotFound) {
+			return s.searchRepo.DeleteBlockIndexesByPageID(ctx, pageID)
+		}
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to get page")
+	}
+
+	ownerID := extractOwnerID(page)
+	if ownerID == uuid.Nil {
+		return errors.New(errors.ErrSearchIndexFailed, "page owner not found")
+	}
+
+	if err := s.searchRepo.DeleteBlockIndexesByPageID(ctx, pageID); err != nil {
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to delete stale page indexes")
+	}
+
+	blocks, err := s.blockRepo.FindByPath(ownerID, page.Path)
+	if err != nil {
+		return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to load page blocks")
+	}
+
+	for _, block := range blocks {
+		if block.Type == "root" || block.Type == "folder" {
+			continue
+		}
+		if err := s.IndexBlock(ctx, block.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // SearchPages 搜索 Page（聚合结果）
-// 返回按 Page 聚合后的所有搜索结果
 func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query string) ([]*models.PageSearchResult, error) {
-	// 1. 验证查询参数
-	if strings.TrimSpace(query) == "" {
-		return nil, errors.New(errors.ErrSearchQueryEmpty, "search query is empty")
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []*models.PageSearchResult{}, nil
 	}
 
 	if len(query) > 200 {
@@ -101,7 +144,6 @@ func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query
 		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to resolve search owner ids")
 	}
 
-	// 2. 搜索匹配的 Block（兼容历史索引中错误写成 root_id 的 user_id）
 	blocks := make([]*repository.BlockSearchResult, 0, 128)
 	seenBlockIDs := make(map[uuid.UUID]struct{})
 	for _, ownerID := range ownerIDs {
@@ -130,49 +172,38 @@ func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query
 		return blocks[i].Rank > blocks[j].Rank
 	})
 
-	// 3. 按 Page 聚合
 	pageMap := make(map[uuid.UUID]*pageAggregation)
 	for _, block := range blocks {
 		if _, exists := pageMap[block.PageID]; !exists {
-			pageMap[block.PageID] = &pageAggregation{
-				PageID: block.PageID,
-				Blocks: []*repository.BlockSearchResult{},
-			}
+			pageMap[block.PageID] = &pageAggregation{PageID: block.PageID, Blocks: []*repository.BlockSearchResult{}}
 		}
 		pageMap[block.PageID].Blocks = append(pageMap[block.PageID].Blocks, block)
 	}
 
-	// 4. 计算 Page 分数并排序
-	var pageResults []*models.PageSearchResult
+	pageResults := make([]*models.PageSearchResult, 0, len(pageMap))
 	for _, agg := range pageMap {
-		result := s.calculatePageScore(agg)
-		pageResults = append(pageResults, result)
+		pageResults = append(pageResults, s.calculatePageScore(agg))
 	}
 
-	// 5. 按 PageScore 排序
-	sortPageResults(pageResults)
-
-	// 6. 补充 Page 信息（JOIN blocks 表）
 	if err := s.enrichPageInfo(ctx, pageResults); err != nil {
 		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to enrich page info")
 	}
 
+	sortPageResults(pageResults)
 	return pageResults, nil
 }
 
 // SearchPublishedPages 搜索已发布的 Page（前台搜索）
-// 返回所有匹配的已发布页面
 func (s *SearchService) SearchPublishedPages(ctx context.Context, query string) ([]*models.PageSearchResult, error) {
-	// 1. 验证查询参数
-	if strings.TrimSpace(query) == "" {
-		return nil, errors.New(errors.ErrSearchQueryEmpty, "search query is empty")
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []*models.PageSearchResult{}, nil
 	}
 
 	if len(query) > 200 {
 		return nil, errors.New(errors.ErrSearchQueryTooLong, "search query exceeds 200 characters")
 	}
 
-	// 2. 搜索匹配的已发布 Block（返回所有匹配结果，最多 1000 条）
 	blocks, err := s.searchRepo.SearchPublishedBlocks(ctx, query, 1000)
 	if err != nil {
 		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to search published blocks")
@@ -182,36 +213,29 @@ func (s *SearchService) SearchPublishedPages(ctx context.Context, query string) 
 		return []*models.PageSearchResult{}, nil
 	}
 
-	// 3. 按 Page 聚合并计算分数
 	pageMap := make(map[uuid.UUID]*pageAggregation)
 	for _, block := range blocks {
 		if _, exists := pageMap[block.PageID]; !exists {
-			pageMap[block.PageID] = &pageAggregation{
-				PageID: block.PageID,
-				Blocks: []*repository.BlockSearchResult{},
-			}
+			pageMap[block.PageID] = &pageAggregation{PageID: block.PageID, Blocks: []*repository.BlockSearchResult{}}
 		}
 		pageMap[block.PageID].Blocks = append(pageMap[block.PageID].Blocks, block)
 	}
 
-	var pageResults []*models.PageSearchResult
+	pageResults := make([]*models.PageSearchResult, 0, len(pageMap))
 	for _, agg := range pageMap {
-		result := s.calculatePageScore(agg)
-		pageResults = append(pageResults, result)
+		pageResults = append(pageResults, s.calculatePageScore(agg))
 	}
-
-	sortPageResults(pageResults)
 
 	if err := s.enrichPageInfo(ctx, pageResults); err != nil {
 		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to enrich page info")
 	}
 
+	sortPageResults(pageResults)
 	return pageResults, nil
 }
 
 // ========== 内部辅助方法 ==========
 
-// pageAggregation Page 聚合的中间结构
 type pageAggregation struct {
 	PageID uuid.UUID
 	Blocks []*repository.BlockSearchResult
@@ -296,12 +320,10 @@ func extractTextContent(properties json.RawMessage) (string, error) {
 
 	var textParts []string
 
-	// 提取 title（如果有）
 	if title, ok := props["title"].(string); ok && title != "" {
 		textParts = append(textParts, title)
 	}
 
-	// 提取 content 数组中的文本
 	if content, ok := props["content"].([]interface{}); ok {
 		for _, item := range content {
 			if itemMap, ok := item.(map[string]interface{}); ok {
@@ -321,19 +343,16 @@ func (s *SearchService) getBlockOrder(ctx context.Context, block *models.Block) 
 		return 0, nil
 	}
 
-	// 获取父节点
 	parent, err := s.blockRepo.GetBlockByID(ctx, *block.ParentID)
 	if err != nil {
 		return 0, err
 	}
 
-	// 解析 content_ids
 	var contentIDs []string
 	if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err != nil {
 		return 0, err
 	}
 
-	// 查找当前 Block 的位置
 	for i, id := range contentIDs {
 		if id == block.ID.String() {
 			return i, nil
@@ -344,17 +363,14 @@ func (s *SearchService) getBlockOrder(ctx context.Context, block *models.Block) 
 }
 
 // calculatePageScore 计算 Page 的综合分数
-// 公式：PageScore = MaxScore * 0.7 + BonusScore * 0.3
 func (s *SearchService) calculatePageScore(agg *pageAggregation) *models.PageSearchResult {
 	if len(agg.Blocks) == 0 {
 		return nil
 	}
 
-	// 找出最高分 Block（第一个是最高分，因为已经按 rank 排序）
 	representativeBlock := agg.Blocks[0]
 	maxScore := representativeBlock.Rank
 
-	// 计算多块命中加分
 	bonusScore := 0.0
 	matchCount := len(agg.Blocks)
 	if matchCount >= 4 {
@@ -365,10 +381,8 @@ func (s *SearchService) calculatePageScore(agg *pageAggregation) *models.PageSea
 		bonusScore = 0.05
 	}
 
-	// 计算 Page 综合分数
 	pageScore := maxScore*0.7 + bonusScore*0.3
 
-	// 构建结果
 	result := &models.PageSearchResult{
 		PageID:     agg.PageID,
 		MaxScore:   maxScore,
@@ -383,7 +397,6 @@ func (s *SearchService) calculatePageScore(agg *pageAggregation) *models.PageSea
 		},
 	}
 
-	// 保留 Top 3 Block
 	topCount := 3
 	if len(agg.Blocks) < topCount {
 		topCount = len(agg.Blocks)
@@ -420,28 +433,23 @@ func (s *SearchService) enrichPageInfo(ctx context.Context, results []*models.Pa
 		return nil
 	}
 
-	// 收集所有 page_id
 	pageIDs := make([]uuid.UUID, len(results))
 	for i, result := range results {
 		pageIDs[i] = result.PageID
 	}
 
-	// 批量查询 Page 信息
 	pages, err := s.blockRepo.GetBlocksByIDs(ctx, pageIDs)
 	if err != nil {
 		return err
 	}
 
-	// 构建 pageID -> Page 的映射
 	pageMap := make(map[uuid.UUID]*models.Block)
 	for _, page := range pages {
 		pageMap[page.ID] = page
 	}
 
-	// 补充信息
 	for _, result := range results {
 		if page, exists := pageMap[result.PageID]; exists {
-			// 提取 title 和 icon
 			var props map[string]interface{}
 			if err := json.Unmarshal(page.Properties, &props); err == nil {
 				if title, ok := props["title"].(string); ok {

@@ -50,7 +50,6 @@ func (s *BlockService) GetPageByID(userID, pageID uuid.UUID) (*models.Block, err
 
 // GetPageBySlug 根据 slug 获取页面及其内容（公开接口）
 func (s *BlockService) GetPageBySlug(slug string) (*models.Block, []models.Block, error) {
-	// 尝试从缓存获取
 	if s.rdb != nil {
 		cacheKey := "page:blocks:" + slug
 		cached, err := s.rdb.Get(context.Background(), cacheKey).Result()
@@ -65,19 +64,16 @@ func (s *BlockService) GetPageBySlug(slug string) (*models.Block, []models.Block
 		}
 	}
 
-	// 从数据库查询
 	page, err := s.blockRepo.FindPageBySlug(slug)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 获取页面的所有 blocks（使用页面创建者的 ID）
 	blocks, err := s.blockRepo.FindByPath(*page.CreatedBy, page.Path)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 缓存结果
 	if s.rdb != nil {
 		cacheKey := "page:blocks:" + slug
 		data, _ := json.Marshal(map[string]interface{}{
@@ -107,32 +103,48 @@ func (s *BlockService) CreatePage(block *models.Block) error {
 
 // UpdatePage 更新页面（带用户隔离）
 func (s *BlockService) UpdatePage(userID uuid.UUID, block *models.Block) error {
-	return s.blockRepo.Update(userID, block)
+	if err := s.blockRepo.Update(userID, block); err != nil {
+		return err
+	}
+
+	if s.searchIndexer != nil && block.Type == "page" {
+		go func(pageID uuid.UUID) {
+			if err := s.searchIndexer.PublishPageReindexTask(context.Background(), pageID); err != nil {
+				log.Printf("Failed to publish page reindex task for page %s: %v", pageID, err)
+			}
+		}(block.ID)
+	}
+
+	return nil
 }
 
 // DeletePage 删除页面（软删除当前节点，级联软删子节点，并从父节点 content_ids 移除）
 func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
-	// 一条 SQL 同时完成更新与查询重要字段（RETURNING 特性）
 	parentID, path, err := s.blockRepo.SoftDeleteAndReturnFields(userID, pageID)
 	if err != nil {
 		return err
 	}
 
-	// 没有符合条件的行被更新（不存在或无权限）
 	if path == "" {
 		return errors.New("Page not found or permission denied")
 	}
 
-	// 级联删除所有的子孙节点
 	if err := s.blockRepo.SoftDeleteByPath(userID, path); err != nil {
-		// 此处错误可仅打印日志，不应该阻塞流程
+		log.Printf("Failed to soft delete descendants: %v", err)
 	}
 
-	// 更新父节点数组
 	if parentID != nil {
 		if err := s.blockRepo.RemoveContentID(userID, *parentID, pageID); err != nil {
-			return err
+			log.Printf("Failed to remove content ID from parent: %v", err)
 		}
+	}
+
+	if s.searchIndexer != nil {
+		go func(pageID uuid.UUID) {
+			if err := s.searchIndexer.PublishPageDeleteTask(context.Background(), pageID); err != nil {
+				log.Printf("Failed to publish page delete task for page %s: %v", pageID, err)
+			}
+		}(pageID)
 	}
 
 	return nil
@@ -155,13 +167,9 @@ func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) erro
 // 5. 异步发布索引任务到 Redis Stream（不阻塞用户操作）
 func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
 	ctx := context.Background()
-
-	// 收集所有受影响的父块 ID
 	affectedParents := make(map[uuid.UUID]bool)
 
-	// 批量 UPSERT【支持新增】
 	if len(updatedBlocks) > 0 {
-		// 收集所有父块 ID
 		for _, block := range updatedBlocks {
 			if block.ParentID != nil {
 				affectedParents[*block.ParentID] = true
@@ -172,14 +180,20 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 			return err
 		}
 
-		// 异步发布索引任务（只索引内容块，跳过 root 和 folder）
 		if s.searchIndexer != nil {
 			for _, block := range updatedBlocks {
-				if block.Type != "root" && block.Type != "folder" {
-					// 发布到 Redis Stream，不等待结果
+				switch block.Type {
+				case "root", "folder":
+					continue
+				case "page":
+					go func(pageID uuid.UUID) {
+						if err := s.searchIndexer.PublishPageReindexTask(context.Background(), pageID); err != nil {
+							log.Printf("Failed to publish page reindex task for page %s: %v", pageID, err)
+						}
+					}(block.ID)
+				default:
 					go func(blockID uuid.UUID) {
-						if err := s.searchIndexer.PublishIndexTask(ctx, "upsert", blockID); err != nil {
-							// 记录错误但不影响主流程
+						if err := s.searchIndexer.PublishBlockUpsertTask(context.Background(), blockID); err != nil {
 							log.Printf("Failed to publish index task for block %s: %v", blockID, err)
 						}
 					}(block.ID)
@@ -188,9 +202,7 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 		}
 	}
 
-	// 软删除
 	if len(deletedIDs) > 0 {
-		// 先查询被删除块的父块 ID
 		for _, id := range deletedIDs {
 			block, err := s.blockRepo.FindByID(userID, id)
 			if err == nil && block.ParentID != nil {
@@ -202,19 +214,15 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 			return err
 		}
 
-		// 异步发布删除索引任务
 		if s.searchIndexer != nil {
-			for _, blockID := range deletedIDs {
-				go func(id uuid.UUID) {
-					if err := s.searchIndexer.PublishIndexTask(ctx, "delete", id); err != nil {
-						log.Printf("Failed to publish delete index task for block %s: %v", id, err)
-					}
-				}(blockID)
-			}
+			go func(ids []uuid.UUID) {
+				if err := s.searchIndexer.PublishBlockBatchDeleteTask(context.Background(), ids); err != nil {
+					log.Printf("Failed to publish batch delete search index task: %v", err)
+				}
+			}(append([]uuid.UUID(nil), deletedIDs...))
 		}
 	}
 
-	// 批量更新所有受影响父块的 content_ids
 	if len(affectedParents) > 0 {
 		parentIDs := make([]uuid.UUID, 0, len(affectedParents))
 		for parentID := range affectedParents {
@@ -226,7 +234,6 @@ func (s *BlockService) SyncBlocks(userID uuid.UUID, updatedBlocks []models.Block
 		}
 	}
 
-	// 清除相关缓存
 	if s.rdb != nil {
 		for _, block := range updatedBlocks {
 			if block.Type == "page" && block.Slug != nil {
@@ -246,25 +253,21 @@ func (s *BlockService) GetChildren(userID uuid.UUID, parentID *uuid.UUID) ([]mod
 
 // GetSidebarTree 获取完整侧边栏目录树
 func (s *BlockService) GetSidebarTree(userID uuid.UUID) ([]*models.PageTreeNode, error) {
-	// 1. 先获取根节点 ID
 	rootBlock, err := s.GetOrCreateRootBlock(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 调用 repository 层的高效组装方法
 	return s.blockRepo.GetSidebarTree(userID, rootBlock.ID)
 }
 
 // GetOrCreateRootBlock 获取或创建用户的 root block
 func (s *BlockService) GetOrCreateRootBlock(userID uuid.UUID) (*models.Block, error) {
-	// 先尝试查询
 	rootBlock, err := s.blockRepo.FindRootBlock(userID)
 	if err == nil {
 		return rootBlock, nil
 	}
 
-	// 不存在则创建
 	return s.CreateRootBlockInternal(userID)
 }
 
@@ -288,13 +291,7 @@ func (s *BlockService) CreateRootBlockInternal(userID uuid.UUID) (*models.Block,
 		CreatedBy:  &userID,
 	}
 
-	// In the repository layer we added Upsert, but here we can just do a Create.
-	// If the unique index exists for (created_by, type), we can handle "duplicate key value" safely
-	// using ON CONFLICT DO NOTHING and returning the actual record.
-	// We will implement that in repository later if we want DB raw, but for now we just use create
-	// with a duplicate check wrapper.
 	if err := s.blockRepo.Create(rootBlock); err != nil {
-		// Fallback: if there was a duplicate constraint, it means it was just created
 		if existing, errFind := s.blockRepo.FindRootBlock(userID); errFind == nil {
 			return existing, nil
 		}

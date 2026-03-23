@@ -18,7 +18,7 @@ type BlockSearchIndex struct {
 
 	// ============ 核心关联字段 ============
 	PageID uuid.UUID `gorm:"type:uuid;not null;index:idx_page_user,priority:1" json:"page_id"` // 所属文章 ID
-	UserID uuid.UUID `gorm:"type:uuid;not null;index:idx_page_user,priority:2" json:"user_id"` // 所属用户（权限过滤）
+	UserID uuid.UUID `gorm:"type:uuid;not null;index:idx_page_user,priority:2;index:idx_search_user" json:"user_id"` // 所属用户（权限过滤）
 
 	// ============ Block 元信息 ============
 	BlockType  string `gorm:"type:varchar(50);not null" json:"block_type"` // Block 类型（paragraph/heading/list/code）
@@ -78,3 +78,4 @@ type BlockMatch struct {
 	Score      float64   `json:"score"`
 	Highlights []string  `json:"highlights,omitempty"` // 高亮的关键词
 }
+

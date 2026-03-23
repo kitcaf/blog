@@ -105,3 +105,4 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 
 	return r
 }
+

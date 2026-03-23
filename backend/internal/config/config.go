@@ -15,6 +15,7 @@ type Config struct {
 	Redis    RedisConfig
 	JWT      JWTConfig
 	CORS     CORSConfig
+	Test     TestConfig
 }
 
 // ServerConfig 服务器配置
@@ -53,6 +54,12 @@ type CORSConfig struct {
 	Origins []string // 允许的跨域源列表
 }
 
+// TestConfig 测试配置
+type TestConfig struct {
+	DBName  string // 测试数据库名称
+	RedisDB int    // 测试 Redis 数据库编号
+}
+
 // Load 加载配置文件和环境变量
 func Load() *Config {
 	// 尝试加载 .env 文件（开发环境）
@@ -87,6 +94,10 @@ func Load() *Config {
 		},
 		CORS: CORSConfig{
 			Origins: strings.Split(getEnv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174"), ","),
+		},
+		Test: TestConfig{
+			DBName:  getEnv("TEST_DB_NAME", "blog_test"),
+			RedisDB: getEnvInt("TEST_REDIS_DB", 1),
 		},
 	}
 

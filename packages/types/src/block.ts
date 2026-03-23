@@ -384,6 +384,8 @@ export type BlockUpdateDelta = Partial<DbBlock> & { id: string };
  *  2. 防抖 1.5s 后收集所有变动，打包成此结构发送给后端
  */
 export interface BlockSyncPayload {
+  /** 当前编辑的页面 ID（必填，用于后端验证和索引） */
+  page_id: string;
   /** 新增或修改的 Block，id 必填，其他字段为增量（仅发送变动部分） */
   updated_blocks: BlockUpdateDelta[];
   /** 软删除的 Block ID 列表（后端将 deleted_at 设为当前时间） */

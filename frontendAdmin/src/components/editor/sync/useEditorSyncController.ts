@@ -155,7 +155,7 @@ export function useEditorSyncController({
     }
 
     // 步骤 6 & 7：从 Store 获取待同步数据并发起请求
-    const request = useBlockStore.getState().getSyncRequest();
+    const request = useBlockStore.getState().getSyncRequest(pageId);
     if (request) {
       sync(request); // 调用 API 同步
     }

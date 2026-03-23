@@ -110,9 +110,10 @@ interface BlockStoreActions {
    *   2. 构造 updated_blocks 和 deleted_blocks
    *   3. 生成版本快照
    * 
+   * @param pageId - 当前编辑的页面 ID
    * @returns PreparedBlockSync 或 null（无待同步数据）
    */
-  getSyncRequest: () => PreparedBlockSync | null;
+  getSyncRequest: (pageId: string) => PreparedBlockSync | null;
 
   /**
    * 确认同步成功
@@ -393,9 +394,10 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
    * 
    * 遍历 pendingChangesById，构造 API 请求数据和版本快照
    * 
+   * @param pageId - 当前编辑的页面 ID
    * @returns PreparedBlockSync 或 null（无待同步数据）
    */
-  getSyncRequest: () => {
+  getSyncRequest: (pageId) => {
     const { blocksById, pendingChangesById, queuedRevisionsById, syncBatchCounter } = get();
     const updatedBlocks: BlockUpdateDelta[] = [];
     const deletedBlocks: string[] = [];
@@ -441,6 +443,7 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
 
     return {
       payload: {
+        page_id: pageId,
         updated_blocks: updatedBlocks,
         deleted_blocks: deletedBlocks,
       },

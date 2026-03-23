@@ -39,13 +39,14 @@ func (h *BlockHandler) GetBlocks(c *gin.Context) {
 }
 
 type SyncRequest struct {
+	PageID        uuid.UUID      `json:"page_id" binding:"required"`
 	UpdatedBlocks []models.Block `json:"updated_blocks"`
 	DeletedBlocks []uuid.UUID    `json:"deleted_blocks"`
 }
 
 // SyncBlocks 批量更新 Block 数据（RESTful PUT 方式）
 // 数据库操作步骤：
-// 1. 解析请求体，获取需要更新 (updated_blocks) 和需要删除 (deleted_blocks) 列表
+// 1. 解析请求体，获取 page_id、需要更新 (updated_blocks) 和需要删除 (deleted_blocks) 列表
 // 2. 【核心】利用 Postgres 原生的 UPSERT (ON CONFLICT DO UPDATE) 特性，仅针对内容相关字段做批量更新或插入，规避审计时间被覆盖
 // 3. 利用原生的 IN(?) 语句执行批量式软删除 (UPDATE deleted_at)
 // 4. 主动失效/清除对应的 Redis 缓存键
@@ -60,7 +61,7 @@ func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 	}
 
 	// 步骤2-4：调用 service 层处理批量同步
-	if err := h.blockService.SyncBlocks(userID, req.UpdatedBlocks, req.DeletedBlocks); err != nil {
+	if err := h.blockService.SyncBlocks(userID, req.PageID, req.UpdatedBlocks, req.DeletedBlocks); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Sync failed: "+err.Error())
 		return
 	}

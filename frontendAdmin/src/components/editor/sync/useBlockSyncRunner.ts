@@ -74,8 +74,8 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
         while (nextRequest) {
           needsResyncRef.current = false;
           await runSync(nextRequest);
-          nextRequest = needsResyncRef.current
-            ? useBlockStore.getState().getSyncRequest()
+          nextRequest = needsResyncRef.current && activePageId
+            ? useBlockStore.getState().getSyncRequest(activePageId)
             : null;
         }
       };

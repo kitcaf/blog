@@ -42,12 +42,17 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
       }
 
       inFlightRef.current = true;
-      useSyncStore.getState().setSyncing(true);
       let activeSnapshot = request.snapshot;
 
       const runSync = async (currentRequest: PreparedBlockSync): Promise<void> => {
         activeSnapshot = currentRequest.snapshot;
-        await syncBlocks(currentRequest.payload);
+        useSyncStore.getState().setSyncing(true);
+        try {
+          await syncBlocks(currentRequest.payload);
+        } finally {
+          useSyncStore.getState().setSyncing(false);
+        }
+
         useBlockStore.getState().acknowledgeSync(currentRequest.snapshot);
 
         if (!activePageId) {
@@ -89,7 +94,6 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
         })
         .finally(() => {
           inFlightRef.current = false;
-          useSyncStore.getState().setSyncing(false);
         });
     },
     [activePageId, queryClient],
@@ -97,3 +101,4 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
 
   return { sync };
 }
+

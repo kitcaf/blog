@@ -176,16 +176,6 @@ type pageAggregation struct {
 	Blocks []*repository.BlockSearchResult
 }
 
-func extractOwnerID(block *models.Block) uuid.UUID {
-	if block.CreatedBy != nil {
-		return *block.CreatedBy
-	}
-	if block.LastEditedBy != nil {
-		return *block.LastEditedBy
-	}
-	return uuid.Nil
-}
-
 func (s *SearchService) getSearchOwnerIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	ownerIDs := []uuid.UUID{userID}
 

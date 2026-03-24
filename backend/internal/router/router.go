@@ -50,6 +50,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 	blockHandler := handlers.NewBlockHandler(blockService)
 	pageHandler := handlers.NewPageHandler(blockService)
 	searchHandler := handlers.NewSearchHandler(searchService)
+	trashHandler := handlers.NewTrashHandler(blockService)
 
 	// 健康检查和版本信息
 	r.GET("/api/health", handlers.HealthCheck(db, rdb))
@@ -101,8 +102,15 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 			blocks.GET("/tree", blockHandler.GetTree) // 获取目录树（?parent_id=xxx）
 			blocks.PUT("", blockHandler.SyncBlocks)   // 批量更新 Block（RESTful 方式）
 		}
+
+		// 回收站管理
+		trash := admin.Group("/trash")
+		{
+			trash.GET("", trashHandler.ListTrash)
+			trash.POST("/:id/restore", trashHandler.RestoreTrashItem)
+			trash.DELETE("/:id", trashHandler.DeleteTrashItem)
+		}
 	}
 
 	return r
 }
-

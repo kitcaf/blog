@@ -111,6 +111,16 @@ type Block struct {
 	CreatedBy    *uuid.UUID `gorm:"type:uuid;index" json:"created_by,omitempty"`
 	LastEditedBy *uuid.UUID `gorm:"type:uuid;index" json:"last_edited_by,omitempty"`
 
+	// 回收站元数据：
+	// - trash_root_id：当前软删记录所属的回收站根项
+	// - deleted_parent_id：根项删除前的父节点，用于恢复挂回原位置
+	// - deleted_order：根项删除前在父节点 content_ids 中的位置
+	// - deleted_by：最近一次删除操作者
+	TrashRootID     *uuid.UUID `gorm:"type:uuid;index" json:"trash_root_id,omitempty"`
+	DeletedParentID *uuid.UUID `gorm:"type:uuid" json:"deleted_parent_id,omitempty"`
+	DeletedOrder    *int       `json:"deleted_order,omitempty"`
+	DeletedBy       *uuid.UUID `gorm:"type:uuid;index" json:"deleted_by,omitempty"`
+
 	// 时间戳与软删除
 	CreatedAt time.Time  `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP;index" json:"created_at"`
 	UpdatedAt time.Time  `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"updated_at"`

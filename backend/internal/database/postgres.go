@@ -84,6 +84,20 @@ func createCustomIndexes(db *gorm.DB) {
 		WHERE type = 'page'
 	`)
 
+	// 回收站根项归属索引（优化回收站列表、恢复、永久删除）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_blocks_trash_root_active 
+		ON blocks (trash_root_id)
+		WHERE deleted_at IS NOT NULL AND trash_root_id IS NOT NULL
+	`)
+
+	// 回收站列表索引（按用户筛选已删除的根项）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_blocks_user_deleted_at 
+		ON blocks (created_by, deleted_at DESC)
+		WHERE deleted_at IS NOT NULL
+	`)
+
 	// ========== BlockSearchIndex 表索引 ==========
 
 	// 全文搜索 GIN 索引

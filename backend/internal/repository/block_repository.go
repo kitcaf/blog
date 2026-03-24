@@ -4,6 +4,7 @@ import (
 	"blog-backend/internal/models"
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,14 @@ import (
 
 type BlockRepository struct {
 	db *gorm.DB
+}
+
+type TrashDeleteResult struct {
+	DeletedBlockIDs []uuid.UUID
+}
+
+type TrashRestoreResult struct {
+	RestoredPageIDs []uuid.UUID
 }
 
 func NewBlockRepository(db *gorm.DB) *BlockRepository {
@@ -116,24 +125,6 @@ func (r *BlockRepository) SoftDelete(userID uuid.UUID, ids []uuid.UUID) error {
 		Update("deleted_at", now).Error
 }
 
-// 极致优化：使用 RETURNING 一把梭软删除并返回 parent_id 和 path (避免先查后写)
-func (r *BlockRepository) SoftDeleteAndReturnFields(userID, blockID uuid.UUID) (*uuid.UUID, string, error) {
-	var result struct {
-		ParentID *uuid.UUID
-		Path     string
-	}
-
-	// Postgres 特有的 RETURNING 语法
-	err := r.db.Raw(`
-		UPDATE blocks 
-		SET deleted_at = NOW() 
-		WHERE id = ? AND created_by = ? AND deleted_at IS NULL 
-		RETURNING parent_id, path
-	`, blockID, userID).Scan(&result).Error
-
-	return result.ParentID, result.Path, err
-}
-
 // 极致优化：利用 Postgres 原生 jsonb 移除数组内的指定元素
 func (r *BlockRepository) RemoveContentID(userID, parentID, childID uuid.UUID) error {
 	parentIDStr := parentID.String()
@@ -160,23 +151,201 @@ func (r *BlockRepository) AppendContentID(userID, parentID, childID uuid.UUID) e
 	`, `["`+childIDStr+`"]`, parentIDStr, userID).Error
 }
 
-// SoftDeleteByPath 软删除指定路径下的所有 Block（级联删除，带用户隔离）
-// 返回所有被删除的 Block IDs（用于删除搜索索引）
-func (r *BlockRepository) SoftDeleteByPath(userID uuid.UUID, path string) ([]uuid.UUID, error) {
-	var blockIDs []uuid.UUID
-	now := time.Now()
+// MoveSubtreeToTrash 将 folder/page 根节点及其当前活动子树移动到回收站。
+// 已经独立在回收站中的后代不会被重新吸收。
+func (r *BlockRepository) MoveSubtreeToTrash(userID, actorID, blockID uuid.UUID) (*TrashDeleteResult, error) {
+	result := &TrashDeleteResult{}
 
-	// 使用 RETURNING 一次性完成软删除并返回所有被删除的 Block IDs
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		root, err := r.lockBlockByID(tx, userID, blockID, false)
+		if err != nil {
+			return err
+		}
+		if root.Type == "root" {
+			return fmt.Errorf("%w: root block cannot be moved to trash", gorm.ErrInvalidData)
+		}
+		if root.Type != "folder" && root.Type != "page" {
+			return fmt.Errorf("%w: only folder/page blocks can be moved to trash", gorm.ErrInvalidData)
+		}
+
+		now := time.Now().UTC()
+
+		deletedOrder, err := r.lookupChildOrder(tx, userID, root.ParentID, root.ID)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Model(&models.Block{}).
+			Where("id = ? AND created_by = ? AND deleted_at IS NULL", root.ID, userID).
+			Updates(map[string]interface{}{
+				"deleted_at":        now,
+				"trash_root_id":     root.ID,
+				"deleted_parent_id": root.ParentID,
+				"deleted_order":     deletedOrder,
+				"deleted_by":        actorID,
+			}).Error; err != nil {
+			return err
+		}
+		result.DeletedBlockIDs = append(result.DeletedBlockIDs, root.ID)
+
+		var descendantIDs []uuid.UUID
+		if err := tx.Raw(`
+			UPDATE blocks
+			SET deleted_at = ?,
+				trash_root_id = ?,
+				deleted_parent_id = NULL,
+				deleted_order = NULL,
+				deleted_by = ?
+			WHERE path LIKE ?
+			  AND id <> ?
+			  AND created_by = ?
+			  AND deleted_at IS NULL
+			RETURNING id
+		`, now, root.ID, actorID, root.Path+"%", root.ID, userID).Scan(&descendantIDs).Error; err != nil {
+			return err
+		}
+		result.DeletedBlockIDs = append(result.DeletedBlockIDs, descendantIDs...)
+
+		if root.ParentID != nil {
+			if err := r.removeChildFromParentTx(tx, userID, *root.ParentID, root.ID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// ListTrashItems 查询当前用户回收站的可见根项。
+func (r *BlockRepository) ListTrashItems(userID uuid.UUID) ([]models.TrashItem, error) {
+	var items []models.TrashItem
 	err := r.db.Raw(`
-		UPDATE blocks 
-		SET deleted_at = ? 
-		WHERE (path LIKE ? OR path = ?) 
-		  AND created_by = ? 
-		  AND deleted_at IS NULL
-		RETURNING id
-	`, now, path+"%", path, userID).Scan(&blockIDs).Error
+		SELECT
+			root.id,
+			root.type,
+			COALESCE(root.properties->>'title', '') AS title,
+			COALESCE(root.properties->>'icon', '') AS icon,
+			root.deleted_at,
+			root.deleted_by,
+			root.deleted_parent_id,
+			root.deleted_order,
+			COALESCE(stats.child_folder_count, 0) AS child_folder_count,
+			COALESCE(stats.child_page_count, 0) AS child_page_count
+		FROM blocks root
+		LEFT JOIN (
+			SELECT
+				trash_root_id,
+				COUNT(*) FILTER (WHERE type = 'folder' AND id <> trash_root_id) AS child_folder_count,
+				COUNT(*) FILTER (WHERE type = 'page' AND id <> trash_root_id) AS child_page_count
+			FROM blocks
+			WHERE created_by = ?
+			  AND deleted_at IS NOT NULL
+			  AND trash_root_id IS NOT NULL
+			GROUP BY trash_root_id
+		) stats ON stats.trash_root_id = root.id
+		WHERE root.created_by = ?
+		  AND root.deleted_at IS NOT NULL
+		  AND root.id = root.trash_root_id
+		  AND root.type IN ('folder', 'page')
+		ORDER BY root.deleted_at DESC
+	`, userID, userID).Scan(&items).Error
+	return items, err
+}
 
-	return blockIDs, err
+// RestoreTrashRoot 恢复回收站根项。
+// 默认优先恢复到原父节点；若原父节点不存在或仍在回收站，则恢复到用户 root 下。
+func (r *BlockRepository) RestoreTrashRoot(userID, trashRootID uuid.UUID) (*TrashRestoreResult, error) {
+	result := &TrashRestoreResult{}
+
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		root, err := r.lockBlockByID(tx, userID, trashRootID, true)
+		if err != nil {
+			return err
+		}
+		if root.DeletedAt == nil || root.TrashRootID == nil || *root.TrashRootID != root.ID {
+			return gorm.ErrRecordNotFound
+		}
+		if root.Type != "folder" && root.Type != "page" {
+			return fmt.Errorf("%w: only folder/page trash roots can be restored", gorm.ErrInvalidData)
+		}
+
+		targetParent, err := r.resolveRestoreParent(tx, userID, root)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Model(&models.Block{}).
+			Where("created_by = ? AND trash_root_id = ? AND deleted_at IS NOT NULL AND type = ?", userID, root.ID, "page").
+			Pluck("id", &result.RestoredPageIDs).Error; err != nil {
+			return err
+		}
+
+		oldRootPath := root.Path
+		newRootPath := targetParent.Path + root.ID.String() + "/"
+		pathSuffixStart := len(oldRootPath) + 1
+
+		if err := tx.Model(&models.Block{}).
+			Where("id = ? AND created_by = ? AND deleted_at IS NOT NULL", root.ID, userID).
+			Updates(map[string]interface{}{
+				"parent_id":         targetParent.ID,
+				"path":              newRootPath,
+				"deleted_at":        nil,
+				"trash_root_id":     nil,
+				"deleted_parent_id": nil,
+				"deleted_order":     nil,
+				"deleted_by":        nil,
+			}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Exec(`
+			UPDATE blocks
+			SET path = ? || SUBSTRING(path FROM ?),
+				deleted_at = NULL,
+				trash_root_id = NULL,
+				deleted_parent_id = NULL,
+				deleted_order = NULL,
+				deleted_by = NULL
+			WHERE created_by = ?
+			  AND trash_root_id = ?
+			  AND id <> ?
+			  AND deleted_at IS NOT NULL
+		`, newRootPath, pathSuffixStart, userID, root.ID, root.ID).Error; err != nil {
+			return err
+		}
+
+		if err := r.insertChildIntoParentTx(tx, userID, targetParent.ID, root.ID, root.DeletedOrder); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// PermanentlyDeleteTrashRoot 物理删除一个回收站根项及其当前归属的整棵软删子树。
+func (r *BlockRepository) PermanentlyDeleteTrashRoot(userID, trashRootID uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		root, err := r.lockBlockByID(tx, userID, trashRootID, true)
+		if err != nil {
+			return err
+		}
+		if root.DeletedAt == nil || root.TrashRootID == nil || *root.TrashRootID != root.ID {
+			return gorm.ErrRecordNotFound
+		}
+
+		return tx.Where("created_by = ? AND trash_root_id = ? AND deleted_at IS NOT NULL", userID, root.ID).
+			Delete(&models.Block{}).Error
+	})
 }
 
 // FindChildren 查询某个节点的直接子节点（第一层，带用户隔离）
@@ -261,6 +430,163 @@ func removeIDFromJSON(raw json.RawMessage, idToRemove uuid.UUID) json.RawMessage
 
 	result, _ := json.Marshal(newIDs)
 	return result
+}
+
+func parseContentIDs(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 {
+		return []string{}, nil
+	}
+
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, err
+	}
+	if ids == nil {
+		return []string{}, nil
+	}
+	return ids, nil
+}
+
+func (r *BlockRepository) lockBlockByID(tx *gorm.DB, userID, blockID uuid.UUID, includeDeleted bool) (*models.Block, error) {
+	var block models.Block
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND created_by = ?", blockID, userID)
+
+	if !includeDeleted {
+		query = query.Where("deleted_at IS NULL")
+	}
+
+	if err := query.First(&block).Error; err != nil {
+		return nil, err
+	}
+
+	return &block, nil
+}
+
+func (r *BlockRepository) lockRootBlock(tx *gorm.DB, userID uuid.UUID) (*models.Block, error) {
+	var block models.Block
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("type = ? AND created_by = ? AND deleted_at IS NULL", "root", userID).
+		First(&block).Error
+	if err != nil {
+		return nil, err
+	}
+	return &block, nil
+}
+
+func (r *BlockRepository) lookupChildOrder(tx *gorm.DB, userID uuid.UUID, parentID *uuid.UUID, childID uuid.UUID) (*int, error) {
+	if parentID == nil {
+		return nil, nil
+	}
+
+	parent, err := r.lockBlockByID(tx, userID, *parentID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	contentIDs, err := parseContentIDs(parent.ContentIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	childIDStr := childID.String()
+	for idx, id := range contentIDs {
+		if id == childIDStr {
+			order := idx
+			return &order, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *BlockRepository) removeChildFromParentTx(tx *gorm.DB, userID, parentID, childID uuid.UUID) error {
+	parent, err := r.lockBlockByID(tx, userID, parentID, false)
+	if err != nil {
+		return err
+	}
+
+	contentIDs, err := parseContentIDs(parent.ContentIDs)
+	if err != nil {
+		return err
+	}
+
+	childIDStr := childID.String()
+	filtered := make([]string, 0, len(contentIDs))
+	for _, id := range contentIDs {
+		if id != childIDStr {
+			filtered = append(filtered, id)
+		}
+	}
+
+	contentIDsJSON, err := json.Marshal(filtered)
+	if err != nil {
+		return err
+	}
+
+	return tx.Model(&models.Block{}).
+		Where("id = ? AND created_by = ?", parentID, userID).
+		Update("content_ids", contentIDsJSON).Error
+}
+
+func (r *BlockRepository) insertChildIntoParentTx(tx *gorm.DB, userID, parentID, childID uuid.UUID, desiredOrder *int) error {
+	parent, err := r.lockBlockByID(tx, userID, parentID, false)
+	if err != nil {
+		return err
+	}
+
+	contentIDs, err := parseContentIDs(parent.ContentIDs)
+	if err != nil {
+		return err
+	}
+
+	childIDStr := childID.String()
+	filtered := make([]string, 0, len(contentIDs))
+	for _, id := range contentIDs {
+		if id != childIDStr {
+			filtered = append(filtered, id)
+		}
+	}
+
+	insertIndex := len(filtered)
+	if desiredOrder != nil {
+		switch {
+		case *desiredOrder <= 0:
+			insertIndex = 0
+		case *desiredOrder < len(filtered):
+			insertIndex = *desiredOrder
+		}
+	}
+
+	filtered = append(filtered, "")
+	copy(filtered[insertIndex+1:], filtered[insertIndex:])
+	filtered[insertIndex] = childIDStr
+
+	contentIDsJSON, err := json.Marshal(filtered)
+	if err != nil {
+		return err
+	}
+
+	return tx.Model(&models.Block{}).
+		Where("id = ? AND created_by = ?", parentID, userID).
+		Update("content_ids", contentIDsJSON).Error
+}
+
+func (r *BlockRepository) resolveRestoreParent(tx *gorm.DB, userID uuid.UUID, root *models.Block) (*models.Block, error) {
+	if root.DeletedParentID != nil {
+		parent, err := r.lockBlockByID(tx, userID, *root.DeletedParentID, false)
+		if err == nil {
+			if parent.Type != "root" && parent.Type != "folder" {
+				return nil, fmt.Errorf("%w: restore parent must be root/folder", gorm.ErrInvalidData)
+			}
+			return parent, nil
+		}
+		if err != gorm.ErrRecordNotFound {
+			return nil, err
+		}
+	}
+
+	return r.lockRootBlock(tx, userID)
 }
 
 // MoveBlock 处理区块移动和排序，更新 Materialized Path

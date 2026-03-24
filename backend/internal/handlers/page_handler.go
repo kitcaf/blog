@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type PageHandler struct {
@@ -210,7 +212,7 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 	response.Success(c, block)
 }
 
-// DeletePage 删除页面
+// DeletePage 删除页面和文件夹
 // 数据库操作步骤：
 // 1. 接收欲删除的页面 ID (UUID)
 // 2. 【极致优化】巧妙结合 UPDATE 和 Postgres 的 RETURNING 特性去执行它的软删除操作。由于增加了约束条件，借此操作一次性零损耗完成了鉴权验证并带回它的 parent_id 以及完整的 path。
@@ -228,10 +230,12 @@ func (h *PageHandler) DeletePage(c *gin.Context) {
 
 	// 步骤2：执行删除逻辑，依赖于服务层的 RETURNING 机制实现极其高效的软状态清理和数组解绑
 	if err := h.blockService.DeletePage(userID, id); err != nil {
-		// 返回通用错误消息或区分存在性
 		status := http.StatusInternalServerError
-		if err.Error() == "Page not found or permission denied" {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			status = http.StatusNotFound
+		case errors.Is(err, gorm.ErrInvalidData):
+			status = http.StatusBadRequest
 		}
 		response.Error(c, status, "Failed to delete page: "+err.Error())
 		return

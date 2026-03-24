@@ -21,6 +21,14 @@ type BlockService struct {
 	searchIndexer *SearchIndexer
 }
 
+const indexPublishChunkSize = 500
+
+type indexPageContext struct {
+	PageID      uuid.UUID
+	Path        string
+	PublishedAt *time.Time
+}
+
 func NewBlockService(blockRepo *repository.BlockRepository, rdb *redis.Client) *BlockService {
 	return &BlockService{
 		blockRepo:     blockRepo,
@@ -140,45 +148,26 @@ func (s *BlockService) publishPageReindexTask(ctx context.Context, userID, pageI
 		return err
 	}
 
-	// 构建 BlockOrder 映射
-	orderMap := make(map[uuid.UUID]int)
-	for _, block := range blocks {
-		var contentIDs []string
-		if err := json.Unmarshal(block.ContentIDs, &contentIDs); err == nil {
-			for idx, id := range contentIDs {
-				if childID, parseErr := uuid.Parse(id); parseErr == nil {
-					orderMap[childID] = idx
-				}
-			}
-		}
+	pageContext := &indexPageContext{
+		PageID:      pageID,
+		Path:        page.Path,
+		PublishedAt: page.PublishedAt,
 	}
-
-	// 构建索引数据
+	orderMap := buildBlockOrderMap(blocks)
 	indexData := make([]BlockIndexData, 0, len(blocks))
 	for _, block := range blocks {
 		if block.Type == "root" || block.Type == "folder" {
 			continue
 		}
 
-		content, err := extractTextContent(block.Properties)
+		entry, err := buildBlockIndexData(userID, block, pageContext, orderMap)
 		if err != nil {
 			continue
 		}
-
-		indexData = append(indexData, BlockIndexData{
-			BlockID:         block.ID,
-			PageID:          pageID,
-			UserID:          userID,
-			BlockType:       block.Type,
-			BlockOrder:      orderMap[block.ID],
-			Content:         content,
-			SourceUpdatedAt: block.UpdatedAt,
-			PublishedAt:     page.PublishedAt,
-		})
+		indexData = append(indexData, *entry)
 	}
 
-	// 发布索引任务
-	return s.searchIndexer.PublishBatchIndexTask(ctx, indexData, nil)
+	return s.publishIndexDataInChunks(ctx, indexData)
 }
 
 // DeletePage 删除页面或文件夹（移动到回收站）。
@@ -215,14 +204,18 @@ func (s *BlockService) RestoreTrashItem(userID, trashRootID uuid.UUID) error {
 	}
 
 	if s.searchIndexer != nil && len(restoreResult.RestoredPageIDs) > 0 {
-		pageIDs := append([]uuid.UUID(nil), restoreResult.RestoredPageIDs...)
-		go func(ids []uuid.UUID) {
-			for _, pageID := range ids {
-				if err := s.publishPageReindexTask(context.Background(), userID, pageID); err != nil {
-					log.Printf("Failed to publish restore reindex task for page %s: %v", pageID, err)
+		go func(result *repository.TrashRestoreResult) {
+			switch result.RootType {
+			case "page":
+				if err := s.publishPageReindexTask(context.Background(), userID, result.RootID); err != nil {
+					log.Printf("Failed to publish restore reindex task for page %s: %v", result.RootID, err)
+				}
+			case "folder":
+				if err := s.publishFolderSubtreeReindexTask(context.Background(), userID, result.RootPath); err != nil {
+					log.Printf("Failed to publish restore subtree reindex task for folder %s: %v", result.RootID, err)
 				}
 			}
-		}(pageIDs)
+		}(restoreResult)
 	}
 
 	return nil
@@ -237,10 +230,6 @@ func (s *BlockService) PermanentlyDeleteTrashItem(userID, trashRootID uuid.UUID)
 // PermanentlyDeleteTrashItems 批量永久删除多个回收站根项。
 func (s *BlockService) PermanentlyDeleteTrashItems(userID uuid.UUID, trashRootIDs []uuid.UUID) error {
 	return s.blockRepo.PermanentlyDeleteTrashRoots(userID, trashRootIDs)
-}
-
-func (s *BlockService) RemoveContentID(userID, parentID, childID uuid.UUID) error {
-	return s.blockRepo.RemoveContentID(userID, parentID, childID)
 }
 
 func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) error {
@@ -479,4 +468,98 @@ func extractTextContent(properties json.RawMessage) (string, error) {
 	}
 
 	return strings.Join(textParts, " "), nil
+}
+
+func buildBlockOrderMap(blocks []models.Block) map[uuid.UUID]int {
+	orderMap := make(map[uuid.UUID]int)
+	for _, block := range blocks {
+		var contentIDs []string
+		if err := json.Unmarshal(block.ContentIDs, &contentIDs); err != nil {
+			continue
+		}
+		for idx, id := range contentIDs {
+			if childID, parseErr := uuid.Parse(id); parseErr == nil {
+				orderMap[childID] = idx
+			}
+		}
+	}
+	return orderMap
+}
+
+func buildBlockIndexData(userID uuid.UUID, block models.Block, pageContext *indexPageContext, orderMap map[uuid.UUID]int) (*BlockIndexData, error) {
+	content, err := extractTextContent(block.Properties)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BlockIndexData{
+		BlockID:         block.ID,
+		PageID:          pageContext.PageID,
+		UserID:          userID,
+		BlockType:       block.Type,
+		BlockOrder:      orderMap[block.ID],
+		Content:         content,
+		SourceUpdatedAt: block.UpdatedAt,
+		PublishedAt:     pageContext.PublishedAt,
+	}, nil
+}
+
+func (s *BlockService) publishIndexDataInChunks(ctx context.Context, indexData []BlockIndexData) error {
+	if s.searchIndexer == nil || len(indexData) == 0 {
+		return nil
+	}
+
+	for start := 0; start < len(indexData); start += indexPublishChunkSize {
+		end := start + indexPublishChunkSize
+		if end > len(indexData) {
+			end = len(indexData)
+		}
+		if err := s.searchIndexer.PublishBatchIndexTask(ctx, indexData[start:end], nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *BlockService) publishFolderSubtreeReindexTask(ctx context.Context, userID uuid.UUID, rootPath string) error {
+	blocks, err := s.blockRepo.FindByPath(userID, rootPath)
+	if err != nil {
+		return err
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	orderMap := buildBlockOrderMap(blocks)
+	indexData := make([]BlockIndexData, 0, len(blocks))
+	var currentPage *indexPageContext
+
+	for _, block := range blocks {
+		switch block.Type {
+		case "root", "folder":
+			if currentPage != nil && !strings.HasPrefix(block.Path, currentPage.Path) {
+				currentPage = nil
+			}
+			continue
+		case "page":
+			currentPage = &indexPageContext{
+				PageID:      block.ID,
+				Path:        block.Path,
+				PublishedAt: block.PublishedAt,
+			}
+		default:
+			if currentPage == nil || !strings.HasPrefix(block.Path, currentPage.Path) {
+				continue
+			}
+		}
+
+		entry, buildErr := buildBlockIndexData(userID, block, currentPage, orderMap)
+		if buildErr != nil {
+			continue
+		}
+		indexData = append(indexData, *entry)
+	}
+
+	return s.publishIndexDataInChunks(ctx, indexData)
 }

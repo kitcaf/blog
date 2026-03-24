@@ -19,6 +19,8 @@ type SearchService struct {
 	blockRepo  *repository.BlockRepository
 }
 
+const searchUpsertBatchSize = 500
+
 func NewSearchService(db *gorm.DB) *SearchService {
 	return &SearchService{
 		searchRepo: repository.NewSearchRepository(db),
@@ -37,8 +39,9 @@ func (s *SearchService) BatchUpsertIndexes(ctx context.Context, indexData []Bloc
 
 	// 2. 批量插入/更新索引
 	if len(indexData) > 0 {
+		indexes := make([]*models.BlockSearchIndex, 0, len(indexData))
 		for _, data := range indexData {
-			index := &models.BlockSearchIndex{
+			indexes = append(indexes, &models.BlockSearchIndex{
 				BlockID:         data.BlockID,
 				PageID:          data.PageID,
 				UserID:          data.UserID,
@@ -47,10 +50,17 @@ func (s *SearchService) BatchUpsertIndexes(ctx context.Context, indexData []Bloc
 				Content:         data.Content,
 				SourceUpdatedAt: data.SourceUpdatedAt,
 				PublishedAt:     data.PublishedAt,
+			})
+		}
+
+		for start := 0; start < len(indexes); start += searchUpsertBatchSize {
+			end := start + searchUpsertBatchSize
+			if end > len(indexes) {
+				end = len(indexes)
 			}
 
-			if err := s.searchRepo.UpsertBlockIndex(ctx, index); err != nil {
-				return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to upsert index")
+			if err := s.searchRepo.BatchUpsertBlockIndexes(ctx, indexes[start:end]); err != nil {
+				return errors.WrapWithDetail(errors.ErrSearchIndexFailed, err, "failed to batch upsert indexes")
 			}
 		}
 	}

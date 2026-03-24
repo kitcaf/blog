@@ -23,13 +23,18 @@ type TrashDeleteResult struct {
 }
 
 type TrashRestoreResult struct {
+	RootID          uuid.UUID
+	RootType        string
+	RootPath        string
 	RestoredPageIDs []uuid.UUID
 }
 
-type ExpiredTrashRoot struct {
-	ID        uuid.UUID
-	CreatedBy uuid.UUID
+type TrashCleanupBatchResult struct {
+	DeletedRootCount int64 `gorm:"column:deleted_root_count"`
+	DeletedRowCount  int64 `gorm:"column:deleted_row_count"`
 }
+
+const parentContentIDUpdateBatchSize = 200
 
 func NewBlockRepository(db *gorm.DB) *BlockRepository {
 	return &BlockRepository{db: db}
@@ -91,11 +96,22 @@ func (r *BlockRepository) Create(block *models.Block) error {
 func (r *BlockRepository) Update(userID uuid.UUID, block *models.Block) error {
 	// 先检查是否有权限
 	var existing models.Block
-	if err := r.db.Where("id = ? AND created_by = ?", block.ID, userID).First(&existing).Error; err != nil {
+	if err := r.db.Where("id = ? AND created_by = ? AND deleted_at IS NULL", block.ID, userID).First(&existing).Error; err != nil {
 		return err
 	}
 
-	return r.db.Save(block).Error
+	return r.db.Model(&models.Block{}).
+		Where("id = ? AND created_by = ? AND deleted_at IS NULL", block.ID, userID).
+		Updates(map[string]interface{}{
+			"properties":     block.Properties,
+			"content_ids":    block.ContentIDs,
+			"path":           block.Path,
+			"parent_id":      block.ParentID,
+			"type":           block.Type,
+			"slug":           block.Slug,
+			"published_at":   block.PublishedAt,
+			"last_edited_by": block.LastEditedBy,
+		}).Error
 }
 
 // Upsert 批量插入或更新 Block（增量同步核心，带用户隔离）
@@ -124,22 +140,10 @@ func (r *BlockRepository) SoftDelete(userID uuid.UUID, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	return r.db.Model(&models.Block{}).
-		Where("id IN ? AND created_by = ?", ids, userID).
+		Where("id IN ? AND created_by = ? AND deleted_at IS NULL", ids, userID).
 		Update("deleted_at", now).Error
-}
-
-// 极致优化：利用 Postgres 原生 jsonb 移除数组内的指定元素
-func (r *BlockRepository) RemoveContentID(userID, parentID, childID uuid.UUID) error {
-	parentIDStr := parentID.String()
-	childIDStr := childID.String()
-	// 注意这里 content_ids 类型必须是 jsonb
-	return r.db.Exec(`
-		UPDATE blocks
-		SET content_ids = content_ids - ?
-		WHERE id = ? AND created_by = ? AND deleted_at IS NULL
-	`, childIDStr, parentIDStr, userID).Error
 }
 
 // 极致优化：利用 Postgres 原生 jsonb 追加数组内的指定元素
@@ -328,6 +332,10 @@ func (r *BlockRepository) RestoreTrashRoot(userID, trashRootID uuid.UUID) (*Tras
 			return err
 		}
 
+		result.RootID = root.ID
+		result.RootType = root.Type
+		result.RootPath = newRootPath
+
 		return nil
 	})
 	if err != nil {
@@ -339,18 +347,7 @@ func (r *BlockRepository) RestoreTrashRoot(userID, trashRootID uuid.UUID) (*Tras
 
 // PermanentlyDeleteTrashRoot 物理删除一个回收站根项及其当前归属的整棵软删子树。
 func (r *BlockRepository) PermanentlyDeleteTrashRoot(userID, trashRootID uuid.UUID) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		root, err := r.lockBlockByID(tx, userID, trashRootID, true)
-		if err != nil {
-			return err
-		}
-		if root.DeletedAt == nil || root.TrashRootID == nil || *root.TrashRootID != root.ID {
-			return gorm.ErrRecordNotFound
-		}
-
-		return tx.Where("created_by = ? AND trash_root_id = ? AND deleted_at IS NOT NULL", userID, root.ID).
-			Delete(&models.Block{}).Error
-	})
+	return r.PermanentlyDeleteTrashRoots(userID, []uuid.UUID{trashRootID})
 }
 
 // PermanentlyDeleteTrashRoots 批量永久删除多个回收站根项。
@@ -361,56 +358,66 @@ func (r *BlockRepository) PermanentlyDeleteTrashRoots(userID uuid.UUID, trashRoo
 	}
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, trashRootID := range uniqueIDs {
-			root, err := r.lockBlockByID(tx, userID, trashRootID, true)
-			if err != nil {
-				return err
-			}
-			if root.DeletedAt == nil || root.TrashRootID == nil || *root.TrashRootID != root.ID {
-				return gorm.ErrRecordNotFound
-			}
+		var validRootIDs []uuid.UUID
+		if err := tx.Model(&models.Block{}).
+			Where("created_by = ? AND id IN ? AND deleted_at IS NOT NULL AND id = trash_root_id", userID, uniqueIDs).
+			Pluck("id", &validRootIDs).Error; err != nil {
+			return err
+		}
+		if len(validRootIDs) != len(uniqueIDs) {
+			return gorm.ErrRecordNotFound
+		}
 
-			if err := tx.Where("created_by = ? AND trash_root_id = ? AND deleted_at IS NOT NULL", userID, root.ID).
-				Delete(&models.Block{}).Error; err != nil {
-				return err
-			}
+		if err := tx.Where("created_by = ? AND trash_root_id IN ? AND deleted_at IS NOT NULL", userID, validRootIDs).
+			Delete(&models.Block{}).Error; err != nil {
+			return err
 		}
 
 		return nil
 	})
 }
 
-// ListExpiredTrashRoots 查询过期的回收站根项，用于后台定时清理。
-func (r *BlockRepository) ListExpiredTrashRoots(cutoff time.Time, limit int) ([]ExpiredTrashRoot, error) {
+// DeleteExpiredTrashRootsBatch 批量删除过期的回收站根项及其软删子树。
+// 通过 FOR UPDATE SKIP LOCKED 避免多实例下重复选择相同根项。
+func (r *BlockRepository) DeleteExpiredTrashRootsBatch(cutoff time.Time, limit int) (*TrashCleanupBatchResult, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 
-	var roots []ExpiredTrashRoot
+	var result TrashCleanupBatchResult
 	err := r.db.Raw(`
-		SELECT id, created_by
-		FROM blocks
-		WHERE deleted_at IS NOT NULL
-		  AND deleted_at < ?
-		  AND id = trash_root_id
-		  AND type IN ('folder', 'page')
-		  AND created_by IS NOT NULL
-		ORDER BY deleted_at ASC
-		LIMIT ?
-	`, cutoff, limit).Scan(&roots).Error
+		WITH expired_roots AS (
+			SELECT id
+			FROM blocks
+			WHERE deleted_at IS NOT NULL
+			  AND deleted_at < ?
+			  AND id = trash_root_id
+			  AND type IN ('folder', 'page')
+			ORDER BY deleted_at ASC
+			LIMIT ?
+			FOR UPDATE SKIP LOCKED
+		),
+		deleted_rows AS (
+			DELETE FROM blocks
+			WHERE trash_root_id IN (SELECT id FROM expired_roots)
+			  AND deleted_at IS NOT NULL
+			RETURNING 1
+		)
+		SELECT
+			COALESCE((SELECT COUNT(*) FROM expired_roots), 0) AS deleted_root_count,
+			COALESCE((SELECT COUNT(*) FROM deleted_rows), 0) AS deleted_row_count
+	`, cutoff, limit).Scan(&result).Error
+	if err != nil {
+		return nil, err
+	}
 
-	return roots, err
+	return &result, nil
 }
 
 // FindChildren 查询某个节点的直接子节点（第一层，带用户隔离）
 // 返回顺序：按照父节点的 content_ids 字段中的顺序排列
 func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID uuid.UUID) ([]models.Block, error) {
-	var blocks []models.Block
-	query := r.db.Where("deleted_at IS NULL AND created_by = ?", userID).
-		Where("type IN ?", []string{"page", "folder"}).
-		Where("parent_id = ?", parentID)
-
-	err := query.Find(&blocks).Error
+	blocks, err := r.findChildrenByCreatedAt(userID, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -418,16 +425,15 @@ func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID uuid.UUID) ([]
 	// 查询父节点获取 content_ids
 	var parent models.Block
 	if err := r.db.Where("id = ? AND created_by = ?", parentID, userID).First(&parent).Error; err != nil {
-		// 如果父节点不存在，按 created_at 排序返回
-		query.Order("created_at ASC").Find(&blocks)
-		return blocks, nil
+		if err == gorm.ErrRecordNotFound {
+			return blocks, nil
+		}
+		return nil, err
 	}
 
 	// 解析父节点的 content_ids
-	var contentIDs []string
-	if err := json.Unmarshal(parent.ContentIDs, &contentIDs); err != nil || len(contentIDs) == 0 {
-		// 如果 content_ids 为空或解析失败，按 created_at 排序
-		query.Order("created_at ASC").Find(&blocks)
+	contentIDs, err := parseContentIDs(parent.ContentIDs)
+	if err != nil || len(contentIDs) == 0 {
 		return blocks, nil
 	}
 
@@ -520,6 +526,88 @@ func dedupeUUIDs(ids []uuid.UUID) []uuid.UUID {
 	}
 
 	return result
+}
+
+type parentChildRow struct {
+	ParentID uuid.UUID `gorm:"column:parent_id"`
+	ID       uuid.UUID `gorm:"column:id"`
+}
+
+type parentContentIDUpdate struct {
+	ParentID   uuid.UUID
+	ContentIDs string
+}
+
+func (r *BlockRepository) findChildrenByCreatedAt(userID uuid.UUID, parentID uuid.UUID) ([]models.Block, error) {
+	var blocks []models.Block
+	err := r.db.Where("deleted_at IS NULL AND created_by = ?", userID).
+		Where("type IN ?", []string{"page", "folder"}).
+		Where("parent_id = ?", parentID).
+		Order("created_at ASC").
+		Find(&blocks).Error
+	if err != nil {
+		return nil, err
+	}
+	return blocks, nil
+}
+
+func (r *BlockRepository) batchUpdateParentContentIDs(tx *gorm.DB, userID uuid.UUID, parentContentIDs map[uuid.UUID][]string) error {
+	if len(parentContentIDs) == 0 {
+		return nil
+	}
+
+	updates := make([]parentContentIDUpdate, 0, len(parentContentIDs))
+	for parentID, childIDs := range parentContentIDs {
+		contentIDsJSON, err := json.Marshal(childIDs)
+		if err != nil {
+			return err
+		}
+		updates = append(updates, parentContentIDUpdate{
+			ParentID:   parentID,
+			ContentIDs: string(contentIDsJSON),
+		})
+	}
+
+	sort.Slice(updates, func(i, j int) bool {
+		return updates[i].ParentID.String() < updates[j].ParentID.String()
+	})
+
+	for start := 0; start < len(updates); start += parentContentIDUpdateBatchSize {
+		end := start + parentContentIDUpdateBatchSize
+		if end > len(updates) {
+			end = len(updates)
+		}
+
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(`
+			UPDATE blocks AS parent
+			SET content_ids = batch_updates.content_ids
+			FROM (VALUES
+		`)
+
+		args := make([]interface{}, 0, (end-start)*2+1)
+		for idx, update := range updates[start:end] {
+			if idx > 0 {
+				sqlBuilder.WriteString(",")
+			}
+			sqlBuilder.WriteString(" (?::uuid, ?::jsonb)")
+			args = append(args, update.ParentID, update.ContentIDs)
+		}
+
+		sqlBuilder.WriteString(`
+			) AS batch_updates(id, content_ids)
+			WHERE parent.id = batch_updates.id
+			  AND parent.created_by = ?
+			  AND parent.deleted_at IS NULL
+		`)
+		args = append(args, userID)
+
+		if err := tx.Exec(sqlBuilder.String(), args...).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *BlockRepository) lockBlockByID(tx *gorm.DB, userID, blockID uuid.UUID, includeDeleted bool) (*models.Block, error) {
@@ -764,67 +852,49 @@ func (r *BlockRepository) MoveBlock(userID, targetBlockID uuid.UUID, newParentID
 // UpdateDescendantPaths 批量更新子孙节点的 path
 // 当移动节点时，需要更新所有子孙节点的 path
 func (r *BlockRepository) UpdateDescendantPaths(userID uuid.UUID, oldPath, newPath string) error {
-	// 查询所有子孙节点
-	var descendants []models.Block
-	err := r.db.Where("path LIKE ? AND created_by = ? AND deleted_at IS NULL", oldPath+"%", userID).
-		Find(&descendants).Error
-	if err != nil {
-		return err
+	if oldPath == "" || newPath == "" || oldPath == newPath {
+		return nil
 	}
 
-	// 批量更新 path
-	for _, desc := range descendants {
-		// 替换 path 前缀
-		newDescPath := strings.Replace(desc.Path, oldPath, newPath, 1)
-		r.db.Model(&models.Block{}).
-			Where("id = ?", desc.ID).
-			Update("path", newDescPath)
-	}
-
-	return nil
+	startIndex := len(oldPath) + 1
+	return r.db.Exec(`
+		UPDATE blocks
+		SET path = ? || SUBSTRING(path FROM ?)
+		WHERE path LIKE ?
+		  AND created_by = ?
+		  AND deleted_at IS NULL
+	`, newPath, startIndex, oldPath+"%", userID).Error
 }
 
 // RebuildContentIDs 批量重建父块的 content_ids
 // 根据实际的子块查询结果，重新构建父块的 content_ids 数组
 func (r *BlockRepository) RebuildContentIDs(userID uuid.UUID, parentIDs []uuid.UUID) error {
-	if len(parentIDs) == 0 {
+	uniqueParentIDs := dedupeUUIDs(parentIDs)
+	if len(uniqueParentIDs) == 0 {
 		return nil
 	}
 
-	// 对每个父块，查询其子块并重建 content_ids
-	for _, parentID := range parentIDs {
-		var children []models.Block
-		err := r.db.Select("id").
-			Where("parent_id = ? AND created_by = ? AND deleted_at IS NULL", parentID, userID).
-			Order("created_at ASC").
-			Find(&children).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		parentContentIDs := make(map[uuid.UUID][]string, len(uniqueParentIDs))
+		for _, parentID := range uniqueParentIDs {
+			parentContentIDs[parentID] = []string{}
+		}
 
-		if err != nil {
+		var childRows []parentChildRow
+		if err := tx.Model(&models.Block{}).
+			Select("parent_id, id").
+			Where("parent_id IN ? AND created_by = ? AND deleted_at IS NULL", uniqueParentIDs, userID).
+			Order("parent_id ASC, created_at ASC").
+			Scan(&childRows).Error; err != nil {
 			return err
 		}
 
-		// 构建 content_ids 数组
-		contentIDs := make([]string, len(children))
-		for i, child := range children {
-			contentIDs[i] = child.ID.String()
+		for _, childRow := range childRows {
+			parentContentIDs[childRow.ParentID] = append(parentContentIDs[childRow.ParentID], childRow.ID.String())
 		}
 
-		// 更新父块的 content_ids
-		contentIDsJSON, err := json.Marshal(contentIDs)
-		if err != nil {
-			return err
-		}
-
-		err = r.db.Model(&models.Block{}).
-			Where("id = ? AND created_by = ?", parentID, userID).
-			Update("content_ids", contentIDsJSON).Error
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+		return r.batchUpdateParentContentIDs(tx, userID, parentContentIDs)
+	})
 }
 
 // GetSidebarTree 返回整棵树的结构
@@ -950,18 +1020,6 @@ func sortChildrenByContentIDs(children []*models.PageTreeNode, contentIDs []stri
 	})
 
 	return children
-}
-
-// GetBlockByID 根据 ID 获取 Block（内部使用，无用户隔离）
-func (r *BlockRepository) GetBlockByID(ctx context.Context, blockID uuid.UUID) (*models.Block, error) {
-	var block models.Block
-	err := r.db.WithContext(ctx).
-		Where("id = ? AND deleted_at IS NULL", blockID).
-		First(&block).Error
-	if err != nil {
-		return nil, err
-	}
-	return &block, nil
 }
 
 // GetBlocksByIDs 批量获取 Block（内部使用，无用户隔离）

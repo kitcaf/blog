@@ -15,24 +15,52 @@ type SearchRepository struct {
 	db *gorm.DB
 }
 
+const searchIndexBatchValueArgs = 9
+
 func NewSearchRepository(db *gorm.DB) *SearchRepository {
 	return &SearchRepository{db: db}
 }
 
-// UpsertBlockIndex 插入或更新 Block 索引
-// 使用 ON CONFLICT DO UPDATE 实现 UPSERT
-func (r *SearchRepository) UpsertBlockIndex(ctx context.Context, index *models.BlockSearchIndex) error {
-	// 使用原生 SQL 实现 UPSERT + 自动生成 search_vector
-	sql := `
+// BatchUpsertBlockIndexes 批量插入或更新 Block 索引。
+// 使用单条 INSERT ... ON CONFLICT 语句，避免逐条执行 SQL。
+func (r *SearchRepository) BatchUpsertBlockIndexes(ctx context.Context, indexes []*models.BlockSearchIndex) error {
+	if len(indexes) == 0 {
+		return nil
+	}
+
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString(`
 		INSERT INTO block_search_index (
 			block_id, page_id, user_id, block_type, block_order,
 			content, search_vector, source_updated_at, published_at,
 			created_at, updated_at
-		) VALUES (
-			?, ?, ?, ?, ?,
-			?, to_tsvector('simple', ?), ?, ?,
-			NOW(), NOW()
+		) VALUES
+	`)
+
+	args := make([]interface{}, 0, len(indexes)*searchIndexBatchValueArgs)
+	for i, index := range indexes {
+		if i > 0 {
+			sqlBuilder.WriteString(",")
+		}
+		sqlBuilder.WriteString(`
+			(?, ?, ?, ?, ?,
+			 ?, to_tsvector('simple', ?), ?, ?,
+			 NOW(), NOW())
+		`)
+		args = append(args,
+			index.BlockID,
+			index.PageID,
+			index.UserID,
+			index.BlockType,
+			index.BlockOrder,
+			index.Content,
+			index.Content,
+			index.SourceUpdatedAt,
+			index.PublishedAt,
 		)
+	}
+
+	sqlBuilder.WriteString(`
 		ON CONFLICT (block_id) DO UPDATE SET
 			page_id = EXCLUDED.page_id,
 			user_id = EXCLUDED.user_id,
@@ -43,19 +71,9 @@ func (r *SearchRepository) UpsertBlockIndex(ctx context.Context, index *models.B
 			source_updated_at = EXCLUDED.source_updated_at,
 			published_at = EXCLUDED.published_at,
 			updated_at = NOW()
-	`
+	`)
 
-	return r.db.WithContext(ctx).Exec(sql,
-		index.BlockID,
-		index.PageID,
-		index.UserID,
-		index.BlockType,
-		index.BlockOrder,
-		index.Content,
-		index.Content,
-		index.SourceUpdatedAt,
-		index.PublishedAt,
-	).Error
+	return r.db.WithContext(ctx).Exec(sqlBuilder.String(), args...).Error
 }
 
 // BatchDeleteBlockIndexes 批量删除 Block 索引

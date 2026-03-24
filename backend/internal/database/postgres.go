@@ -98,6 +98,15 @@ func createCustomIndexes(db *gorm.DB) {
 		WHERE deleted_at IS NOT NULL
 	`)
 
+	// 回收站过期清理索引（按根项 deleted_at 扫描过期数据）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_blocks_trash_cleanup_roots
+		ON blocks (deleted_at ASC)
+		WHERE deleted_at IS NOT NULL
+		  AND id = trash_root_id
+		  AND type IN ('folder', 'page')
+	`)
+
 	// ========== BlockSearchIndex 表索引 ==========
 
 	// 全文搜索 GIN 索引

@@ -1,4 +1,4 @@
-package repository
+package user
 
 import (
 	"blog-backend/internal/models"
@@ -17,23 +17,23 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 
 // FindByUsername 根据用户名查找用户
 func (r *UserRepository) FindByUsername(username string) (*models.User, error) {
-	var user models.User
-	err := r.db.Where("username = ?", username).First(&user).Error
-	return &user, err
+	var currentUser models.User
+	err := r.db.Where("username = ?", username).First(&currentUser).Error
+	return &currentUser, err
 }
 
 // FindByEmail 根据邮箱查找用户
 func (r *UserRepository) FindByEmail(email string) (*models.User, error) {
-	var user models.User
-	err := r.db.Where("email = ?", email).First(&user).Error
-	return &user, err
+	var currentUser models.User
+	err := r.db.Where("email = ?", email).First(&currentUser).Error
+	return &currentUser, err
 }
 
 // FindByID 根据 ID 查找用户
 func (r *UserRepository) FindByID(id uuid.UUID) (*models.User, error) {
-	var user models.User
-	err := r.db.Where("id = ?", id).First(&user).Error
-	return &user, err
+	var currentUser models.User
+	err := r.db.Where("id = ?", id).First(&currentUser).Error
+	return &currentUser, err
 }
 
 // Create 创建新用户

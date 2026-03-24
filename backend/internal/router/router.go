@@ -4,7 +4,8 @@ import (
 	"blog-backend/internal/config"
 	"blog-backend/internal/handlers"
 	"blog-backend/internal/middleware"
-	"blog-backend/internal/repository"
+	blockrepo "blog-backend/internal/repository/block"
+	userrepo "blog-backend/internal/repository/user"
 	"blog-backend/internal/services"
 
 	"github.com/gin-contrib/cors"
@@ -32,8 +33,8 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 	}))
 
 	// 初始化 repositories
-	userRepo := repository.NewUserRepository(db)
-	blockRepo := repository.NewBlockRepository(db)
+	userRepo := userrepo.NewUserRepository(db)
+	blockRepo := blockrepo.NewBlockRepository(db)
 
 	// 初始化 services
 	authService := services.NewAuthService(userRepo, cfg, rdb)

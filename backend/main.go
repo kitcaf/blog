@@ -8,7 +8,7 @@ import (
 
 	"blog-backend/internal/config"
 	"blog-backend/internal/database"
-	"blog-backend/internal/repository"
+	blockrepo "blog-backend/internal/repository/block"
 	"blog-backend/internal/router"
 	"blog-backend/internal/services"
 	"blog-backend/pkg/errors"
@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// 6. 启动回收站自动清理任务
-	trashCleanup := services.NewTrashCleanupService(repository.NewBlockRepository(db))
+	trashCleanup := services.NewTrashCleanupService(blockrepo.NewBlockRepository(db))
 	trashCleanup.Start()
 
 	// 7. 初始化路由（传入 searchIndexer）

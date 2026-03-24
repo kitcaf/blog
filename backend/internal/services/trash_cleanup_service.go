@@ -13,7 +13,7 @@ import (
 	"log"
 	"time"
 
-	"blog-backend/internal/repository"
+	blockrepo "blog-backend/internal/repository/block"
 )
 
 const (
@@ -26,14 +26,14 @@ const (
 // 它只处理 blocks 软删子树，不触碰 block_search_index：
 // 搜索索引应在"进入回收站"时已经被删除。
 type TrashCleanupService struct {
-	blockRepo *repository.BlockRepository // Block 数据仓库
-	ctx       context.Context             // 上下文，用于控制服务生命周期
-	cancel    context.CancelFunc          // 取消函数，用于停止服务
-	location  *time.Location              // 时区信息
+	blockRepo *blockrepo.BlockRepository // Block 数据仓库
+	ctx       context.Context            // 上下文，用于控制服务生命周期
+	cancel    context.CancelFunc         // 取消函数，用于停止服务
+	location  *time.Location             // 时区信息
 }
 
 // NewTrashCleanupService 创建回收站清理服务实例
-func NewTrashCleanupService(blockRepo *repository.BlockRepository) *TrashCleanupService {
+func NewTrashCleanupService(blockRepo *blockrepo.BlockRepository) *TrashCleanupService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TrashCleanupService{
 		blockRepo: blockRepo,

@@ -2,7 +2,8 @@ package services
 
 import (
 	"blog-backend/internal/models"
-	"blog-backend/internal/repository"
+	blockrepo "blog-backend/internal/repository/block"
+	searchrepo "blog-backend/internal/repository/search"
 	"blog-backend/pkg/errors"
 	"context"
 	"encoding/json"
@@ -15,16 +16,16 @@ import (
 )
 
 type SearchService struct {
-	searchRepo *repository.SearchRepository
-	blockRepo  *repository.BlockRepository
+	searchRepo *searchrepo.SearchRepository
+	blockRepo  *blockrepo.BlockRepository
 }
 
 const searchUpsertBatchSize = 500
 
 func NewSearchService(db *gorm.DB) *SearchService {
 	return &SearchService{
-		searchRepo: repository.NewSearchRepository(db),
-		blockRepo:  repository.NewBlockRepository(db),
+		searchRepo: searchrepo.NewSearchRepository(db),
+		blockRepo:  blockrepo.NewBlockRepository(db),
 	}
 }
 
@@ -93,7 +94,7 @@ func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query
 		return nil, errors.WrapWithDetail(errors.ErrSearchQueryFailed, err, "failed to resolve search owner ids")
 	}
 
-	blocks := make([]*repository.BlockSearchResult, 0, 128)
+	blocks := make([]*searchrepo.BlockSearchResult, 0, 128)
 	seenBlockIDs := make(map[uuid.UUID]struct{})
 	for _, ownerID := range ownerIDs {
 		matchedBlocks, searchErr := s.searchRepo.SearchBlocks(ctx, ownerID, query, 1000)
@@ -124,7 +125,7 @@ func (s *SearchService) SearchPages(ctx context.Context, userID uuid.UUID, query
 	pageMap := make(map[uuid.UUID]*pageAggregation)
 	for _, block := range blocks {
 		if _, exists := pageMap[block.PageID]; !exists {
-			pageMap[block.PageID] = &pageAggregation{PageID: block.PageID, Blocks: []*repository.BlockSearchResult{}}
+			pageMap[block.PageID] = &pageAggregation{PageID: block.PageID, Blocks: []*searchrepo.BlockSearchResult{}}
 		}
 		pageMap[block.PageID].Blocks = append(pageMap[block.PageID].Blocks, block)
 	}
@@ -165,7 +166,7 @@ func (s *SearchService) SearchPublishedPages(ctx context.Context, query string) 
 	pageMap := make(map[uuid.UUID]*pageAggregation)
 	for _, block := range blocks {
 		if _, exists := pageMap[block.PageID]; !exists {
-			pageMap[block.PageID] = &pageAggregation{PageID: block.PageID, Blocks: []*repository.BlockSearchResult{}}
+			pageMap[block.PageID] = &pageAggregation{PageID: block.PageID, Blocks: []*searchrepo.BlockSearchResult{}}
 		}
 		pageMap[block.PageID].Blocks = append(pageMap[block.PageID].Blocks, block)
 	}
@@ -187,7 +188,7 @@ func (s *SearchService) SearchPublishedPages(ctx context.Context, query string) 
 
 type pageAggregation struct {
 	PageID uuid.UUID
-	Blocks []*repository.BlockSearchResult
+	Blocks []*searchrepo.BlockSearchResult
 }
 
 func (s *SearchService) getSearchOwnerIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {

@@ -1,4 +1,4 @@
-package repository
+package search
 
 import (
 	"blog-backend/internal/models"
@@ -101,7 +101,6 @@ type BlockSearchResult struct {
 }
 
 // SearchBlocks 全文搜索 Block
-// 返回匹配的 Block 列表（未聚合，包含分数）
 func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, query string, limit int) ([]*BlockSearchResult, error) {
 	var results []*BlockSearchResult
 

@@ -11,7 +11,7 @@ import (
 
 	"blog-backend/internal/config"
 	"blog-backend/internal/models"
-	"blog-backend/internal/repository"
+	userrepo "blog-backend/internal/repository/user"
 	"blog-backend/pkg/errors"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -21,12 +21,12 @@ import (
 )
 
 type AuthService struct {
-	userRepo *repository.UserRepository
+	userRepo *userrepo.UserRepository
 	cfg      *config.Config
 	rdb      *redis.Client
 }
 
-func NewAuthService(userRepo *repository.UserRepository, cfg *config.Config, rdb *redis.Client) *AuthService {
+func NewAuthService(userRepo *userrepo.UserRepository, cfg *config.Config, rdb *redis.Client) *AuthService {
 	return &AuthService{
 		userRepo: userRepo,
 		cfg:      cfg,

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"blog-backend/internal/models"
-	"blog-backend/internal/repository"
+	blockrepo "blog-backend/internal/repository/block"
 	pkgerrors "blog-backend/pkg/errors"
 
 	"github.com/google/uuid"
@@ -16,7 +16,7 @@ import (
 )
 
 type BlockService struct {
-	blockRepo     *repository.BlockRepository
+	blockRepo     *blockrepo.BlockRepository
 	rdb           *redis.Client
 	searchIndexer *SearchIndexer
 }
@@ -29,7 +29,7 @@ type indexPageContext struct {
 	PublishedAt *time.Time
 }
 
-func NewBlockService(blockRepo *repository.BlockRepository, rdb *redis.Client) *BlockService {
+func NewBlockService(blockRepo *blockrepo.BlockRepository, rdb *redis.Client) *BlockService {
 	return &BlockService{
 		blockRepo:     blockRepo,
 		rdb:           rdb,
@@ -204,7 +204,7 @@ func (s *BlockService) RestoreTrashItem(userID, trashRootID uuid.UUID) error {
 	}
 
 	if s.searchIndexer != nil && len(restoreResult.RestoredPageIDs) > 0 {
-		go func(result *repository.TrashRestoreResult) {
+		go func(result *blockrepo.TrashRestoreResult) {
 			switch result.RootType {
 			case "page":
 				if err := s.publishPageReindexTask(context.Background(), userID, result.RootID); err != nil {

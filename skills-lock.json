@@ -1,6 +1,16 @@
 {
   "version": 1,
   "skills": {
+    "code-review": {
+      "source": "kitcaf/skills",
+      "sourceType": "github",
+      "computedHash": "1f1e94391ae3e016c6ff66804a83b8b2f4e1f7e04a927b5a32a2a63fb59e69ee"
+    },
+    "code-writing": {
+      "source": "kitcaf/skills",
+      "sourceType": "github",
+      "computedHash": "ff04025bdf07832df9d973eb628476dd00cebf9db162c3e1a3ca346826e5e0ea"
+    },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",

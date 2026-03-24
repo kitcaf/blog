@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 import { CreateItemDialog } from './CreateItemDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SearchDialog } from './SearchDialog';
-import { TrashDialog } from './trash/TrashDialog';
+import { TrashDialog } from './trash';
 import {
   SidebarHeader,
   SidebarNav,

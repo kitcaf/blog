@@ -99,7 +99,7 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 
 	sql := `
 		WITH search_query AS (
-			SELECT to_tsquery('simple', $1) AS ts_query
+			SELECT to_tsquery('simple', ?) AS ts_query
 		)
 		SELECT
 			bsi.block_id,
@@ -114,10 +114,10 @@ func (r *SearchRepository) SearchBlocks(ctx context.Context, userID uuid.UUID, q
 		FROM block_search_index AS bsi
 		CROSS JOIN search_query AS sq
 		WHERE
-			bsi.user_id = $2
+			bsi.user_id = ?
 			AND bsi.search_vector @@ sq.ts_query
 		ORDER BY rank DESC, bsi.source_updated_at DESC
-		LIMIT $3
+		LIMIT ?
 	`
 
 	err := r.db.WithContext(ctx).Raw(sql, tsQuery, userID, limit).Scan(&results).Error
@@ -140,7 +140,7 @@ func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query stri
 
 	sql := `
 		WITH search_query AS (
-			SELECT to_tsquery('simple', $1) AS ts_query
+			SELECT to_tsquery('simple', ?) AS ts_query
 		)
 		SELECT
 			bsi.block_id,
@@ -158,7 +158,7 @@ func (r *SearchRepository) SearchPublishedBlocks(ctx context.Context, query stri
 			bsi.published_at IS NOT NULL
 			AND bsi.search_vector @@ sq.ts_query
 		ORDER BY rank DESC, bsi.source_updated_at DESC
-		LIMIT $2
+		LIMIT ?
 	`
 
 	err := r.db.WithContext(ctx).Raw(sql, tsQuery, limit).Scan(&results).Error

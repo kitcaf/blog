@@ -8,6 +8,7 @@ import (
 
 	"blog-backend/internal/config"
 	"blog-backend/internal/database"
+	"blog-backend/internal/repository"
 	"blog-backend/internal/router"
 	"blog-backend/internal/services"
 	"blog-backend/pkg/errors"
@@ -45,10 +46,14 @@ func main() {
 		log.Println("Redis not available, search indexer disabled")
 	}
 
-	// 6. 初始化路由（传入 searchIndexer）
+	// 6. 启动回收站自动清理任务
+	trashCleanup := services.NewTrashCleanupService(repository.NewBlockRepository(db))
+	trashCleanup.Start()
+
+	// 7. 初始化路由（传入 searchIndexer）
 	r := router.Setup(cfg, db, rdb, searchIndexer)
 
-	// 7. 优雅关闭处理
+	// 8. 优雅关闭处理
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -58,10 +63,11 @@ func main() {
 		if searchIndexer != nil {
 			searchIndexer.Stop()
 		}
+		trashCleanup.Stop()
 		os.Exit(0)
 	}()
 
-	// 8. 启动 HTTP 服务器
+	// 9. 启动 HTTP 服务器
 	addr := ":" + cfg.Server.Port
 	log.Printf("🌐 Server starting on http://localhost%s", addr)
 	if err := r.Run(addr); err != nil {

@@ -23,11 +23,19 @@ export function SidebarNav({ onSearchClick }: SidebarNavProps) {
   );
 }
 
-export function SidebarBottomNav() {
+interface SidebarBottomNavProps {
+  onTrashClick?: () => void;
+}
+
+export function SidebarBottomNav({ onTrashClick }: SidebarBottomNavProps) {
   return (
     <div className="mt-auto pt-4 space-y-0.5">
       <SidebarItem icon={<Settings size={16} />} label="设置" />
-      <SidebarItem icon={<Trash size={16} />} label="回收站" />
+      <SidebarItem 
+        icon={<Trash size={16} />} 
+        label="回收站" 
+        onClick={onTrashClick}
+      />
     </div>
   );
 }

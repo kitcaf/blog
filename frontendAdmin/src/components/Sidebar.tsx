@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import { CreateItemDialog } from './CreateItemDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SearchDialog } from './SearchDialog';
+import { TrashDialog } from './trash/TrashDialog';
 import {
   SidebarHeader,
   SidebarNav,
@@ -66,6 +67,9 @@ export function Sidebar() {
 
   // 搜索对话框状态
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // 回收站对话框状态
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
 
   const [isCreating, setIsCreating] = useState(false);
 
@@ -252,7 +256,7 @@ export function Sidebar() {
       {/* 固定底部 */}
       <div className="shrink-0" style={{ width: `${width}px` }}>
         <div className="p-2">
-          <SidebarBottomNav />
+          <SidebarBottomNav onTrashClick={() => setIsTrashOpen(true)} />
         </div>
         <SidebarFooter
           username={user?.username}
@@ -280,6 +284,8 @@ export function Sidebar() {
       />
 
       <SearchDialog isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+      
+      <TrashDialog isOpen={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
     </aside>
   );
 }

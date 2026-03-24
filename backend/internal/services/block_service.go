@@ -234,6 +234,11 @@ func (s *BlockService) PermanentlyDeleteTrashItem(userID, trashRootID uuid.UUID)
 	return s.blockRepo.PermanentlyDeleteTrashRoot(userID, trashRootID)
 }
 
+// PermanentlyDeleteTrashItems 批量永久删除多个回收站根项。
+func (s *BlockService) PermanentlyDeleteTrashItems(userID uuid.UUID, trashRootIDs []uuid.UUID) error {
+	return s.blockRepo.PermanentlyDeleteTrashRoots(userID, trashRootIDs)
+}
+
 func (s *BlockService) RemoveContentID(userID, parentID, childID uuid.UUID) error {
 	return s.blockRepo.RemoveContentID(userID, parentID, childID)
 }

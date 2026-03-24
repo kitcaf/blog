@@ -26,6 +26,11 @@ type TrashRestoreResult struct {
 	RestoredPageIDs []uuid.UUID
 }
 
+type ExpiredTrashRoot struct {
+	ID        uuid.UUID
+	CreatedBy uuid.UUID
+}
+
 func NewBlockRepository(db *gorm.DB) *BlockRepository {
 	return &BlockRepository{db: db}
 }
@@ -348,6 +353,55 @@ func (r *BlockRepository) PermanentlyDeleteTrashRoot(userID, trashRootID uuid.UU
 	})
 }
 
+// PermanentlyDeleteTrashRoots 批量永久删除多个回收站根项。
+func (r *BlockRepository) PermanentlyDeleteTrashRoots(userID uuid.UUID, trashRootIDs []uuid.UUID) error {
+	uniqueIDs := dedupeUUIDs(trashRootIDs)
+	if len(uniqueIDs) == 0 {
+		return nil
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, trashRootID := range uniqueIDs {
+			root, err := r.lockBlockByID(tx, userID, trashRootID, true)
+			if err != nil {
+				return err
+			}
+			if root.DeletedAt == nil || root.TrashRootID == nil || *root.TrashRootID != root.ID {
+				return gorm.ErrRecordNotFound
+			}
+
+			if err := tx.Where("created_by = ? AND trash_root_id = ? AND deleted_at IS NOT NULL", userID, root.ID).
+				Delete(&models.Block{}).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// ListExpiredTrashRoots 查询过期的回收站根项，用于后台定时清理。
+func (r *BlockRepository) ListExpiredTrashRoots(cutoff time.Time, limit int) ([]ExpiredTrashRoot, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	var roots []ExpiredTrashRoot
+	err := r.db.Raw(`
+		SELECT id, created_by
+		FROM blocks
+		WHERE deleted_at IS NOT NULL
+		  AND deleted_at < ?
+		  AND id = trash_root_id
+		  AND type IN ('folder', 'page')
+		  AND created_by IS NOT NULL
+		ORDER BY deleted_at ASC
+		LIMIT ?
+	`, cutoff, limit).Scan(&roots).Error
+
+	return roots, err
+}
+
 // FindChildren 查询某个节点的直接子节点（第一层，带用户隔离）
 // 返回顺序：按照父节点的 content_ids 字段中的顺序排列
 func (r *BlockRepository) FindChildren(userID uuid.UUID, parentID uuid.UUID) ([]models.Block, error) {
@@ -445,6 +499,27 @@ func parseContentIDs(raw json.RawMessage) ([]string, error) {
 		return []string{}, nil
 	}
 	return ids, nil
+}
+
+func dedupeUUIDs(ids []uuid.UUID) []uuid.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	result := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+
+	return result
 }
 
 func (r *BlockRepository) lockBlockByID(tx *gorm.DB, userID, blockID uuid.UUID, includeDeleted bool) (*models.Block, error) {

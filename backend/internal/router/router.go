@@ -107,6 +107,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 		trash := admin.Group("/trash")
 		{
 			trash.GET("", trashHandler.ListTrash)
+			trash.POST("/batch-delete", trashHandler.BatchDeleteTrashItems)
 			trash.POST("/:id/restore", trashHandler.RestoreTrashItem)
 			trash.DELETE("/:id", trashHandler.DeleteTrashItem)
 		}

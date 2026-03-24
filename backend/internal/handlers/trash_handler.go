@@ -16,6 +16,10 @@ type TrashHandler struct {
 	blockService *services.BlockService
 }
 
+type BatchDeleteTrashRequest struct {
+	IDs []uuid.UUID `json:"ids" binding:"required,min=1"`
+}
+
 func NewTrashHandler(blockService *services.BlockService) *TrashHandler {
 	return &TrashHandler{blockService: blockService}
 }
@@ -78,4 +82,56 @@ func (h *TrashHandler) DeleteTrashItem(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "永久删除成功"})
+}
+
+// BatchDeleteTrashItems 批量永久删除多个回收站根项。
+func (h *TrashHandler) BatchDeleteTrashItems(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+
+	var req BatchDeleteTrashRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid request: "+err.Error())
+		return
+	}
+
+	uniqueIDs := sanitizeUUIDs(req.IDs)
+	if len(uniqueIDs) == 0 {
+		response.Error(c, http.StatusBadRequest, "Invalid request: ids cannot be empty")
+		return
+	}
+
+	if err := h.blockService.PermanentlyDeleteTrashItems(userID, uniqueIDs); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		response.Error(c, status, "Failed to batch delete trash items: "+err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":       "批量永久删除成功",
+		"deleted_count": len(uniqueIDs),
+	})
+}
+
+func sanitizeUUIDs(ids []uuid.UUID) []uuid.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	result := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+
+	return result
 }

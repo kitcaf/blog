@@ -58,6 +58,15 @@ func (s *SearchService) BatchUpsertIndexes(ctx context.Context, indexData []Bloc
 	return nil
 }
 
+// BatchDeleteBlockIndexes 批量删除 Block 索引（推荐使用）
+// 直接用 Block IDs 删除，无需子查询
+func (s *SearchService) BatchDeleteBlockIndexes(ctx context.Context, blockIDs []uuid.UUID) error {
+	if len(blockIDs) == 0 {
+		return nil
+	}
+	return s.searchRepo.BatchDeleteBlockIndexes(ctx, blockIDs)
+}
+
 // DeleteBlockIndexesByPageID 删除某个 Page 下的所有索引
 func (s *SearchService) DeleteBlockIndexesByPageID(ctx context.Context, pageID uuid.UUID) error {
 	return s.searchRepo.DeleteBlockIndexesByPageID(ctx, pageID)

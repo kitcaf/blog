@@ -177,8 +177,12 @@ func (s *BlockService) publishPageReindexTask(ctx context.Context, userID, pageI
 	return s.searchIndexer.PublishBatchIndexTask(ctx, indexData, nil)
 }
 
-// DeletePage 删除页面（软删除当前节点，级联软删子节点，并从父节点 content_ids 移除）
+// DeletePage 删除页面或文件夹（软删除当前节点，级联软删子节点，并从父节点 content_ids 移除）
+// 同时批量删除所有相关的搜索索引
 func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
+	ctx := context.Background()
+
+	// 步骤1：软删除当前节点并返回 parent_id 和 path
 	parentID, path, err := s.blockRepo.SoftDeleteAndReturnFields(userID, pageID)
 	if err != nil {
 		return err
@@ -188,22 +192,30 @@ func (s *BlockService) DeletePage(userID, pageID uuid.UUID) error {
 		return errors.New("Page not found or permission denied")
 	}
 
-	if err := s.blockRepo.SoftDeleteByPath(userID, path); err != nil {
+	// 步骤2：软删除所有子孙节点，并返回所有被删除的 Block IDs
+	deletedBlockIDs, err := s.blockRepo.SoftDeleteByPath(userID, path)
+	if err != nil {
 		log.Printf("Failed to soft delete descendants: %v", err)
 	}
 
+	// 步骤3：从父节点的 content_ids 中移除当前节点
 	if parentID != nil {
 		if err := s.blockRepo.RemoveContentID(userID, *parentID, pageID); err != nil {
 			log.Printf("Failed to remove content ID from parent: %v", err)
 		}
 	}
 
+	// 步骤4：异步批量删除索引（使用统一的批量删除 API）
+	// 将当前节点 ID 也加入删除列表
 	if s.searchIndexer != nil {
-		go func(pageID uuid.UUID) {
-			if err := s.searchIndexer.PublishPageDeleteTask(context.Background(), pageID); err != nil {
-				log.Printf("Failed to publish page delete task for page %s: %v", pageID, err)
-			}
-		}(pageID)
+		allDeletedIDs := append([]uuid.UUID{pageID}, deletedBlockIDs...)
+		if len(allDeletedIDs) > 0 {
+			go func(blockIDs []uuid.UUID) {
+				if err := s.searchIndexer.PublishBatchBlockDeleteTask(ctx, blockIDs); err != nil {
+					log.Printf("Failed to publish batch block delete task: %v", err)
+				}
+			}(allDeletedIDs)
+		}
 	}
 
 	return nil

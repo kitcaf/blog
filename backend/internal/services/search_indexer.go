@@ -22,8 +22,9 @@ const (
 	// Consumer 名称
 	ConsumerNameIndex = "indexer-1"
 
-	indexActionBatchUpsert = "batch_upsert"
-	indexActionDeletePage  = "delete_page"
+	indexActionBatchUpsert      = "batch_upsert"
+	indexActionDeletePage       = "delete_page"         // 保留用于单个页面删除
+	indexActionBatchDeleteBlock = "batch_delete_blocks" // 批量删除 Block 索引（推荐）
 )
 
 const (
@@ -104,6 +105,18 @@ func (si *SearchIndexer) PublishBatchIndexTask(ctx context.Context, indexData []
 // PublishPageDeleteTask 发布页面删除任务
 func (si *SearchIndexer) PublishPageDeleteTask(ctx context.Context, pageID uuid.UUID) error {
 	return si.publishTask(ctx, IndexMessage{Action: indexActionDeletePage, PageID: &pageID})
+}
+
+// PublishBatchBlockDeleteTask 发布批量 Block 删除任务（推荐使用）
+// 直接传递 Block IDs，避免重复查询
+func (si *SearchIndexer) PublishBatchBlockDeleteTask(ctx context.Context, blockIDs []uuid.UUID) error {
+	if len(blockIDs) == 0 {
+		return nil
+	}
+	return si.publishTask(ctx, IndexMessage{
+		Action:    indexActionBatchDeleteBlock,
+		DeleteIDs: blockIDs,
+	})
 }
 
 func (si *SearchIndexer) publishTask(ctx context.Context, msg IndexMessage) error {
@@ -232,6 +245,12 @@ func (si *SearchIndexer) handleMessage(message redis.XMessage) {
 			break
 		}
 		err = si.searchService.DeleteBlockIndexesByPageID(ctx, *msg.PageID)
+	case indexActionBatchDeleteBlock:
+		if len(msg.DeleteIDs) == 0 {
+			err = fmt.Errorf("missing delete_ids")
+			break
+		}
+		err = si.searchService.BatchDeleteBlockIndexes(ctx, msg.DeleteIDs)
 	default:
 		log.Printf("Unknown action: %s", msg.Action)
 		si.ackMessage(message.ID)

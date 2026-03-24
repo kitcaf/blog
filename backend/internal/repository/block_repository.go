@@ -161,11 +161,22 @@ func (r *BlockRepository) AppendContentID(userID, parentID, childID uuid.UUID) e
 }
 
 // SoftDeleteByPath 软删除指定路径下的所有 Block（级联删除，带用户隔离）
-func (r *BlockRepository) SoftDeleteByPath(userID uuid.UUID, path string) error {
+// 返回所有被删除的 Block IDs（用于删除搜索索引）
+func (r *BlockRepository) SoftDeleteByPath(userID uuid.UUID, path string) ([]uuid.UUID, error) {
+	var blockIDs []uuid.UUID
 	now := time.Now()
-	return r.db.Model(&models.Block{}).
-		Where("(path LIKE ? OR path = ?) AND created_by = ?", path+"%", path, userID).
-		Update("deleted_at", now).Error
+
+	// 使用 RETURNING 一次性完成软删除并返回所有被删除的 Block IDs
+	err := r.db.Raw(`
+		UPDATE blocks 
+		SET deleted_at = ? 
+		WHERE (path LIKE ? OR path = ?) 
+		  AND created_by = ? 
+		  AND deleted_at IS NULL
+		RETURNING id
+	`, now, path+"%", path, userID).Scan(&blockIDs).Error
+
+	return blockIDs, err
 }
 
 // FindChildren 查询某个节点的直接子节点（第一层，带用户隔离）

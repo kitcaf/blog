@@ -23,8 +23,7 @@ const (
 	ConsumerNameIndex = "indexer-1"
 
 	indexActionBatchUpsert      = "batch_upsert"
-	indexActionDeletePage       = "delete_page"         // 保留用于单个页面删除
-	indexActionBatchDeleteBlock = "batch_delete_blocks" // 批量删除 Block 索引（推荐）
+	indexActionBatchDeleteBlock = "batch_delete_blocks" // 批量删除 Block 索引
 )
 
 const (
@@ -48,8 +47,7 @@ type BlockIndexData struct {
 type IndexMessage struct {
 	Action    string           `json:"action"`
 	IndexData []BlockIndexData `json:"index_data,omitempty"`
-	DeleteIDs []uuid.UUID      `json:"delete_ids,omitempty"`
-	PageID    *uuid.UUID       `json:"page_id,omitempty"`
+	DeleteIDs []uuid.UUID      `json:"delete_ids,omitempty"` // 用于 batch_upsert 和 batch_delete_blocks
 	Retry     int              `json:"retry,omitempty"`
 }
 
@@ -102,12 +100,7 @@ func (si *SearchIndexer) PublishBatchIndexTask(ctx context.Context, indexData []
 	})
 }
 
-// PublishPageDeleteTask 发布页面删除任务
-func (si *SearchIndexer) PublishPageDeleteTask(ctx context.Context, pageID uuid.UUID) error {
-	return si.publishTask(ctx, IndexMessage{Action: indexActionDeletePage, PageID: &pageID})
-}
-
-// PublishBatchBlockDeleteTask 发布批量 Block 删除任务（推荐使用）
+// PublishBatchBlockDeleteTask 发布批量 Block 删除任务
 // 直接传递 Block IDs，避免重复查询
 func (si *SearchIndexer) PublishBatchBlockDeleteTask(ctx context.Context, blockIDs []uuid.UUID) error {
 	if len(blockIDs) == 0 {
@@ -239,12 +232,6 @@ func (si *SearchIndexer) handleMessage(message redis.XMessage) {
 	switch msg.Action {
 	case indexActionBatchUpsert:
 		err = si.searchService.BatchUpsertIndexes(ctx, msg.IndexData, msg.DeleteIDs)
-	case indexActionDeletePage:
-		if msg.PageID == nil {
-			err = fmt.Errorf("missing page_id")
-			break
-		}
-		err = si.searchService.DeleteBlockIndexesByPageID(ctx, *msg.PageID)
 	case indexActionBatchDeleteBlock:
 		if len(msg.DeleteIDs) == 0 {
 			err = fmt.Errorf("missing delete_ids")

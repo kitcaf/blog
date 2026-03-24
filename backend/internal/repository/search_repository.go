@@ -69,13 +69,6 @@ func (r *SearchRepository) BatchDeleteBlockIndexes(ctx context.Context, blockIDs
 		Delete(&models.BlockSearchIndex{}).Error
 }
 
-// DeleteBlockIndexesByPageID 删除某个 Page 下的所有索引
-func (r *SearchRepository) DeleteBlockIndexesByPageID(ctx context.Context, pageID uuid.UUID) error {
-	return r.db.WithContext(ctx).
-		Where("page_id = ?", pageID).
-		Delete(&models.BlockSearchIndex{}).Error
-}
-
 // BlockSearchResult 搜索结果（包含分数）
 type BlockSearchResult struct {
 	BlockID         uuid.UUID  `json:"block_id"`

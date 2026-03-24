@@ -1,0 +1,49 @@
+.editor-theme-root .prosemirror-editor ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  list-style: disc;
+}
+
+.editor-theme-root .prosemirror-editor ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  list-style: decimal;
+}
+
+.editor-theme-root .prosemirror-editor li {
+  margin: 0.25rem 0;
+  color: var(--editor-paragraph-color, var(--color-fg));
+  line-height: var(--editor-paragraph-line-height, 1.7);
+}
+
+.editor-theme-root .prosemirror-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.editor-theme-root .prosemirror-editor ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.editor-theme-root .prosemirror-editor ul[data-type="taskList"] li > label {
+  margin-top: 0.3rem;
+}
+
+.editor-theme-root .prosemirror-editor hr {
+  margin: 1.5rem 0;
+  border: none;
+  border-top: 1px solid var(--editor-code-block-border-color, var(--border));
+}
+
+.editor-theme-root .prosemirror-editor a {
+  color: var(--editor-link-color, #60a5fa);
+  text-decoration: underline;
+  text-underline-offset: var(--editor-link-underline-offset, 2px);
+  transition: color 0.15s;
+}
+
+.editor-theme-root .prosemirror-editor a:hover {
+  color: var(--editor-link-hover-color, #93c5fd);
+}

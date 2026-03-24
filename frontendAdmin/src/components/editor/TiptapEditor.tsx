@@ -6,11 +6,22 @@ import { useEditorSyncController } from './sync/useEditorSyncController';
 import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
 import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
 import { PageHeaderContainer } from './components/PageHeaderContainer';
+import { defaultEditorPreference } from './config/defaultConfig';
+import {
+  buildEditorThemeStyle,
+  getEditorThemeRootClassNames,
+} from './config/editorTheme';
+import './styles';
 
 interface TiptapEditorProps {
   className?: string;
   pageId?: string;
 }
+
+const defaultEditorThemeStyle = buildEditorThemeStyle(defaultEditorPreference.theme);
+const defaultEditorRootClassName = getEditorThemeRootClassNames(
+  defaultEditorPreference.theme,
+).join(' ');
 
 function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
@@ -63,7 +74,10 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   }
 
   return (
-    <div className={className}>
+    <div
+      className={[className, defaultEditorRootClassName].filter(Boolean).join(' ')}
+      style={defaultEditorThemeStyle}
+    >
       <div className="px-16">
         <PageHeaderContainer
           key={pageId ?? 'page-header'}

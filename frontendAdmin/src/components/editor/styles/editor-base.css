@@ -1,0 +1,22 @@
+.editor-theme-root .prosemirror-editor {
+  color: var(--editor-text-color, var(--color-fg));
+  caret-color: var(--editor-caret-color, var(--color-fg-deeper));
+}
+
+.editor-theme-root .prosemirror-editor:focus {
+  outline: none;
+}
+
+.editor-theme-root .prosemirror-editor p.is-editor-empty:first-child::before,
+.editor-theme-root .prosemirror-editor .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--editor-placeholder-color, var(--color-fg-light));
+  pointer-events: none;
+  height: 0;
+}
+
+.editor-theme-root .prosemirror-editor ::selection {
+  background: var(--editor-selection-bg, var(--color-selection-bg));
+  color: var(--editor-selection-fg, var(--color-selection-fg));
+}

@@ -20,6 +20,8 @@
  *      → dehydrate() → DbBlock → PATCH /api/blocks    
  *
  * 与 Tiptap 内部 JSON 的映射关系（供 hydrate/dehydrate 参考）：
+ * 注意：编辑器全局主题（例如标题字号、代码块默认配色、排版间距）属于展示层配置，
+ * 应存储在 EditorPreference 中，而不是混入 Block / blocks.properties。
  *
  *  Tiptap JSON                    │  我们的 Block 类型
  *  ───────────────────────────────┼──────────────────────────
@@ -113,7 +115,7 @@ export type InlineContent = InlineTextNode | InlineLinkNode;
 // 对应 Tiptap 的 node.attrs，从后端 properties JSONB 中解析。
 // ─────────────────────────────────────────────
 
-/** 所有 Block 都可能拥有的通用属性 */
+/** 所有 Block 都可能拥有的通用属性。仅描述内容语义上的局部覆写，不承载全局主题配置。 */
 export interface BaseBlockProps {
   textColor?: string;            // 文字颜色
   backgroundColor?: string;      // 背景颜色

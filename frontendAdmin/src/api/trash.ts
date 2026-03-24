@@ -23,7 +23,7 @@ export interface TrashItem {
  */
 export async function fetchTrashItems(): Promise<TrashItem[]> {
   const { data } = await apiClient.get<TrashItem[]>('/admin/trash');
-  return data;
+  return data ?? [];
 }
 
 /**

@@ -97,7 +97,7 @@ func (r *BlockRepository) MoveSubtreeToTrash(userID, actorID, blockID uuid.UUID)
 
 // ListTrashItems 查询当前用户回收站的可见根项。
 func (r *BlockRepository) ListTrashItems(userID uuid.UUID) ([]models.TrashItem, error) {
-	var items []models.TrashItem
+	items := make([]models.TrashItem, 0)
 	err := r.db.Raw(`
 		SELECT
 			root.id,

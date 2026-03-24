@@ -24,13 +24,14 @@ export function SidebarNav({ onSearchClick }: SidebarNavProps) {
 }
 
 interface SidebarBottomNavProps {
+  onSettingsClick?: () => void;
   onTrashClick?: () => void;
 }
 
-export function SidebarBottomNav({ onTrashClick }: SidebarBottomNavProps) {
+export function SidebarBottomNav({ onSettingsClick, onTrashClick }: SidebarBottomNavProps) {
   return (
     <div className="mt-auto pt-4 space-y-0.5">
-      <SidebarItem icon={<Settings size={16} />} label="设置" />
+      <SidebarItem icon={<Settings size={16} />} label="设置" onClick={onSettingsClick} />
       <SidebarItem 
         icon={<Trash size={16} />} 
         label="回收站" 

@@ -27,6 +27,7 @@ import { CreateItemDialog } from './CreateItemDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SearchDialog } from './SearchDialog';
 import { TrashDialog } from './trash';
+import { SettingsDialog } from './settings/SettingsDialog';
 import {
   SidebarHeader,
   SidebarNav,
@@ -70,6 +71,7 @@ export function Sidebar() {
 
   // 回收站对话框状态
   const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [isCreating, setIsCreating] = useState(false);
 
@@ -256,7 +258,10 @@ export function Sidebar() {
       {/* 固定底部 */}
       <div className="shrink-0" style={{ width: `${width}px` }}>
         <div className="p-2">
-          <SidebarBottomNav onTrashClick={() => setIsTrashOpen(true)} />
+          <SidebarBottomNav
+            onSettingsClick={() => setIsSettingsOpen(true)}
+            onTrashClick={() => setIsTrashOpen(true)}
+          />
         </div>
         <SidebarFooter
           username={user?.username}
@@ -286,6 +291,8 @@ export function Sidebar() {
       <SearchDialog isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
       
       <TrashDialog isOpen={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
+
+      <SettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </aside>
   );
 }

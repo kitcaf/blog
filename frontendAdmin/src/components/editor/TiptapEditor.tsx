@@ -5,12 +5,9 @@ import { editorExtensions } from './extensions';
 import { useEditorSyncController } from './sync/useEditorSyncController';
 import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
 import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
+import { cn } from '@/lib/utils';
 import { PageHeaderContainer } from './components/PageHeaderContainer';
-import { defaultEditorPreference } from './config/defaultConfig';
-import {
-  buildEditorThemeStyle,
-  getEditorThemeRootClassNames,
-} from './config/editorTheme';
+import { useEditorTheme } from './hooks/useEditorTheme';
 import './styles';
 
 interface TiptapEditorProps {
@@ -18,15 +15,11 @@ interface TiptapEditorProps {
   pageId?: string;
 }
 
-const defaultEditorThemeStyle = buildEditorThemeStyle(defaultEditorPreference.theme);
-const defaultEditorRootClassName = getEditorThemeRootClassNames(
-  defaultEditorPreference.theme,
-).join(' ');
-
 function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
   const { sync } = useBlockSyncRunner(pageId ?? null);
   const { pageBlock, contentBlocks } = splitPageDocumentBlocks(blocks, pageId);
+  const { editorCssVars, editorThemeClassName } = useEditorTheme();
   console.log("TiptapEditorComponent render", blocks)
   const editor = useEditor(
     {
@@ -75,8 +68,8 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
 
   return (
     <div
-      className={[className, defaultEditorRootClassName].filter(Boolean).join(' ')}
-      style={defaultEditorThemeStyle}
+      className={cn(className, editorThemeClassName)}
+      style={editorCssVars}
     >
       <div className="px-16">
         <PageHeaderContainer

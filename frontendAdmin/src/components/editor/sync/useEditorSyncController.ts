@@ -1,61 +1,30 @@
 /**
  * @file useEditorSyncController.ts
- * @description 编辑器同步控制器 - 协调编辑器变更检测、防抖、数据提取和同步
- * 
+ * @description 编辑器同步控制器 - 协调变更检测、防抖和 editor -> store flush。
+ *
  * 核心职责：
  *   1. 监听编辑器 update 事件，标记需要 flush
- *   2. 防抖后触发 flushAndSync：从编辑器提取变更 → 写入 Store → 发起同步
- *   3. 管理页面切换时的初始化和清理
- *   4. 暴露共享的同步调度器，供标题等其他控制器复用
- * 
- * 数据流：
- *   用户编辑 → editor.on('update') → needsEditorFlushRef = true → scheduleSync()
- *   → 防抖 1s → flushAndSync()
- *     ├─ isAllDirty(editor) 检查是否需要全量同步
- *     ├─ readDirtyTrackerCandidateIds(editor) 读取候选 ID
- *     ├─ collectEditorSyncDraft() 基于最终文档提取变更
- *     ├─ store.applyEditorSyncDraft() 批量写入 Store
- *     └─ store.getSyncRequest() → sync() 发起 API 请求
+ *   2. 标准 1 秒防抖后将编辑器变更写入 Store
+ *   3. 防抖结束或显式 flush 后，通知同步 runner 基于 Store 最新状态发起同步
+ *   4. 管理页面切换时的初始化和清理
  */
 
 import { useCallback, useEffect, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import type { BlockData } from '@blog/types';
 import { hydrateToTiptap } from '../converter';
-import { 
-  readDirtyTrackerCandidateIds, 
+import {
+  readDirtyTrackerCandidateIds,
   resetDirtyTracker,
   isAllDirty,
   isStructureDirty,
 } from '../extensions/DirtyTrackerExtension';
-import { useBlockStore, type PreparedBlockSync } from '@/store/useBlockStore';
+import { useBlockStore } from '@/store/useBlockStore';
 import { collectEditorSyncDraft } from './collectEditorSyncDraft';
 
-const DEBOUNCE_MS = 1000; // 防抖延迟：1秒
-const IDLE_TIMEOUT_MS = 1200;
+const DEBOUNCE_MS = 1000;
 
-type IdleCallbackHandle = number;
-
-function scheduleIdleWork(callback: () => void): IdleCallbackHandle {
-  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-    return window.requestIdleCallback(() => callback(), { timeout: IDLE_TIMEOUT_MS });
-  }
-
-  return globalThis.setTimeout(callback, 0);
-}
-
-function cancelIdleWork(handle: IdleCallbackHandle | null): void {
-  if (handle === null) {
-    return;
-  }
-
-  if (typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
-    window.cancelIdleCallback(handle);
-    return;
-  }
-
-  globalThis.clearTimeout(handle);
-}
+type SyncRequestReason = 'debounce' | 'flush';
 
 interface UseEditorSyncControllerParams {
   editor: Editor | null;
@@ -63,7 +32,7 @@ interface UseEditorSyncControllerParams {
   pageBlock: BlockData | null;
   contentBlocks: BlockData[];
   isBlocksLoading: boolean;
-  sync: (request: PreparedBlockSync) => void;
+  sync: (reason?: SyncRequestReason) => void;
 }
 
 interface UseEditorSyncControllerResult {
@@ -79,117 +48,84 @@ export function useEditorSyncController({
   isBlocksLoading,
   sync,
 }: UseEditorSyncControllerParams): UseEditorSyncControllerResult {
-  // 防抖定时器：延迟触发同步，避免频繁请求
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const idleFlushRef = useRef<IdleCallbackHandle | null>(null);
-  // 已水合到 Store 的页面 ID：同页内避免重复 hydrate 覆盖本地 pending 状态
   const hydratedPageRef = useRef<string | null>(null);
-  // 已初始化的页面 ID：防止重复初始化
   const initializedPageRef = useRef<string | null>(null);
-  // 是否需要从编辑器提取数据：标记编辑器有变更
   const needsEditorFlushRef = useRef(false);
 
-  /**
-   * 核心同步函数：提取编辑器变更 → 写入 Store → 发起同步
-   * 
-   * 执行流程：
-   *   1. 如果 needsEditorFlushRef 为 true，从编辑器提取变更
-   *   2. 检查 isAllDirty，决定是全量同步还是增量同步
-   *   3. 读取 DirtyTracker 收集的候选 ID（增量模式）
-   *   4. 调用 collectEditorSyncDraft 基于最终文档 diff 变更
-   *   5. 将变更批量写入 Store (applyEditorSyncDraft)
-   *   6. 从 Store 获取待同步数据 (getSyncRequest)
-   *   7. 发起 API 同步请求
-   */
-  const flushAndSync = useCallback(() => {
-    if (!pageId) {
+  const flushEditorChangesToStore = useCallback(() => {
+    if (!pageId || !editor || !needsEditorFlushRef.current) {
       return;
     }
 
-    // 步骤 1：如果编辑器有变更，提取数据
-    if (needsEditorFlushRef.current && editor) {
-      needsEditorFlushRef.current = false; // 重置标记
+    needsEditorFlushRef.current = false;
 
-      const store = useBlockStore.getState();
-      const currentPageBlock = store.blocksById[pageId];
-      
-      // 步骤 2：检查是否需要全量同步
-      const needsFullSync = isAllDirty(editor);
-      const structureDirty = needsFullSync || isStructureDirty(editor);
-      
-      // 步骤 3：读取候选 ID（全量模式下会创建包含所有 ID 的集合）
-      let candidateIds: Set<string>;
-      if (needsFullSync) {
-        // 全量同步：收集文档中所有 block ID
-        candidateIds = new Set<string>();
-        editor.state.doc.descendants((node) => {
-          const id = node.attrs?.blockId;
-          if (typeof id === 'string' && id.length > 0) {
-            candidateIds.add(id);
-          }
-          return true;
-        });
-      } else {
-        // 增量同步：使用 DirtyTracker 收集的候选 ID
-        candidateIds = readDirtyTrackerCandidateIds(editor);
-      }
-      
-      resetDirtyTracker(editor); // 清空候选集合和 isAllDirty 标记
+    const store = useBlockStore.getState();
+    const currentPageBlock = store.blocksById[pageId];
+    if (!currentPageBlock) {
+      resetDirtyTracker(editor);
+      return;
+    }
 
-      if (currentPageBlock) {
-        // 步骤 4：基于最终文档快照 diff 变更
-        const draft = collectEditorSyncDraft({
-          editor,
-          pageId,
-          pageBlock: currentPageBlock,
-          candidateIds,
-          blocksById: store.blocksById,
-          structureDirty,
-        });
+    const needsFullSync = isAllDirty(editor);
+    const structureDirty = needsFullSync || isStructureDirty(editor);
+    let candidateIds: Set<string>;
 
-        // 步骤 5：如果有变更，批量写入 Store
-        if (draft.updates.length > 0 || draft.deletedIds.length > 0 || draft.pageStructure) {
-          store.applyEditorSyncDraft(draft);
+    if (needsFullSync) {
+      candidateIds = new Set<string>();
+      editor.state.doc.descendants((node) => {
+        const id = node.attrs?.blockId;
+        if (typeof id === 'string' && id.length > 0) {
+          candidateIds.add(id);
         }
-      }
+        return true;
+      });
+    } else {
+      candidateIds = readDirtyTrackerCandidateIds(editor);
     }
 
-    // 步骤 6 & 7：从 Store 获取待同步数据并发起请求
-    const request = useBlockStore.getState().getSyncRequest(pageId);
-    if (request) {
-      sync(request); // 调用 API 同步
-    }
-  }, [editor, pageId, sync]);
+    resetDirtyTracker(editor);
 
-  const scheduleIdleFlush = useCallback(() => {
-    cancelIdleWork(idleFlushRef.current);
-    idleFlushRef.current = scheduleIdleWork(() => {
-      idleFlushRef.current = null;
-      flushAndSync();
+    const draft = collectEditorSyncDraft({
+      editor,
+      pageId,
+      pageBlock: currentPageBlock,
+      candidateIds,
+      blocksById: store.blocksById,
+      structureDirty,
     });
-  }, [flushAndSync]);
 
-  /**
-   * 调度 flush 和同步：防抖触发
-   * 
-   * 每次调用会重置定时器，确保在用户停止编辑 1 秒后才执行同步
-   */
+    if (draft.updates.length > 0 || draft.deletedIds.length > 0 || draft.pageStructure) {
+      store.applyEditorSyncDraft(draft);
+    }
+  }, [editor, pageId]);
+
+  const flushAndRequestSync = useCallback(
+    (reason: SyncRequestReason) => {
+      if (!pageId) {
+        return;
+      }
+
+      flushEditorChangesToStore();
+      sync(reason);
+    },
+    [flushEditorChangesToStore, pageId, sync],
+  );
+
   const scheduleSync = useCallback(() => {
     if (!pageId) {
       return;
     }
 
-    // 清除旧定时器，重新计时
     if (syncTimerRef.current) {
       clearTimeout(syncTimerRef.current);
     }
 
-    // 1 秒后将重活放到空闲窗口，尽量避开输入热路径
     syncTimerRef.current = setTimeout(() => {
       syncTimerRef.current = null;
-      scheduleIdleFlush();
+      flushAndRequestSync('debounce');
     }, DEBOUNCE_MS);
-  }, [pageId, scheduleIdleFlush]);
+  }, [flushAndRequestSync, pageId]);
 
   const flushSync = useCallback(() => {
     if (syncTimerRef.current) {
@@ -197,19 +133,12 @@ export function useEditorSyncController({
       syncTimerRef.current = null;
     }
 
-    cancelIdleWork(idleFlushRef.current);
-    idleFlushRef.current = null;
-    flushAndSync();
-  }, [flushAndSync]);
+    flushAndRequestSync('flush');
+  }, [flushAndRequestSync]);
 
-  /**
-   * Effect 1: 页面数据水合
-   * 
-   * 当页面数据加载完成后，将 page block 和正文 block 注入 Store
-   */
   useEffect(() => {
     if (!pageId || !pageBlock) {
-      useBlockStore.getState().reset(); // 无页面时重置 Store
+      useBlockStore.getState().reset();
       return;
     }
 
@@ -221,45 +150,28 @@ export function useEditorSyncController({
       return;
     }
 
-    // 将服务器数据水合到 Store
     useBlockStore.getState().hydratePage(pageBlock, contentBlocks);
     hydratedPageRef.current = pageId;
   }, [contentBlocks, isBlocksLoading, pageBlock, pageId]);
 
-  /**
-   * Effect 2: 页面切换时重置运行时状态
-   * 
-   * 清理旧页面的状态，防止数据污染
-   */
   useEffect(() => {
-    hydratedPageRef.current = null; // 重置水合标记
-    initializedPageRef.current = null; // 重置初始化标记
-    needsEditorFlushRef.current = false; // 重置 flush 标记
+    hydratedPageRef.current = null;
+    initializedPageRef.current = null;
+    needsEditorFlushRef.current = false;
 
-    // 清除防抖定时器
     if (syncTimerRef.current) {
       clearTimeout(syncTimerRef.current);
       syncTimerRef.current = null;
     }
 
-    cancelIdleWork(idleFlushRef.current);
-    idleFlushRef.current = null;
-
-    // 清空 DirtyTracker 的候选 ID
     resetDirtyTracker(editor);
   }, [editor, pageId]);
 
-  /**
-   * Effect 3: 初始化编辑器内容
-   * 
-   * 将正文 block 转换为 Tiptap 文档并注入编辑器
-   */
   useEffect(() => {
     if (!editor || !pageId || !pageBlock || isBlocksLoading) {
       return;
     }
 
-    // 防止重复初始化
     if (initializedPageRef.current === pageId) {
       return;
     }
@@ -274,17 +186,11 @@ export function useEditorSyncController({
       .map((id) => blocksById[id])
       .filter((block): block is NonNullable<typeof block> => Boolean(block));
 
-    // 转换为 Tiptap 文档格式并注入编辑器
     editor.commands.setContent(hydrateToTiptap(editorContentBlocks), { emitUpdate: false });
-    resetDirtyTracker(editor); // 清空候选 ID
-    initializedPageRef.current = pageId; // 标记已初始化
+    resetDirtyTracker(editor);
+    initializedPageRef.current = pageId;
   }, [contentBlocks, editor, isBlocksLoading, pageBlock, pageId]);
 
-  /**
-   * Effect 4: 监听编辑器更新事件
-   * 
-   * 当用户编辑时，标记需要 flush 并触发防抖同步
-   */
   useEffect(() => {
     if (!editor) {
       return;
@@ -295,14 +201,11 @@ export function useEditorSyncController({
     }: {
       transaction: { getMeta: (key: string) => unknown };
     }) => {
-      // 跳过系统操作（如 ID 注入、程序化更新）
       if (transaction.getMeta('preventUpdate') || transaction.getMeta('isIdInjection')) {
         return;
       }
 
-      // 标记编辑器有变更
       needsEditorFlushRef.current = true;
-      // 触发防抖同步
       scheduleSync();
     };
 
@@ -313,16 +216,11 @@ export function useEditorSyncController({
     };
   }, [editor, scheduleSync]);
 
-  /**
-   * Effect 5: 组件卸载时清理定时器
-   */
   useEffect(() => {
     return () => {
       if (syncTimerRef.current) {
         clearTimeout(syncTimerRef.current);
       }
-
-      cancelIdleWork(idleFlushRef.current);
     };
   }, []);
 

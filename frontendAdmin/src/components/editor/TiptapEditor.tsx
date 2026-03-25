@@ -23,7 +23,7 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { pageBlock, contentBlocks } = splitPageDocumentBlocks(blocks, pageId);
   const { editorCssVars, editorThemeClassName } = useEditorTheme();
   const { handleImagePaste } = useImageUpload();
-
+  console.log("TiptapEditorComponent render(永远不要删除)", pageBlock)
   const editorExtensions = useMemo(
     () =>
       createEditorExtensions({

@@ -183,7 +183,7 @@ export async function fetchPageDetail(pageId: string): Promise<BlockData> {
  * }
  * ```
  *
- * @param payload - 由 store.getSyncRequest() 返回的 payload
+ * @param payload - 由 store.buildSyncRequest() 在发送前构造的最新 payload
  */
 export async function syncBlocks(payload: BlockSyncPayload): Promise<void> {
   await apiClient.put('/admin/blocks', payload);

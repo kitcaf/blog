@@ -3,9 +3,9 @@
  * @description 编辑器 Block 缓存与待同步状态。
  *
  * 设计原则：
- *  1. 只保存前端当前页面的 canonical block cache。
+ *  1. Store 只保存当前页面的 canonical block cache 与 pending 变更。
  *  2. 只暴露“标题更新”和“编辑器 flush 提交”两个高层入口。
- *  3. dirty 状态与同步队列状态分离：pending 记录本地脏数据，queued 记录已入队 revision。
+ *  3. 同步请求在真正发送前才从 Store 读取，Store 不维护预入队状态。
  */
 
 import { create } from 'zustand';
@@ -24,16 +24,15 @@ interface PendingChange {
   revision: number;
 }
 
-// 同步快照：记录本次同步的版本号
+// 同步快照：记录本次同步覆盖的版本号
 export interface BlockSyncSnapshot {
-  batchId: number; // 同步批次版本
-  revisionsById: Record<string, number>; // block ID → 版本号
+  revisionsById: Record<string, number>; // block ID -> revision
 }
 
 // 准备好的同步请求：包含 payload 和 snapshot
 export interface PreparedBlockSync {
-  payload: BlockSyncPayload; // API 请求数据
-  snapshot: BlockSyncSnapshot; // 版本快照，用于确认同步
+  payload: BlockSyncPayload;
+  snapshot: BlockSyncSnapshot;
 }
 
 // 编辑器 block 更新草稿
@@ -51,104 +50,36 @@ export interface EditorBlockUpdateDraft {
 
 // 编辑器同步草稿：包含所有变更
 export interface EditorSyncDraft {
-  updates: EditorBlockUpdateDraft[]; // 需要更新的 block
-  deletedIds: string[]; // 需要删除的 block ID
+  updates: EditorBlockUpdateDraft[];
+  deletedIds: string[];
   pageStructure?: {
     pageId: string;
-    contentIds: string[]; // 新的子节点顺序
+    contentIds: string[];
   };
 }
 
-// Store 状态
 interface BlockStoreState {
-  blocksById: Record<string, Block>; // block 缓存
-  pendingChangesById: Record<string, PendingChange>; // 待同步变更
-  queuedRevisionsById: Record<string, number>; // 已入队/飞行中的 revision
-  revisionCounter: number; // 全局版本计数器
-  syncBatchCounter: number; // 同步批次计数器
+  blocksById: Record<string, Block>;
+  pendingChangesById: Record<string, PendingChange>;
+  revisionCounter: number;
 }
 
-// Store 操作
 interface BlockStoreActions {
-  /**
-   * 水合页面数据：从服务器加载数据后调用
-   * 
-   * 会清空所有状态，重新初始化
-   */
   hydratePage: (pageBlock: BlockData, contentBlocks: BlockData[]) => void;
-
-  /**
-   * 重置 Store：页面切换或卸载时调用
-   */
   reset: () => void;
-
-  /**
-   * 应用页面标题变更
-   * 
-   * 流程：
-   *   1. 更新 blocksById 中的 title
-   *   2. 标记为 pending upsert
-   *   3. 递增版本号
-   */
   applyPageTitleChange: (pageId: string, title: string) => boolean;
-
-  /**
-   * 应用编辑器同步草稿
-   * 
-   * 流程：
-   *   1. 批量更新 blocksById（新增、更新、删除）
-   *   2. 标记所有变更为 pending
-   *   3. 递增版本号
-   */
   applyEditorSyncDraft: (draft: EditorSyncDraft) => void;
-
-  /**
-   * 获取同步请求
-   * 
-   * 流程：
-   *   1. 遍历 pendingChangesById
-   *   2. 构造 updated_blocks 和 deleted_blocks
-   *   3. 生成版本快照
-   * 
-   * @param pageId - 当前编辑的页面 ID
-   * @returns PreparedBlockSync 或 null（无待同步数据）
-   */
-  getSyncRequest: (pageId: string) => PreparedBlockSync | null;
-
-  /**
-   * 确认同步成功
-   * 
-   * 流程：
-   *   1. 根据 snapshot.revisionsById 找到已同步的变更
-   *   2. 只清除版本号匹配的 pending 记录
-   *   3. 保留版本号不匹配的记录（新变更）
-   */
+  buildSyncRequest: (pageId: string) => PreparedBlockSync | null;
+  hasPendingChanges: (pageId?: string) => boolean;
   acknowledgeSync: (snapshot: BlockSyncSnapshot) => void;
-
-  /**
-   * 释放失败批次
-   *
-   * 流程：
-   *   1. 根据 snapshot 释放对应 queued revision
-   *   2. 保留 pending 变更，等待下一次重新入队
-   */
-  releaseSyncRequest: (snapshot: BlockSyncSnapshot) => void;
 }
 
 export type BlockStore = BlockStoreState & BlockStoreActions;
 
-/**
- * 工具函数：归一化 blocks 为 Map
- */
 function normalizeBlocks(pageBlock: BlockData, contentBlocks: BlockData[]): Record<string, Block> {
   return Object.fromEntries([pageBlock, ...contentBlocks].map((block) => [block.id, block]));
 }
 
-/**
- * 工具函数：标记 pending 变更并递增版本号
- * 
- * @returns 新的版本号
- */
 function markPendingChange(
   pendingChangesById: Record<string, PendingChange>,
   id: string,
@@ -163,11 +94,6 @@ function markPendingChange(
   return nextCounter;
 }
 
-/**
- * 工具函数：构造 block 更新数据
- * 
- * Page 类型特殊处理：不包含 content 字段
- */
 function buildBlockUpdate(block: Block): BlockUpdateDelta {
   if (block.type === 'page') {
     return {
@@ -179,7 +105,6 @@ function buildBlockUpdate(block: Block): BlockUpdateDelta {
       properties: {
         icon: block.props.icon,
         title: block.props.title,
-        // Page 不包含 content
       },
     };
   }
@@ -192,57 +117,32 @@ function buildBlockUpdate(block: Block): BlockUpdateDelta {
     content_ids: block.contentIds,
     properties: {
       ...block.props,
-      content: block.content, // 其他类型包含 content
+      content: block.content,
     },
   };
 }
 
 export const useBlockStore = create<BlockStore>()((set, get) => ({
-  // 初始状态
   blocksById: {},
   pendingChangesById: {},
-  queuedRevisionsById: {},
   revisionCounter: 0,
-  syncBatchCounter: 0,
 
-  /**
-   * 水合页面数据
-   * 
-   * 从服务器加载数据后调用，重新初始化所有状态
-   */
   hydratePage: (pageBlock, contentBlocks) => {
     set({
       blocksById: normalizeBlocks(pageBlock, contentBlocks),
-      pendingChangesById: {}, // 清空待同步状态
-      queuedRevisionsById: {},
-      revisionCounter: 0, // 重置版本号
-      syncBatchCounter: 0,
+      pendingChangesById: {},
+      revisionCounter: 0,
     });
   },
 
-  /**
-   * 重置 Store
-   * 
-   * 页面切换或卸载时调用
-   */
   reset: () => {
     set({
       blocksById: {},
       pendingChangesById: {},
-      queuedRevisionsById: {},
       revisionCounter: 0,
-      syncBatchCounter: 0,
     });
   },
 
-  /**
-   * 应用页面标题变更
-   * 
-   * 流程：
-   *   1. 检查标题是否真的变了
-   *   2. 更新 blocksById
-   *   3. 标记为 pending upsert
-   */
   applyPageTitleChange: (pageId, title) => {
     let didChange = false;
 
@@ -287,15 +187,6 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     return didChange;
   },
 
-  /**
-   * 应用编辑器同步草稿
-   * 
-   * 批量处理编辑器的所有变更：
-   *   1. 更新 blocks（新增、修改）
-   *   2. 删除 blocks
-   *   3. 更新页面结构（contentIds）
-   *   4. 标记所有变更为 pending
-   */
   applyEditorSyncDraft: (draft) => {
     set((state) => {
       let didChange = false;
@@ -303,12 +194,10 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
       const nextBlocks = { ...state.blocksById };
       const nextPending = { ...state.pendingChangesById };
 
-      // 处理更新（新增或修改）
       for (const update of draft.updates) {
         const existingBlock = nextBlocks[update.id];
 
         if (existingBlock) {
-          // 修改现有 block
           nextBlocks[update.id] = {
             ...existingBlock,
             content: update.content,
@@ -318,7 +207,6 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
             },
           } as Block;
         } else if (update.metadata) {
-          // 新增 block
           nextBlocks[update.id] = {
             id: update.id,
             parentId: update.metadata.parentId,
@@ -329,26 +217,22 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
             contentIds: [],
           } as Block;
         } else {
-          continue; // 缺少 metadata，跳过
+          continue;
         }
 
-        // 标记为 pending upsert
         nextCounter = markPendingChange(nextPending, update.id, 'upsert', nextCounter);
         didChange = true;
       }
 
-      // 处理删除
       for (const id of draft.deletedIds) {
         if (nextBlocks[id]) {
-          delete nextBlocks[id]; // 从缓存中删除
+          delete nextBlocks[id];
           didChange = true;
         }
 
-        // 标记为 pending delete
         nextCounter = markPendingChange(nextPending, id, 'delete', nextCounter);
       }
 
-      // 处理页面结构变化
       if (draft.pageStructure) {
         const pageBlock = nextBlocks[draft.pageStructure.pageId];
         if (pageBlock) {
@@ -358,13 +242,11 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
             !oldContentIds.every((id, index) => id === draft.pageStructure?.contentIds[index]);
 
           if (hasStructureChange) {
-            // 更新 contentIds
             nextBlocks[draft.pageStructure.pageId] = {
               ...pageBlock,
               contentIds: draft.pageStructure.contentIds,
             } as Block;
 
-            // 标记页面为 pending upsert
             nextCounter = markPendingChange(
               nextPending,
               draft.pageStructure.pageId,
@@ -376,7 +258,6 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
         }
       }
 
-      // 如果没有任何变化，返回原状态
       if (!didChange) {
         return state;
       }
@@ -389,57 +270,36 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     });
   },
 
-  /**
-   * 获取同步请求
-   * 
-   * 遍历 pendingChangesById，构造 API 请求数据和版本快照
-   * 
-   * @param pageId - 当前编辑的页面 ID
-   * @returns PreparedBlockSync 或 null（无待同步数据）
-   */
-  getSyncRequest: (pageId) => {
-    const { blocksById, pendingChangesById, queuedRevisionsById, syncBatchCounter } = get();
+  buildSyncRequest: (pageId) => {
+    const { blocksById, pendingChangesById } = get();
+    const pageBlock = blocksById[pageId];
+    if (!pageBlock || pageBlock.type !== 'page') {
+      return null;
+    }
+
     const updatedBlocks: BlockUpdateDelta[] = [];
     const deletedBlocks: string[] = [];
     const revisionsById: Record<string, number> = {};
 
-    // 遍历所有 pending 变更
     for (const [id, change] of Object.entries(pendingChangesById)) {
-      if (queuedRevisionsById[id] === change.revision) {
-        continue;
-      }
-
-      // 记录版本号（用于确认同步）
       revisionsById[id] = change.revision;
 
       if (change.kind === 'delete') {
-        // 删除操作
         deletedBlocks.push(id);
         continue;
       }
 
-      // 更新操作：从 blocksById 获取最新数据
       const block = blocksById[id];
       if (!block) {
-        continue; // block 不存在，跳过
+        continue;
       }
 
       updatedBlocks.push(buildBlockUpdate(block));
     }
 
-    // 如果没有待同步数据，返回 null
     if (updatedBlocks.length === 0 && deletedBlocks.length === 0) {
       return null;
     }
-
-    const batchId = syncBatchCounter + 1;
-    set((state) => ({
-      queuedRevisionsById: {
-        ...state.queuedRevisionsById,
-        ...revisionsById,
-      },
-      syncBatchCounter: batchId,
-    }));
 
     return {
       payload: {
@@ -448,63 +308,35 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
         deleted_blocks: deletedBlocks,
       },
       snapshot: {
-        batchId,
-        revisionsById, // 版本快照
+        revisionsById,
       },
     };
   },
 
-  /**
-   * 确认同步成功
-   * 
-   * 根据版本快照清除已同步的 pending 记录
-   * 只清除版本号匹配的记录，保留新变更
-   */
+  hasPendingChanges: (pageId) => {
+    const { blocksById, pendingChangesById } = get();
+    if (pageId) {
+      const pageBlock = blocksById[pageId];
+      if (!pageBlock || pageBlock.type !== 'page') {
+        return false;
+      }
+    }
+
+    return Object.keys(pendingChangesById).length > 0;
+  },
+
   acknowledgeSync: (snapshot) => {
     set((state) => {
       let didChange = false;
       const nextPending = { ...state.pendingChangesById };
-      const nextQueued = { ...state.queuedRevisionsById };
 
-      // 遍历快照中的版本号
       for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
         const currentChange = nextPending[id];
-        const queuedRevision = nextQueued[id];
-        
-        // 版本号不匹配，说明有新变更，不清除
-        if (queuedRevision === revision) {
-          delete nextQueued[id];
-          didChange = true;
-        }
-
-        if (currentChange && currentChange.revision === revision) {
-          delete nextPending[id];
-          didChange = true;
-        }
-      }
-
-      if (!didChange) {
-        return state; // 没有变化，返回原状态
-      }
-
-      return {
-        pendingChangesById: nextPending,
-        queuedRevisionsById: nextQueued,
-      };
-    });
-  },
-
-  releaseSyncRequest: (snapshot) => {
-    set((state) => {
-      let didChange = false;
-      const nextQueued = { ...state.queuedRevisionsById };
-
-      for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
-        if (nextQueued[id] !== revision) {
+        if (!currentChange || currentChange.revision !== revision) {
           continue;
         }
 
-        delete nextQueued[id];
+        delete nextPending[id];
         didChange = true;
       }
 
@@ -513,7 +345,7 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
       }
 
       return {
-        queuedRevisionsById: nextQueued,
+        pendingChangesById: nextPending,
       };
     });
   },

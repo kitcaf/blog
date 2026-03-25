@@ -59,10 +59,6 @@ export function Sidebar({ sections, activeSection, onSectionChange }: SidebarPro
           );
         })}
       </nav>
-
-      <div className="border-t border-border/70 px-5 py-4 text-xs text-app-fg-light">
-        更多设置后续会继续放在这里。
-      </div>
     </aside>
   );
 }

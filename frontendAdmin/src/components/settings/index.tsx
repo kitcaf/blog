@@ -18,7 +18,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: 'theme',
     label: '主题',
-    description: '编辑器排版与色彩',
+    description: '编辑器外观',
     icon: Palette,
   },
 ];
@@ -50,36 +50,38 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-md animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="flex h-[84vh] w-[94vw] max-w-7xl overflow-hidden rounded-[28px] border border-border bg-app-bg shadow-2xl animate-in zoom-in-95 duration-200"
+        className="relative flex h-[86vh] w-[94vw] max-w-[1180px] overflow-hidden rounded-[30px] border border-border/80 bg-app-bg shadow-[0_36px_120px_rgba(0,0,0,0.28)] animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(24,24,27,0.06),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(24,24,27,0.04),transparent_36%)]" />
+
         <Sidebar
           sections={SETTINGS_SECTIONS}
           activeSection={activeSection}
           onSectionChange={handleSectionChange}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between gap-4 border-b border-border/70 px-6 py-5">
             <div>
-              <h3 className="text-xl font-semibold text-app-fg-deeper">{activeSectionMeta?.label}</h3>
-              <p className="mt-2 text-sm leading-6 text-app-fg-light">
-                {activeSectionMeta?.description}。修改会实时作用到编辑器根节点的 CSS 变量，不会重建 Tiptap 实例。
-              </p>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-app-fg-light">Settings</div>
+              <h3 className="mt-2 text-2xl font-semibold text-app-fg-deeper">{activeSectionMeta?.label}</h3>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl p-2 text-app-fg-light transition-colors hover:bg-app-hover hover:text-app-fg-deeper"
-              aria-label="关闭设置"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-border bg-app-bg p-2 text-app-fg-light transition-colors hover:bg-app-hover hover:text-app-fg-deeper"
+                aria-label="关闭设置"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {activeSection === 'theme' && <ThemeSection />}

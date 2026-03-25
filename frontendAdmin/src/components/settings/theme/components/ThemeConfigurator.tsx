@@ -3,7 +3,7 @@ import type {
   EditorHeadingThemeConfig,
   EditorParagraphThemeConfig,
 } from '@blog/types';
-import { RotateCcw, Sparkles } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -19,13 +19,12 @@ type TypographyThemeConfig = EditorParagraphThemeConfig | EditorHeadingThemeConf
 const TYPOGRAPHY_TARGETS: Array<{
   id: EditorTypographyTarget;
   label: string;
-  description: string;
   badge: string;
 }> = [
-  { id: 'h1', label: '一级标题', description: '文章最高层级标题', badge: 'H1' },
-  { id: 'h2', label: '二级标题', description: '章节标题', badge: 'H2' },
-  { id: 'h3', label: '三级标题', description: '小节标题', badge: 'H3' },
-  { id: 'paragraph', label: '正文', description: '默认段落排版', badge: 'P' },
+  { id: 'h1', label: '一级标题', badge: 'H1' },
+  { id: 'h2', label: '二级标题', badge: 'H2' },
+  { id: 'h3', label: '三级标题', badge: 'H3' },
+  { id: 'paragraph', label: '正文', badge: 'P' },
 ];
 
 const FONT_WEIGHT_OPTIONS = [
@@ -128,21 +127,6 @@ function getTypographyConfig(
   return headings[target];
 }
 
-function ThemeMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-app-bg px-3 py-2">
-      <div className="text-[11px] uppercase tracking-[0.12em] text-app-fg-light">{label}</div>
-      <div className="mt-1 text-sm font-medium text-app-fg-deeper">{value}</div>
-    </div>
-  );
-}
-
 export function ThemeConfigurator() {
   const [activeTarget, setActiveTarget] = useState<EditorTypographyTarget>('h1');
   const { editorPreference, resetEditorPreference } = useEditorConfig();
@@ -167,89 +151,82 @@ export function ThemeConfigurator() {
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border bg-app-fg-lightest/40 px-5 py-4">
-        <div className="max-w-2xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-app-bg px-3 py-1 text-xs font-medium text-app-fg-light">
-            <Sparkles className="h-3.5 w-3.5" />
-            主题设置
-          </div>
-          <h2 className="mt-3 text-xl font-semibold text-app-fg-deeper">
-            调整标题和正文的视觉层级
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-app-fg">
-            这里控制的是整个编辑器的全局排版主题。每次修改都会即时反映到右侧预览，也会同步更新当前打开的文章编辑器。
-          </p>
-        </div>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="rounded-xl bg-app-bg"
-          onClick={resetEditorPreference}
-        >
-          <RotateCcw className="h-4 w-4" />
-          恢复默认
-        </Button>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)] overflow-hidden">
+      <div className="grid min-h-0 gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
         <div className="min-w-0 space-y-5 overflow-y-auto pr-1">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {TYPOGRAPHY_TARGETS.map((target) => {
-              const targetConfig = getTypographyConfig(
-                target.id,
-                editorPreference.theme.paragraph,
-                editorPreference.theme.headings,
-              );
-              const isActive = activeTarget === target.id;
-
-              return (
-                <button
-                  key={target.id}
-                  type="button"
-                  onClick={() => setActiveTarget(target.id)}
-                  className={`rounded-2xl border px-4 py-4 text-left transition-all ${
-                    isActive
-                      ? 'border-app-fg-deeper bg-app-bg shadow-sm'
-                      : 'border-border bg-app-bg/70 hover:border-app-fg-light hover:bg-app-hover'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-app-fg-deeper">{target.label}</div>
-                      <div className="mt-1 text-xs text-app-fg-light">{target.description}</div>
-                    </div>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-app-fg-light">
-                      {target.badge}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <ThemeMetric label="字号" value={formatPixels(parseLengthToPixels(targetConfig.fontSize, 16))} />
-                    <ThemeMetric label="颜色" value={targetConfig.color} />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="rounded-2xl border border-border bg-app-bg px-5 py-5 shadow-sm">
+          <div className="rounded-[24px] border border-border/80 bg-app-bg/85 px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.05)]">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-app-fg-deeper">
+                <div className="text-[11px] uppercase tracking-[0.16em] text-app-fg-light">Typography</div>
+                <h2 className="mt-2 text-xl font-semibold text-app-fg-deeper">主题</h2>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl bg-app-bg"
+                onClick={resetEditorPreference}
+              >
+                <RotateCcw className="h-4 w-4" />
+                重置
+              </Button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {TYPOGRAPHY_TARGETS.map((target) => {
+                const targetConfig = getTypographyConfig(
+                  target.id,
+                  editorPreference.theme.paragraph,
+                  editorPreference.theme.headings,
+                );
+                const isActive = activeTarget === target.id;
+
+                return (
+                  <button
+                    key={target.id}
+                    type="button"
+                    onClick={() => setActiveTarget(target.id)}
+                    className={`rounded-2xl border px-4 py-4 text-left transition-all ${
+                      isActive
+                        ? 'border-app-fg-deeper/20 bg-app-hover shadow-sm'
+                        : 'border-border/80 bg-app-bg hover:border-app-fg-light hover:bg-app-hover/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-app-fg-deeper">{target.label}</div>
+                      <span className="rounded-full border border-border/80 px-2 py-0.5 text-[11px] font-medium text-app-fg-light">
+                        {target.badge}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between">
+                      <div className="text-xs text-app-fg-light">{formatPixels(parseLengthToPixels(targetConfig.fontSize, 16))}</div>
+                      <span
+                        className="h-3 w-3 rounded-full border border-black/10"
+                        style={{ backgroundColor: targetConfig.color }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-border/80 bg-app-bg/85 px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.05)]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.16em] text-app-fg-light">Controls</div>
+                <h3 className="mt-2 text-base font-semibold text-app-fg-deeper">
                   {TYPOGRAPHY_TARGETS.find((item) => item.id === activeTarget)?.label}样式
                 </h3>
-                <p className="mt-1 text-sm text-app-fg-light">
-                  聚焦最核心的字号、颜色、字重和上下间距配置。
-                </p>
               </div>
-              <span className="rounded-full bg-app-hover px-2.5 py-1 text-xs font-medium text-app-fg-light">
-                即时预览
+
+              <span className="rounded-full border border-border/80 bg-app-fg-lightest/40 px-2.5 py-1 text-xs font-medium text-app-fg-light">
+                当前项
               </span>
             </div>
 
             <div className="mt-5 grid gap-5 lg:grid-cols-2">
-              <div className="space-y-2">
+              <div className="space-y-2 rounded-2xl border border-border/70 bg-app-fg-lightest/20 px-4 py-4 lg:col-span-2">
                 <label className="flex items-center justify-between text-sm font-medium text-app-fg-deeper">
                   <span>字号</span>
                   <span className="text-xs text-app-fg-light">{formatPixels(fontSizePx)}</span>
@@ -265,7 +242,7 @@ export function ThemeConfigurator() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 rounded-2xl border border-border/70 bg-app-fg-lightest/20 px-4 py-4 lg:col-span-2">
                 <span className="text-sm font-medium text-app-fg-deeper">字重</span>
                 <div className="grid grid-cols-4 gap-2">
                   {FONT_WEIGHT_OPTIONS.map((option) => (
@@ -285,7 +262,7 @@ export function ThemeConfigurator() {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 rounded-2xl border border-border/70 bg-app-fg-lightest/20 px-4 py-4">
                 <label className="flex items-center justify-between text-sm font-medium text-app-fg-deeper">
                   <span>上间距</span>
                   <span className="text-xs text-app-fg-light">{formatPixels(marginTopPx)}</span>
@@ -301,7 +278,7 @@ export function ThemeConfigurator() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 rounded-2xl border border-border/70 bg-app-fg-lightest/20 px-4 py-4">
                 <label className="flex items-center justify-between text-sm font-medium text-app-fg-deeper">
                   <span>下间距</span>
                   <span className="text-xs text-app-fg-light">{formatPixels(marginBottomPx)}</span>
@@ -317,10 +294,10 @@ export function ThemeConfigurator() {
                 />
               </div>
 
-              <div className="space-y-2 lg:col-span-2">
+              <div className="space-y-2 rounded-2xl border border-border/70 bg-app-fg-lightest/20 px-4 py-4 lg:col-span-2">
                 <label className="flex items-center justify-between text-sm font-medium text-app-fg-deeper">
                   <span>颜色</span>
-                  <span className="text-xs text-app-fg-light">{currentConfig.color}</span>
+                  <span className="text-xs text-app-fg-light">实时预览</span>
                 </label>
                 <div className="flex flex-wrap items-center gap-3">
                   <input
@@ -357,7 +334,7 @@ export function ThemeConfigurator() {
                 </div>
               </div>
 
-              <div className="space-y-2 lg:col-span-2">
+              <div className="space-y-2 rounded-2xl border border-border/70 bg-app-fg-lightest/20 px-4 py-4 lg:col-span-2">
                 <label className="flex items-center justify-between text-sm font-medium text-app-fg-deeper">
                   <span>行高</span>
                   <span className="text-xs text-app-fg-light">{lineHeight.toFixed(2)}</span>

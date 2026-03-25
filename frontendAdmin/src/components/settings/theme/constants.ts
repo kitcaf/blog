@@ -1,6 +1,14 @@
 import type { EditorTypographyTarget } from '@/store/useEditorPreferenceStore';
 
-export const TYPOGRAPHY_TARGETS: EditorTypographyTarget[] = ['h1', 'h2', 'h3', 'paragraph'];
+export const TYPOGRAPHY_TARGETS: EditorTypographyTarget[] = [
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'paragraph',
+];
 
 export const TYPOGRAPHY_TARGET_META: Record<
   EditorTypographyTarget,
@@ -12,6 +20,9 @@ export const TYPOGRAPHY_TARGET_META: Record<
   h1: { label: '一级标题', badge: 'H1' },
   h2: { label: '二级标题', badge: 'H2' },
   h3: { label: '三级标题', badge: 'H3' },
+  h4: { label: '四级标题', badge: 'H4' },
+  h5: { label: '五级标题', badge: 'H5' },
+  h6: { label: '六级标题', badge: 'H6' },
   paragraph: { label: '正文', badge: 'P' },
 };
 
@@ -35,6 +46,9 @@ export const TARGET_DEFAULT_FONT_SIZE: Record<EditorTypographyTarget, number> = 
   h1: 36,
   h2: 30,
   h3: 24,
+  h4: 18,
+  h5: 16,
+  h6: 14,
   paragraph: 16,
 };
 

@@ -39,7 +39,7 @@ const sharedEditorExtensions = [
   StarterKit.configure({
     codeBlock: false, // 禁用 StarterKit 内置的 codeBlock，由 CodeBlockLowlight 接管
     heading: {
-      levels: [1, 2, 3], // 只支持 H1-H3，与 Block 模型一致
+      levels: [1, 2, 3, 4, 5, 6], // 只支持 H1-H3，与 Block 模型一致
     },
   }),
 

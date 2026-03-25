@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type {
+  EditorHeadingKey,
   EditorHeadingThemeConfig,
   EditorParagraphThemeConfig,
   EditorPreference,
@@ -15,7 +16,7 @@ type DeepPartial<T> = {
       : T[K];
 };
 
-export type EditorTypographyTarget = 'paragraph' | 'h1' | 'h2' | 'h3';
+export type EditorTypographyTarget = 'paragraph' | EditorHeadingKey;
 
 export type EditorTypographyPatch = Partial<
   Pick<

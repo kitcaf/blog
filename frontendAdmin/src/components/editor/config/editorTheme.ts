@@ -1,10 +1,29 @@
 import type { CSSProperties } from 'react';
 
-import type { EditorThemeConfig, EditorThemeCssVariableName } from '@blog/types';
+import type {
+  EditorHeadingKey,
+  EditorHeadingThemeConfig,
+  EditorThemeConfig,
+  EditorThemeCssVariableName,
+} from '@blog/types';
 
 export const EDITOR_THEME_ROOT_CLASS_NAME = 'editor-theme-root';
 
-export const EDITOR_THEME_TOKEN_NAMES = [
+const HEADING_KEYS: readonly EditorHeadingKey[] = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+
+const HEADING_THEME_TOKEN_NAMES = HEADING_KEYS.flatMap((headingKey) => [
+  `--editor-heading-${headingKey}-font-family`,
+  `--editor-heading-${headingKey}-font-size`,
+  `--editor-heading-${headingKey}-font-weight`,
+  `--editor-heading-${headingKey}-line-height`,
+  `--editor-heading-${headingKey}-color`,
+  `--editor-heading-${headingKey}-margin-top`,
+  `--editor-heading-${headingKey}-margin-bottom`,
+  `--editor-heading-${headingKey}-padding-bottom`,
+  `--editor-heading-${headingKey}-border-bottom`,
+]) as EditorThemeCssVariableName[];
+
+export const EDITOR_THEME_TOKEN_NAMES: readonly EditorThemeCssVariableName[] = [
   '--editor-text-color',
   '--editor-caret-color',
   '--editor-placeholder-color',
@@ -18,27 +37,7 @@ export const EDITOR_THEME_TOKEN_NAMES = [
   '--editor-paragraph-margin-top',
   '--editor-paragraph-margin-bottom',
   '--editor-paragraph-min-height',
-  '--editor-heading-h1-font-family',
-  '--editor-heading-h1-font-size',
-  '--editor-heading-h1-font-weight',
-  '--editor-heading-h1-line-height',
-  '--editor-heading-h1-color',
-  '--editor-heading-h1-margin-top',
-  '--editor-heading-h1-margin-bottom',
-  '--editor-heading-h2-font-family',
-  '--editor-heading-h2-font-size',
-  '--editor-heading-h2-font-weight',
-  '--editor-heading-h2-line-height',
-  '--editor-heading-h2-color',
-  '--editor-heading-h2-margin-top',
-  '--editor-heading-h2-margin-bottom',
-  '--editor-heading-h3-font-family',
-  '--editor-heading-h3-font-size',
-  '--editor-heading-h3-font-weight',
-  '--editor-heading-h3-line-height',
-  '--editor-heading-h3-color',
-  '--editor-heading-h3-margin-top',
-  '--editor-heading-h3-margin-bottom',
+  ...HEADING_THEME_TOKEN_NAMES,
   '--editor-blockquote-font-family',
   '--editor-blockquote-font-size',
   '--editor-blockquote-font-weight',
@@ -71,11 +70,36 @@ export const EDITOR_THEME_TOKEN_NAMES = [
   '--editor-link-color',
   '--editor-link-hover-color',
   '--editor-link-underline-offset',
-] as const satisfies readonly EditorThemeCssVariableName[];
+];
 
 export type EditorThemeStyle = CSSProperties & Partial<Record<EditorThemeCssVariableName, string>>;
 
+function buildHeadingThemeVariables(
+  headingKey: EditorHeadingKey,
+  headingConfig: EditorHeadingThemeConfig,
+): Partial<Record<EditorThemeCssVariableName, string>> {
+  return {
+    [`--editor-heading-${headingKey}-font-family`]: headingConfig.fontFamily ?? 'inherit',
+    [`--editor-heading-${headingKey}-font-size`]: headingConfig.fontSize,
+    [`--editor-heading-${headingKey}-font-weight`]: headingConfig.fontWeight,
+    [`--editor-heading-${headingKey}-line-height`]: headingConfig.lineHeight,
+    [`--editor-heading-${headingKey}-color`]: headingConfig.color,
+    [`--editor-heading-${headingKey}-margin-top`]: headingConfig.marginTop,
+    [`--editor-heading-${headingKey}-margin-bottom`]: headingConfig.marginBottom,
+    [`--editor-heading-${headingKey}-padding-bottom`]: headingConfig.paddingBottom ?? '0px',
+    [`--editor-heading-${headingKey}-border-bottom`]: headingConfig.borderBottom ?? 'none',
+  } as Partial<Record<EditorThemeCssVariableName, string>>;
+}
+
 export function buildEditorThemeStyle(themeConfig: EditorThemeConfig): EditorThemeStyle {
+  const headingVariables = HEADING_KEYS.reduce<Partial<Record<EditorThemeCssVariableName, string>>>(
+    (variables, headingKey) => ({
+      ...variables,
+      ...buildHeadingThemeVariables(headingKey, themeConfig.headings[headingKey]),
+    }),
+    {},
+  );
+
   const themeVariables: Partial<Record<EditorThemeCssVariableName, string>> = {
     '--editor-text-color': themeConfig.textColor,
     '--editor-caret-color': themeConfig.caretColor,
@@ -90,27 +114,7 @@ export function buildEditorThemeStyle(themeConfig: EditorThemeConfig): EditorThe
     '--editor-paragraph-margin-top': themeConfig.paragraph.marginTop,
     '--editor-paragraph-margin-bottom': themeConfig.paragraph.marginBottom,
     '--editor-paragraph-min-height': themeConfig.paragraph.minHeight,
-    '--editor-heading-h1-font-family': themeConfig.headings.h1.fontFamily ?? 'inherit',
-    '--editor-heading-h1-font-size': themeConfig.headings.h1.fontSize,
-    '--editor-heading-h1-font-weight': themeConfig.headings.h1.fontWeight,
-    '--editor-heading-h1-line-height': themeConfig.headings.h1.lineHeight,
-    '--editor-heading-h1-color': themeConfig.headings.h1.color,
-    '--editor-heading-h1-margin-top': themeConfig.headings.h1.marginTop,
-    '--editor-heading-h1-margin-bottom': themeConfig.headings.h1.marginBottom,
-    '--editor-heading-h2-font-family': themeConfig.headings.h2.fontFamily ?? 'inherit',
-    '--editor-heading-h2-font-size': themeConfig.headings.h2.fontSize,
-    '--editor-heading-h2-font-weight': themeConfig.headings.h2.fontWeight,
-    '--editor-heading-h2-line-height': themeConfig.headings.h2.lineHeight,
-    '--editor-heading-h2-color': themeConfig.headings.h2.color,
-    '--editor-heading-h2-margin-top': themeConfig.headings.h2.marginTop,
-    '--editor-heading-h2-margin-bottom': themeConfig.headings.h2.marginBottom,
-    '--editor-heading-h3-font-family': themeConfig.headings.h3.fontFamily ?? 'inherit',
-    '--editor-heading-h3-font-size': themeConfig.headings.h3.fontSize,
-    '--editor-heading-h3-font-weight': themeConfig.headings.h3.fontWeight,
-    '--editor-heading-h3-line-height': themeConfig.headings.h3.lineHeight,
-    '--editor-heading-h3-color': themeConfig.headings.h3.color,
-    '--editor-heading-h3-margin-top': themeConfig.headings.h3.marginTop,
-    '--editor-heading-h3-margin-bottom': themeConfig.headings.h3.marginBottom,
+    ...headingVariables,
     '--editor-blockquote-font-family': themeConfig.blockquote.fontFamily ?? 'inherit',
     '--editor-blockquote-font-size': themeConfig.blockquote.fontSize,
     '--editor-blockquote-font-weight': themeConfig.blockquote.fontWeight,

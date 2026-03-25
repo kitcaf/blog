@@ -12,7 +12,7 @@ export interface EditorStyleFieldBoundary {
 
 export const defaultNodeStyleConfig: NodeStyleConfig = {
   heading: {
-    levels: [1, 2, 3],
+    levels: [1, 2, 3, 4, 5, 6],
     classNamePrefix: 'editor-heading',
   },
   callout: {

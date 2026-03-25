@@ -18,7 +18,16 @@ export interface EditorParagraphThemeConfig extends EditorTextStyleConfig {
   minHeight: string;
 }
 
-export interface EditorHeadingThemeConfig extends EditorTextStyleConfig {}
+export interface EditorHeadingThemeConfig extends EditorTextStyleConfig {
+  paddingBottom?: string;
+  borderBottom?: string;
+}
+
+export type EditorHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+export type EditorHeadingKey = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+
+export type EditorHeadingThemeMap = Record<EditorHeadingKey, EditorHeadingThemeConfig>;
 
 export interface EditorBlockquoteThemeConfig extends EditorTextStyleConfig {
   borderColor: string;
@@ -69,11 +78,7 @@ export interface EditorThemeConfig {
   placeholderColor: string;
   selection: EditorSelectionThemeConfig;
   paragraph: EditorParagraphThemeConfig;
-  headings: {
-    h1: EditorHeadingThemeConfig;
-    h2: EditorHeadingThemeConfig;
-    h3: EditorHeadingThemeConfig;
-  };
+  headings: EditorHeadingThemeMap;
   blockquote: EditorBlockquoteThemeConfig;
   inlineCode: EditorInlineCodeThemeConfig;
   codeBlock: EditorCodeBlockThemeConfig;
@@ -82,7 +87,7 @@ export interface EditorThemeConfig {
 }
 
 export interface HeadingNodeStyleConfig {
-  levels: readonly (1 | 2 | 3)[];
+  levels: readonly EditorHeadingLevel[];
   classNamePrefix: string;
 }
 

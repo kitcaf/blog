@@ -14,7 +14,7 @@
  *  'numberedListItem'    │ 'orderedList' > 'listItem' > 'paragraph'
  *  'checkListItem'       │ 'taskList' > 'taskItem' > 'paragraph'
  *  'callout'             │ 'callout' (attrs.variant)     [自定义 Node]
- *  'image'               │ 'imageBlock' (attrs.url/...)  [自定义 Node]
+ *  'image'               │ 'image' (attrs.src/...)       [扩展官方 Image]
  *
  * 类型策略：
  *  Tiptap v3 的 `JSONContent` 将 `type` 定义为可选（`type?: string`），
@@ -179,11 +179,12 @@ function blockToTNode(block: Block): TNode | null {
 
     case 'image':
       return {
-        type: 'imageBlock',
+        type: 'image',
         attrs: {
           blockId: block.id,
-          url: block.props.url,
-          caption: block.props.caption ?? null,
+          src: block.props.url,
+          alt: block.props.caption ?? null,
+          title: block.props.caption ?? null,
           alignment: block.props.alignment ?? 'center',
           width: block.props.width ?? 100,
         },
@@ -281,6 +282,7 @@ export function parseTiptapNodeType(typeName: string): string {
     case 'listItem':       return 'bulletListItem'; // 默认值，实际由于扁平化可能需要父级上下文判别，但在局部提取时先保证基础映射
     case 'taskItem':       return 'checkListItem';
     case 'callout':        return 'callout';
+    case 'image':
     case 'imageBlock':     return 'image';
     default:               return 'paragraph';
   }
@@ -301,10 +303,11 @@ export function parseTiptapNodeToProps(node: JSONContent): Record<string, unknow
       return { checked: attrs['checked'] ?? false };
     case 'callout':
       return { variant: attrs['variant'] ?? 'info' };
+    case 'image':
     case 'imageBlock':
       return {
-        url: attrs['url'] ?? '',
-        caption: attrs['caption'] ?? undefined,
+        url: attrs['src'] ?? attrs['url'] ?? '',
+        caption: attrs['caption'] ?? attrs['alt'] ?? attrs['title'] ?? undefined,
         alignment: attrs['alignment'] ?? 'center',
         width: attrs['width'] ?? 100,
       };

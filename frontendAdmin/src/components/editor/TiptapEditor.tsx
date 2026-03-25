@@ -1,13 +1,15 @@
-import { useCallback, memo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { splitPageDocumentBlocks } from "./utils"
-import { editorExtensions } from './extensions';
-import { useEditorSyncController } from './sync/useEditorSyncController';
-import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
+
 import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
 import { cn } from '@/lib/utils';
 import { PageHeaderContainer } from './components/PageHeaderContainer';
+import { createEditorExtensions } from './extensions';
 import { useEditorTheme } from './hooks/useEditorTheme';
+import { useImageUpload } from './hooks/useImageUpload';
+import { useBlockSyncRunner } from './sync/useBlockSyncRunner';
+import { useEditorSyncController } from './sync/useEditorSyncController';
+import { splitPageDocumentBlocks } from './utils';
 import './styles';
 
 interface TiptapEditorProps {
@@ -20,7 +22,16 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { sync } = useBlockSyncRunner(pageId ?? null);
   const { pageBlock, contentBlocks } = splitPageDocumentBlocks(blocks, pageId);
   const { editorCssVars, editorThemeClassName } = useEditorTheme();
-  console.log("TiptapEditorComponent render", blocks)
+  const { handleImagePaste } = useImageUpload();
+
+  const editorExtensions = useMemo(
+    () =>
+      createEditorExtensions({
+        onImagePaste: handleImagePaste,
+      }),
+    [handleImagePaste],
+  );
+
   const editor = useEditor(
     {
       extensions: editorExtensions,
@@ -30,7 +41,7 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
         },
       },
     },
-    [pageId],
+    [pageId, editorExtensions],
   );
 
   const { scheduleSync, flushSync } = useEditorSyncController({

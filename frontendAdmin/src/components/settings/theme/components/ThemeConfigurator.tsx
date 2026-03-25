@@ -11,7 +11,7 @@ import {
   type EditorTypographyPatch,
   type EditorTypographyTarget,
 } from '@/store/useEditorPreferenceStore';
-import { useEditorConfig } from '../hooks/useEditorConfig';
+import { useEditorConfig } from '@/components/editor/hooks/useEditorConfig';
 import { StylePreview } from './StylePreview';
 
 type TypographyThemeConfig = EditorParagraphThemeConfig | EditorHeadingThemeConfig;
@@ -261,7 +261,7 @@ export function ThemeConfigurator() {
                   step={1}
                   value={fontSizePx}
                   onChange={(event) => applyPatch({ fontSize: formatPixelsToRem(Number(event.target.value)) })}
-                  className="w-full accent-[var(--color-fg-deeper)]"
+                  className="w-full accent-app-fg-deeper"
                 />
               </div>
 
@@ -297,7 +297,7 @@ export function ThemeConfigurator() {
                   step={1}
                   value={marginTopPx}
                   onChange={(event) => applyPatch({ marginTop: formatPixelsToRem(Number(event.target.value)) })}
-                  className="w-full accent-[var(--color-fg-deeper)]"
+                  className="w-full accent-app-fg-deeper"
                 />
               </div>
 
@@ -313,7 +313,7 @@ export function ThemeConfigurator() {
                   step={1}
                   value={marginBottomPx}
                   onChange={(event) => applyPatch({ marginBottom: formatPixelsToRem(Number(event.target.value)) })}
-                  className="w-full accent-[var(--color-fg-deeper)]"
+                  className="w-full accent-app-fg-deeper"
                 />
               </div>
 
@@ -369,7 +369,7 @@ export function ThemeConfigurator() {
                   step={0.05}
                   value={lineHeight}
                   onChange={(event) => applyPatch({ lineHeight: event.target.value })}
-                  className="w-full accent-[var(--color-fg-deeper)]"
+                  className="w-full accent-app-fg-deeper"
                 />
               </div>
             </div>

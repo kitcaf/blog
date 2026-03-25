@@ -1,7 +1,7 @@
 import type { EditorThemeConfig } from '@blog/types';
 
 import { cn } from '@/lib/utils';
-import { buildEditorThemeStyle, getEditorThemeRootClassNames } from '../config/editorTheme';
+import { buildEditorThemeStyle, getEditorThemeRootClassNames } from '@/components/editor/config/editorTheme';
 
 interface StylePreviewProps {
   theme: EditorThemeConfig;

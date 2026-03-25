@@ -27,7 +27,7 @@ import { CreateItemDialog } from './CreateItemDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SearchDialog } from './SearchDialog';
 import { TrashDialog } from './trash';
-import { SettingsDialog } from './settings/SettingsDialog';
+import { SettingsDialog } from './settings';
 import {
   SidebarHeader,
   SidebarNav,

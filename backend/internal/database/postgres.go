@@ -46,17 +46,36 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	// 自动迁移表结构
 	if err := db.AutoMigrate(
 		&models.User{},
+		&models.BlogCategory{},
 		&models.Block{},
 		&models.BlockSearchIndex{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	applyPublishModuleCompatibilitySQL(db)
+
 	// 创建自定义索引（GORM AutoMigrate 不支持的）
 	createCustomIndexes(db)
 
 	log.Println("✓ Database connected and migrated successfully")
 	return db, nil
+}
+
+// applyPublishModuleCompatibilitySQL 兼容历史数据结构。
+// 这一步只修正已经明确不再符合新发布语义的数据。
+func applyPublishModuleCompatibilitySQL(db *gorm.DB) {
+	db.Exec(`
+		UPDATE blocks
+		SET slug = NULL
+		WHERE type = 'folder' AND slug IS NOT NULL
+	`)
+
+	db.Exec(`
+		UPDATE blocks
+		SET category_id = NULL
+		WHERE type <> 'page' AND category_id IS NOT NULL
+	`)
 }
 
 // createCustomIndexes 创建自定义索引
@@ -69,19 +88,54 @@ func createCustomIndexes(db *gorm.DB) {
 		ON blocks USING btree (path varchar_pattern_ops)
 	`)
 
-	// Slug 唯一索引（确保每个 slug 全局唯一，用于 SEO 友好的 URL）
-	// 使用部分索引：只对非 NULL 的 slug 创建唯一约束
+	// 旧索引曾经允许 folder 持有 slug，这与新的发布语义冲突。
+	// 这里显式删除并重建，确保线上兼容升级时也能收敛到 page-only 规则。
+	db.Exec(`DROP INDEX IF EXISTS idx_blocks_slug_unique`)
+
+	// Slug 唯一索引（仅 page 类型、未删除且非 NULL 的 slug）
 	db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_slug_unique 
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_slug_unique
 		ON blocks (slug) 
 		WHERE slug IS NOT NULL
+		  AND deleted_at IS NULL
+		  AND type = 'page'
 	`)
 
-	// 已发布页面索引（优化博客前台查询）
+	// 删除基于历史 JSONB 发布字段的旧索引，统一只认 published_at。
+	db.Exec(`DROP INDEX IF EXISTS idx_blocks_page_published`)
+
+	// 已发布页面索引（优化博客前台列表 / 详情查询）
 	db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_blocks_page_published 
-		ON blocks ((properties->>'is_published')) 
+		CREATE INDEX IF NOT EXISTS idx_blocks_page_published_at
+		ON blocks (published_at DESC)
 		WHERE type = 'page'
+		  AND deleted_at IS NULL
+		  AND published_at IS NOT NULL
+	`)
+
+	// 已发布分类页索引（优化公开分类筛选）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_blocks_page_category_published_at
+		ON blocks (category_id, published_at DESC)
+		WHERE type = 'page'
+		  AND deleted_at IS NULL
+		  AND published_at IS NOT NULL
+		  AND category_id IS NOT NULL
+	`)
+
+	// 分类归属索引（优化管理端按分类过滤和统计）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_blocks_page_category_id
+		ON blocks (category_id)
+		WHERE type = 'page'
+		  AND deleted_at IS NULL
+		  AND category_id IS NOT NULL
+	`)
+
+	// 分类表索引（保持用户隔离下的稳定排序性能）
+	db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_blog_categories_user_sort_name
+		ON blog_categories (created_by, sort_order ASC, name ASC)
 	`)
 
 	// 回收站根项归属索引（优化回收站列表、恢复、永久删除）

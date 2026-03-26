@@ -88,6 +88,11 @@ const (
 	ErrSearchNoResults      ErrorCode = 6405 // 无搜索结果（内部）
 	ErrSearchInvalidPath    ErrorCode = 6406 // 路径格式无效（内部）
 	ErrSearchContentExtract ErrorCode = 6407 // 内容提取失败（内部）
+
+	// 分类业务 (6500-6599)
+	ErrCategoryNotFoundInternal ErrorCode = 6501 // 分类不存在（内部）
+	ErrCategoryNameExists       ErrorCode = 6502 // 分类名称已存在（内部）
+	ErrCategorySlugExists       ErrorCode = 6503 // 分类 slug 已存在（内部）
 )
 
 // IsUserFacingError 判断是否为用户可见错误
@@ -137,6 +142,15 @@ func (e ErrorCode) GetInternalMessage() string {
 
 // GetHTTPStatus 获取 HTTP 状态码
 func (e ErrorCode) GetHTTPStatus() int {
+	switch e {
+	case ErrPageNotFoundInternal, ErrBlockNotFound, ErrCategoryNotFoundInternal:
+		return 404
+	case ErrSlugAlreadyExists, ErrCategoryNameExists, ErrCategorySlugExists:
+		return 409
+	case ErrInvalidSlugFormat, ErrInvalidBlockType, ErrSyncFailed:
+		return 400
+	}
+
 	switch {
 	case e >= 1000 && e < 1100:
 		return 401 // 认证授权错误
@@ -153,7 +167,7 @@ func (e ErrorCode) GetHTTPStatus() int {
 	case e >= 6100 && e < 6200:
 		return 403 // 工作空间业务错误（已删除，保留范围）
 	case e >= 6200:
-		return 404 // 页面/Block/搜索 业务错误
+		return 400 // 业务错误默认视为参数/状态冲突，由上方特例覆盖常见 not found/conflict
 	default:
 		return 500
 	}
@@ -239,6 +253,11 @@ var internalMessages = map[ErrorCode]string{
 	ErrSearchNoResults:      "No search results found",
 	ErrSearchInvalidPath:    "Invalid path format",
 	ErrSearchContentExtract: "Content extraction failed",
+
+	// 分类业务
+	ErrCategoryNotFoundInternal: "Category not found",
+	ErrCategoryNameExists:       "Category name already exists",
+	ErrCategorySlugExists:       "Category slug already exists",
 }
 
 // getBusinessErrorUserMessage 根据业务错误返回用户友好消息
@@ -274,6 +293,17 @@ func getBusinessErrorUserMessage(code ErrorCode) string {
 			return "未找到相关内容"
 		default:
 			return "搜索失败，请稍后重试"
+		}
+	case code >= 6500 && code < 6600:
+		switch code {
+		case ErrCategoryNotFoundInternal:
+			return "分类不存在"
+		case ErrCategoryNameExists:
+			return "分类名称已存在"
+		case ErrCategorySlugExists:
+			return "分类标识已存在"
+		default:
+			return "分类操作失败，请稍后重试"
 		}
 	default:
 		return "操作失败，请稍后重试"

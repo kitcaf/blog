@@ -7,33 +7,42 @@ import (
 	"strings"
 )
 
+const (
+	defaultSlugMaxLength  = 50
+	defaultSlugHashLength = 4
+)
+
+var slugSanitizer = regexp.MustCompile(`[^\w\u4e00-\u9fa5]+`)
+
 // GenerateSlug 根据标题生成 SEO 友好的 slug
 // 格式：标题转换 + 短随机哈希
 // 例如：GenerateSlug("我的第一篇文章") -> "wo-de-di-yi-pian-wen-zhang-a3f2"
 func GenerateSlug(title string) string {
-	// 1. 转小写
-	slug := strings.ToLower(title)
+	normalized := NormalizeSlug(title)
+	randomHash := generateRandomHash(defaultSlugHashLength)
 
-	// 2. 替换空格和特殊字符为连字符
-	slug = regexp.MustCompile(`[^\w\u4e00-\u9fa5]+`).ReplaceAllString(slug, "-")
+	if normalized == "" {
+		return "page-" + randomHash
+	}
 
-	// 3. 移除首尾的连字符
+	return normalized + "-" + randomHash
+}
+
+// NormalizeSlug 将任意输入规范化为不含随机后缀的 slug 片段。
+// 该函数适合分类 slug 或手工 slug 编辑时的预处理。
+func NormalizeSlug(input string) string {
+	slug := strings.ToLower(strings.TrimSpace(input))
+	slug = slugSanitizer.ReplaceAllString(slug, "-")
 	slug = strings.Trim(slug, "-")
 
-	// 4. 限制长度（保留前50个字符）
-	if len(slug) > 50 {
-		slug = slug[:50]
-		// 确保不在单词中间截断
+	if len(slug) > defaultSlugMaxLength {
+		slug = slug[:defaultSlugMaxLength]
 		if lastDash := strings.LastIndex(slug, "-"); lastDash > 30 {
 			slug = slug[:lastDash]
 		}
 	}
 
-	// 5. 添加4位随机哈希避免冲突
-	randomHash := generateRandomHash(4)
-	slug = slug + "-" + randomHash
-
-	return slug
+	return strings.Trim(slug, "-")
 }
 
 // generateRandomHash 生成指定长度的随机十六进制字符串

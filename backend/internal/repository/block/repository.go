@@ -60,7 +60,7 @@ func (r *BlockRepository) FindPages(userID uuid.UUID, includeUnpublished bool) (
 func (r *BlockRepository) FindPublicPages() ([]models.Block, error) {
 	var blocks []models.Block
 	err := r.db.Where("type = ? AND deleted_at IS NULL AND published_at IS NOT NULL", "page").
-		Order("created_at DESC").
+		Order("published_at DESC").
 		Find(&blocks).Error
 	return blocks, err
 }
@@ -87,6 +87,7 @@ func (r *BlockRepository) Update(userID uuid.UUID, block *models.Block) error {
 			"type":           block.Type,
 			"slug":           block.Slug,
 			"published_at":   block.PublishedAt,
+			"category_id":    block.CategoryID,
 			"last_edited_by": block.LastEditedBy,
 		}).Error
 }

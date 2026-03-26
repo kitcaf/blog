@@ -26,7 +26,7 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 	// CORS 跨域配置
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORS.Origins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
@@ -39,6 +39,9 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 	// 初始化 services
 	authService := services.NewAuthService(userRepo, cfg, rdb)
 	blockService := services.NewBlockService(blockRepo, rdb)
+	blogCategoryService := services.NewBlogCategoryService(db)
+	pagePublishService := services.NewPagePublishService(db, blockService)
+	publicBlogService := services.NewBlogPublicService(db, rdb, blockService)
 	searchService := services.NewSearchService(db)
 
 	// 设置搜索索引器到 BlockService（避免循环依赖）
@@ -50,6 +53,9 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 	authHandler := handlers.NewAuthHandler(authService, blockService)
 	blockHandler := handlers.NewBlockHandler(blockService)
 	pageHandler := handlers.NewPageHandler(blockService)
+	blogCategoryHandler := handlers.NewBlogCategoryHandler(blogCategoryService)
+	pagePublishHandler := handlers.NewPagePublishHandler(pagePublishService)
+	publicBlogHandler := handlers.NewPublicBlogHandler(publicBlogService)
 	searchHandler := handlers.NewSearchHandler(searchService)
 	trashHandler := handlers.NewTrashHandler(blockService)
 
@@ -64,6 +70,9 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 		public.GET("/pages", pageHandler.GetPublicPages)
 		// 根据 URL slug 获取指定公开页面的内容（包含其区块）
 		public.GET("/pages/:slug/blocks", pageHandler.GetPageBySlug)
+		public.GET("/posts", publicBlogHandler.ListPosts)
+		public.GET("/posts/:slug", publicBlogHandler.GetPost)
+		public.GET("/categories", publicBlogHandler.ListCategories)
 		// 搜索已发布的页面
 		public.GET("/search", searchHandler.SearchPublicPages)
 	}
@@ -88,13 +97,25 @@ func Setup(cfg *config.Config, db *gorm.DB, rdb *redis.Client, searchIndexer *se
 		// 页面管理
 		pages := admin.Group("/pages")
 		{
-			pages.GET("", pageHandler.GetAdminPages)         // 获取所有页面（包含未发布）
-			pages.POST("", pageHandler.CreatePage)           // 创建新页面
-			pages.GET("/:id", pageHandler.GetPage)           // 获取单个页面详情
-			pages.PUT("/:id", pageHandler.UpdatePage)        // 更新页面
+			pages.GET("", pageHandler.GetAdminPages)                   // 获取所有页面（包含未发布）
+			pages.POST("", pageHandler.CreatePage)                     // 创建新页面
+			pages.GET("/:id", pageHandler.GetPage)                     // 获取单个页面详情
+			pages.PUT("/:id", pageHandler.UpdatePage)                  // 更新页面基础属性
+			pages.PATCH("/:id/meta", pagePublishHandler.UpdateMeta)    // 更新发布元数据
+			pages.POST("/:id/publish", pagePublishHandler.Publish)     // 发布页面
+			pages.POST("/:id/unpublish", pagePublishHandler.Unpublish) // 取消发布
+			pages.POST("/:id/publish-subtree", pagePublishHandler.PublishSubtree)
 			pages.DELETE("/:id", pageHandler.DeletePage)     // 删除页面
 			pages.POST("/:id/move", pageHandler.MovePage)    // 移动页面到新位置
 			pages.GET("/:id/blocks", blockHandler.GetBlocks) // 获取页面的所有 Block
+		}
+
+		categories := admin.Group("/blog-categories")
+		{
+			categories.GET("", blogCategoryHandler.List)
+			categories.POST("", blogCategoryHandler.Create)
+			categories.PUT("/:id", blogCategoryHandler.Update)
+			categories.DELETE("/:id", blogCategoryHandler.Delete)
 		}
 
 		// Block 管理

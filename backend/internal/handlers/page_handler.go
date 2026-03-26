@@ -4,15 +4,9 @@ import (
 	"blog-backend/internal/models"
 	"blog-backend/internal/services"
 	"blog-backend/pkg/response"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"regexp"
-	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -91,7 +85,7 @@ func (h *PageHandler) GetPageBySlug(c *gin.Context) {
 // 数据库操作步骤：
 // 1. 验证或寻找父节点，若为顶层则绑定至用户所属的隐藏 root block 上
 // 2. 结合父级的 Path 生成子级专属的物化路径 (Materialized Path)
-// 3. 若为 page 即刻读取 properties 生成附有短哈希盐的防撞 slug
+// 3. 结合当前父级路径写入新节点 path，发布相关字段保持为空
 // 4. 将新的 block 作为完全独立行 INSERT 进数据库
 // 5. 【极致优化】依赖 Postgres 的原生 jsonb 操作（|| 运算符），一条 SQL 将新 ID 全原子化、无并发锁竞争地追加至父节点 content_ids 末尾
 func (h *PageHandler) CreatePage(c *gin.Context) {
@@ -132,17 +126,11 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 	// path = {parent.path}{id}/
 	block.Path = parent.Path + block.ID.String() + "/"
 
-	// 步骤4：为 page | block 类型自动生成 slug
-	if (block.Type == "page" || block.Type == "folder") && block.Slug == nil {
-		// 从 properties 中提取 title
-		var props map[string]interface{}
-		if err := json.Unmarshal(block.Properties, &props); err == nil {
-			if title, ok := props["title"].(string); ok && title != "" {
-				// 生成 slug：标题 + 6位随机哈希
-				slug := generateSlugFromTitle(title, 6)
-				block.Slug = &slug
-			}
-		}
+	// 步骤4：创建入口不再生成发布字段，统一由发布模块维护
+	if block.Type == "page" || block.Type == "folder" {
+		block.Slug = nil
+		block.PublishedAt = nil
+		block.CategoryID = nil
 	}
 
 	// 步骤5：插入新 block 到数据库
@@ -165,8 +153,8 @@ func (h *PageHandler) CreatePage(c *gin.Context) {
 // 数据库操作步骤：
 // 1. 接收与解析目标 ID（UUID）及新传递进来的 JSON Body
 // 2. 利用 JSONB 整体覆盖目标 block 的 properties 或其他纯文本标量字段（注意该接口并非拖拽的专有接口）
-// 3. 检测如果是 page 且发生了标题变动，在 Go 端纯计算重新生成短哈希拼装 slug
-// 4. 持久化所有的标量变动 (Save)
+// 3. 兼容旧入口，仅允许更新 properties，发布字段交给专用发布接口
+// 4. 持久化页面属性变动
 func (h *PageHandler) UpdatePage(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -184,26 +172,28 @@ func (h *PageHandler) UpdatePage(c *gin.Context) {
 		return
 	}
 
-	block.ID = id
-
-	// 步骤3：设置审计字段
-	block.LastEditedBy = &userID
-
-	// 步骤4：如果是 page 类型且修改了 title，重新生成 slug
-	if block.Type == "page" {
-		var props map[string]interface{}
-		if err := json.Unmarshal(block.Properties, &props); err == nil {
-			if title, ok := props["title"].(string); ok && title != "" {
-				// 如果 slug 为空或需要更新，重新生成
-				if block.Slug == nil || *block.Slug == "" {
-					slug := generateSlugFromTitle(title, 6)
-					block.Slug = &slug
-				}
-			}
-		}
+	existing, err := h.blockService.GetPageByID(userID, id)
+	if err != nil {
+		response.Error(c, http.StatusNotFound, "Page not found")
+		return
 	}
 
-	// 步骤5：更新数据库
+	// 步骤3：设置审计字段
+	if len(block.Properties) == 0 {
+		block.Properties = existing.Properties
+	}
+	block.ID = existing.ID
+	block.ParentID = existing.ParentID
+	block.Path = existing.Path
+	block.Type = existing.Type
+	block.ContentIDs = existing.ContentIDs
+	block.Slug = existing.Slug
+	block.PublishedAt = existing.PublishedAt
+	block.CategoryID = existing.CategoryID
+	block.CreatedBy = existing.CreatedBy
+	block.LastEditedBy = &userID
+
+	// 步骤4：更新数据库
 	if err := h.blockService.UpdatePage(userID, &block); err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to update page")
 		return
@@ -242,55 +232,6 @@ func (h *PageHandler) DeletePage(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "删除成功"})
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 辅助函数：Slug 生成
-// ─────────────────────────────────────────────────────────────────────────────
-
-var nonAlphanumericHanRegex = regexp.MustCompile(`[^\w\x{4e00}-\x{9fa5}]+`)
-
-// generateSlugFromTitle 根据标题生成 slug
-// 格式：标题转换 + 指定长度的随机哈希
-func generateSlugFromTitle(title string, hashLength int) string {
-	// 1. 转小写
-	slug := strings.ToLower(title)
-
-	// 2. 替换空格和特殊字符为连字符
-	slug = nonAlphanumericHanRegex.ReplaceAllString(slug, "-")
-
-	// 3. 移除首尾的连字符
-	slug = strings.Trim(slug, "-")
-
-	// 4. 限制长度（保留前50个字符）
-	if len(slug) > 50 {
-		slug = slug[:50]
-		// 确保不在单词中间截断
-		if lastDash := strings.LastIndex(slug, "-"); lastDash > 30 {
-			slug = slug[:lastDash]
-		}
-	}
-
-	// 5. 添加指定长度的随机哈希避免冲突
-	randomHash := generateRandomHash(hashLength)
-	if slug == "" {
-		// 如果标题为空或全是特殊字符，使用 "page" 前缀
-		slug = "page-" + randomHash
-	} else {
-		slug = slug + "-" + randomHash
-	}
-
-	return slug
-}
-
-// generateRandomHash 生成指定长度的随机十六进制字符串
-func generateRandomHash(length int) string {
-	bytes := make([]byte, (length+1)/2)
-	if _, err := rand.Read(bytes); err != nil {
-		// 降级方案：使用时间戳的哈希
-		return fmt.Sprintf("%0*x", length, time.Now().UnixNano()%1000000)[:length]
-	}
-	return hex.EncodeToString(bytes)[:length]
 }
 
 // MovePage 移动页面或文件夹到新位置

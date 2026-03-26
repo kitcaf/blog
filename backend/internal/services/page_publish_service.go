@@ -1,6 +1,7 @@
 package services
 
 import (
+	"blog-backend/internal/dto"
 	"blog-backend/internal/models"
 	blockrepo "blog-backend/internal/repository/block"
 	categoryrepo "blog-backend/internal/repository/blogcategory"
@@ -112,7 +113,7 @@ func (s *PagePublishService) PublishPage(
 	userID uuid.UUID,
 	pageID uuid.UUID,
 	command PublishPageCommand,
-) (*models.PublishPageResult, error) {
+) (*dto.PublishPageResult, error) {
 	page, properties, err := s.loadEditablePage(userID, pageID)
 	if err != nil {
 		return nil, err
@@ -163,7 +164,7 @@ func (s *PagePublishService) PublishPage(
 	s.blockService.InvalidatePublishedContentCaches(uniqueNonEmptySlugs(previousSlug, derefString(page.Slug))...)
 	s.blockService.ReindexPublishedPage(userID, page.ID)
 
-	return &models.PublishPageResult{
+	return &dto.PublishPageResult{
 		PageID:      page.ID,
 		Slug:        derefString(page.Slug),
 		PublishedAt: *page.PublishedAt,
@@ -193,9 +194,9 @@ func (s *PagePublishService) PublishSubtree(
 	userID uuid.UUID,
 	rootID uuid.UUID,
 	command PublishSubtreeCommand,
-) (*models.PublishSubtreeResult, error) {
+) (*dto.PublishSubtreeResult, error) {
 	var (
-		result     *models.PublishSubtreeResult
+		result     *dto.PublishSubtreeResult
 		cacheSlugs []string
 		rootPath   string
 	)
@@ -281,7 +282,7 @@ func (s *PagePublishService) PublishSubtree(
 			publishedCount++
 		}
 
-		result = &models.PublishSubtreeResult{
+		result = &dto.PublishSubtreeResult{
 			RootID:          rootID,
 			PublishedCount:  publishedCount,
 			SkippedCount:    0,

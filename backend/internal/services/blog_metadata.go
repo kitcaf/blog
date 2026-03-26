@@ -1,6 +1,7 @@
 package services
 
 import (
+	"blog-backend/internal/dto"
 	"blog-backend/internal/models"
 	"encoding/json"
 	"strings"
@@ -135,14 +136,14 @@ func normalizeTags(tags []string) []string {
 func buildPublicPostDetail(
 	page *models.Block,
 	allBlocks []models.Block,
-	category *models.PublicPostCategory,
-) (*models.PublicPostDetail, error) {
+	category *dto.PublicPostCategory,
+) (*dto.PublicPostDetail, error) {
 	properties, err := parsePropertiesMap(page.Properties)
 	if err != nil {
 		return nil, err
 	}
 
-	detail := &models.PublicPostDetail{
+	detail := &dto.PublicPostDetail{
 		ID:          page.ID,
 		Title:       getPageTitle(properties),
 		Slug:        derefString(page.Slug),
@@ -151,7 +152,7 @@ func buildPublicPostDetail(
 		Tags:        getStringSliceProperty(properties, pagePropertyTagsKey),
 		Category:    category,
 		PublishedAt: *page.PublishedAt,
-		Blocks:      make([]models.PublicPostBlock, 0, len(allBlocks)),
+		Blocks:      make([]dto.PublicPostBlock, 0, len(allBlocks)),
 	}
 
 	for _, block := range allBlocks {
@@ -164,7 +165,7 @@ func buildPublicPostDetail(
 			properties = json.RawMessage(`{}`)
 		}
 
-		detail.Blocks = append(detail.Blocks, models.PublicPostBlock{
+		detail.Blocks = append(detail.Blocks, dto.PublicPostBlock{
 			ID:         block.ID,
 			Type:       block.Type,
 			Properties: properties,

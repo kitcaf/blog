@@ -1,6 +1,7 @@
 package blogcategory
 
 import (
+	"blog-backend/internal/dto"
 	"blog-backend/internal/models"
 	"context"
 
@@ -68,8 +69,8 @@ func (r *Repository) Delete(userID, categoryID uuid.UUID) error {
 	return nil
 }
 
-func (r *Repository) ListWithPostCount(userID uuid.UUID) ([]models.BlogCategoryWithCount, error) {
-	var categories []models.BlogCategoryWithCount
+func (r *Repository) ListWithPostCount(userID uuid.UUID) ([]dto.BlogCategoryWithCount, error) {
+	var categories []dto.BlogCategoryWithCount
 	err := r.db.Raw(`
 		SELECT
 			c.id,
@@ -92,8 +93,8 @@ func (r *Repository) ListWithPostCount(userID uuid.UUID) ([]models.BlogCategoryW
 	return categories, err
 }
 
-func (r *Repository) ListPublicWithPostCount(ctx context.Context) ([]models.BlogCategoryWithCount, error) {
-	var categories []models.BlogCategoryWithCount
+func (r *Repository) ListPublicWithPostCount(ctx context.Context) ([]dto.BlogCategoryWithCount, error) {
+	var categories []dto.BlogCategoryWithCount
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT
 			c.id,

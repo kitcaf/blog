@@ -1,7 +1,7 @@
 package services
 
 import (
-	"blog-backend/internal/models"
+	"blog-backend/internal/dto"
 	blockrepo "blog-backend/internal/repository/block"
 	categoryrepo "blog-backend/internal/repository/blogcategory"
 	"blog-backend/pkg/errors"
@@ -41,7 +41,7 @@ func (s *BlogPublicService) ListPosts(
 	page int,
 	limit int,
 	categorySlug string,
-) (*models.PublicPostsPage, error) {
+) (*dto.PublicPostsPage, error) {
 	cacheKey := buildPublicPostsCacheKey(page, limit, categorySlug)
 	if cachedPage, cacheHit := s.getCachedPublicPostsPage(ctx, cacheKey); cacheHit {
 		return cachedPage, nil
@@ -52,7 +52,7 @@ func (s *BlogPublicService) ListPosts(
 		return nil, errors.Wrap(errors.ErrDatabaseQuery, err)
 	}
 
-	result := &models.PublicPostsPage{
+	result := &dto.PublicPostsPage{
 		Posts: posts,
 		Total: total,
 		Page:  page,
@@ -63,7 +63,7 @@ func (s *BlogPublicService) ListPosts(
 	return result, nil
 }
 
-func (s *BlogPublicService) GetPostDetail(ctx context.Context, slug string) (*models.PublicPostDetail, error) {
+func (s *BlogPublicService) GetPostDetail(ctx context.Context, slug string) (*dto.PublicPostDetail, error) {
 	cacheKey := publicPostCachePrefix + slug
 	if cachedDetail, cacheHit := s.getCachedPublicPostDetail(ctx, cacheKey); cacheHit {
 		return cachedDetail, nil
@@ -77,11 +77,11 @@ func (s *BlogPublicService) GetPostDetail(ctx context.Context, slug string) (*mo
 		return nil, errors.Wrap(errors.ErrDatabaseQuery, err)
 	}
 
-	var category *models.PublicPostCategory
+	var category *dto.PublicPostCategory
 	if page.CategoryID != nil {
 		blogCategory, categoryErr := s.categoryRepo.FindPublicByID(ctx, *page.CategoryID)
 		if categoryErr == nil {
-			category = &models.PublicPostCategory{
+			category = &dto.PublicPostCategory{
 				ID:   blogCategory.ID,
 				Name: blogCategory.Name,
 				Slug: blogCategory.Slug,
@@ -100,9 +100,9 @@ func (s *BlogPublicService) GetPostDetail(ctx context.Context, slug string) (*mo
 	return detail, nil
 }
 
-func (s *BlogPublicService) ListCategories(ctx context.Context) ([]models.BlogCategoryWithCount, error) {
+func (s *BlogPublicService) ListCategories(ctx context.Context) ([]dto.BlogCategoryWithCount, error) {
 	if s.rdb != nil {
-		var cachedCategories []models.BlogCategoryWithCount
+		var cachedCategories []dto.BlogCategoryWithCount
 		if cacheHit := s.getCachedJSON(ctx, publicCategoriesCacheKey, &cachedCategories); cacheHit {
 			return cachedCategories, nil
 		}
@@ -128,16 +128,16 @@ func jsonInt(value int) string {
 	return strconv.Itoa(value)
 }
 
-func (s *BlogPublicService) getCachedPublicPostsPage(ctx context.Context, key string) (*models.PublicPostsPage, bool) {
-	var cachedPage models.PublicPostsPage
+func (s *BlogPublicService) getCachedPublicPostsPage(ctx context.Context, key string) (*dto.PublicPostsPage, bool) {
+	var cachedPage dto.PublicPostsPage
 	if !s.getCachedJSON(ctx, key, &cachedPage) {
 		return nil, false
 	}
 	return &cachedPage, true
 }
 
-func (s *BlogPublicService) getCachedPublicPostDetail(ctx context.Context, key string) (*models.PublicPostDetail, bool) {
-	var cachedDetail models.PublicPostDetail
+func (s *BlogPublicService) getCachedPublicPostDetail(ctx context.Context, key string) (*dto.PublicPostDetail, bool) {
+	var cachedDetail dto.PublicPostDetail
 	if !s.getCachedJSON(ctx, key, &cachedDetail) {
 		return nil, false
 	}

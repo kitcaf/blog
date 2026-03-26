@@ -1,6 +1,7 @@
 package services
 
 import (
+	"blog-backend/internal/dto"
 	"blog-backend/internal/models"
 	categoryrepo "blog-backend/internal/repository/blogcategory"
 	"blog-backend/pkg/errors"
@@ -22,7 +23,7 @@ func NewBlogCategoryService(db *gorm.DB) *BlogCategoryService {
 	}
 }
 
-func (s *BlogCategoryService) ListCategories(userID uuid.UUID) ([]models.BlogCategoryWithCount, error) {
+func (s *BlogCategoryService) ListCategories(userID uuid.UUID) ([]dto.BlogCategoryWithCount, error) {
 	categories, err := s.repo.ListWithPostCount(userID)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrDatabaseQuery, err)
@@ -30,7 +31,7 @@ func (s *BlogCategoryService) ListCategories(userID uuid.UUID) ([]models.BlogCat
 	return categories, nil
 }
 
-func (s *BlogCategoryService) ListPublicCategories(ctx context.Context) ([]models.BlogCategoryWithCount, error) {
+func (s *BlogCategoryService) ListPublicCategories(ctx context.Context) ([]dto.BlogCategoryWithCount, error) {
 	categories, err := s.repo.ListPublicWithPostCount(ctx)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrDatabaseQuery, err)

@@ -1,6 +1,7 @@
 package block
 
 import (
+	"blog-backend/internal/dto"
 	"blog-backend/internal/models"
 	"context"
 	"encoding/json"
@@ -59,7 +60,7 @@ func (r *BlockRepository) ListPublicPostSummaries(
 	page int,
 	limit int,
 	categorySlug string,
-) ([]models.PublicPostSummary, int64, error) {
+) ([]dto.PublicPostSummary, int64, error) {
 	offset := (page - 1) * limit
 
 	baseSQL := `
@@ -101,10 +102,10 @@ func (r *BlockRepository) ListPublicPostSummaries(
 	}
 
 	if len(rows) == 0 {
-		return []models.PublicPostSummary{}, 0, nil
+		return []dto.PublicPostSummary{}, 0, nil
 	}
 
-	summaries := make([]models.PublicPostSummary, 0, len(rows))
+	summaries := make([]dto.PublicPostSummary, 0, len(rows))
 	for _, row := range rows {
 		var tags []string
 		if len(row.Tags) > 0 {
@@ -113,7 +114,7 @@ func (r *BlockRepository) ListPublicPostSummaries(
 			}
 		}
 
-		summary := models.PublicPostSummary{
+		summary := dto.PublicPostSummary{
 			ID:          row.ID,
 			Title:       row.Title,
 			Slug:        row.Slug,
@@ -124,7 +125,7 @@ func (r *BlockRepository) ListPublicPostSummaries(
 		}
 
 		if row.CategoryID != nil && row.CategoryName != nil && row.CategorySlug != nil {
-			summary.Category = &models.PublicPostCategory{
+			summary.Category = &dto.PublicPostCategory{
 				ID:   *row.CategoryID,
 				Name: *row.CategoryName,
 				Slug: *row.CategorySlug,

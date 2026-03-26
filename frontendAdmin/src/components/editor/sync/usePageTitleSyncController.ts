@@ -1,13 +1,14 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BlockData } from '@blog/types';
-import { useBlockStore } from '@/store/useBlockStore';
+import type { BlockSyncSession } from '@/store/useBlockStore';
 import { blockQueryKeys } from '@/hooks/useBlocksQuery';
 import { updateTreeNodeTitle } from '@/utils/treeHelpers';
 import type { PageTreeNode } from '@/api/blocks';
 
 interface UsePageTitleSyncControllerParams {
   pageId?: string;
+  session: BlockSyncSession;
   scheduleSync: () => void;
   flushSync: () => void;
 }
@@ -19,6 +20,7 @@ interface UsePageTitleSyncControllerResult {
 
 export function usePageTitleSyncController({
   pageId,
+  session,
   scheduleSync,
   flushSync,
 }: UsePageTitleSyncControllerParams): UsePageTitleSyncControllerResult {
@@ -30,7 +32,7 @@ export function usePageTitleSyncController({
         return;
       }
 
-      const didChange = useBlockStore.getState().applyPageTitleChange(pageId, title);
+      const didChange = session.applyPageTitleChange(pageId, title);
       if (!didChange) {
         return;
       }
@@ -53,7 +55,7 @@ export function usePageTitleSyncController({
 
       scheduleSync();
     },
-    [pageId, queryClient, scheduleSync],
+    [pageId, queryClient, scheduleSync, session],
   );
 
   const flushTitleSync = useCallback(() => {

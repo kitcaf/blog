@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { BlockData } from '@blog/types';
 import { syncBlocks } from '@/api/blocks';
 import { blockQueryKeys } from '@/hooks/useBlocksQuery';
-import { useBlockStore } from '@/store/useBlockStore';
+import type { BlockSyncSession } from '@/store/useBlockStore';
 import { useSyncStore } from '@/store/useSyncStore';
 
 const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000] as const;
@@ -25,15 +25,16 @@ interface UseBlockSyncRunnerResult {
 function patchActivePageDetailCache(
   queryClient: ReturnType<typeof useQueryClient>,
   pageId: string,
+  session: BlockSyncSession,
 ) {
-  const store = useBlockStore.getState();
-  const pendingChange = store.pendingChangesById[pageId];
+  const sessionState = session.getState();
+  const pendingChange = sessionState.pendingChangesById[pageId];
 
   if (pendingChange) {
     return;
   }
 
-  const pageBlock = store.blocksById[pageId];
+  const pageBlock = sessionState.blocksById[pageId];
   if (!pageBlock || pageBlock.type !== 'page') {
     return;
   }
@@ -46,7 +47,10 @@ function getRetryDelayMs(retryCount: number): number {
   return RETRY_DELAYS_MS[retryIndex];
 }
 
-export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRunnerResult {
+export function useBlockSyncRunner(
+  activePageId: string | null,
+  session: BlockSyncSession,
+): UseBlockSyncRunnerResult {
   const queryClient = useQueryClient();
   const queueRef = useRef<SyncIntent[]>([]);
   const isDrainingRef = useRef(false);
@@ -64,7 +68,7 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
 
   const triggerBackgroundRefresh = useCallback(
     (pageId: string) => {
-      patchActivePageDetailCache(queryClient, pageId);
+      patchActivePageDetailCache(queryClient, pageId, session);
 
       void Promise.all([
         queryClient.invalidateQueries({
@@ -80,7 +84,7 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
         console.error('[BlockSync] 刷新缓存失败:', refreshError.message);
       });
     },
-    [queryClient],
+    [queryClient, session],
   );
 
   const enqueueOrMergeIntent = useCallback((intent: SyncIntent) => {
@@ -108,7 +112,7 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
             break;
           }
 
-          const request = useBlockStore.getState().buildSyncRequest(nextIntent.pageId);
+          const request = session.buildSyncRequest(nextIntent.pageId);
           if (!request) {
             continue;
           }
@@ -154,7 +158,7 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
             return;
           }
 
-          useBlockStore.getState().acknowledgeSync(request.snapshot);
+          session.acknowledgeSync(request.snapshot);
           triggerBackgroundRefresh(nextIntent.pageId);
         }
       } finally {
@@ -167,7 +171,7 @@ export function useBlockSyncRunner(activePageId: string | null): UseBlockSyncRun
     };
 
     void runDrain();
-  }, [clearRetryTimer, triggerBackgroundRefresh]);
+  }, [clearRetryTimer, session, triggerBackgroundRefresh]);
 
   const sync = useCallback(
     (reason: SyncIntentReason = 'debounce') => {

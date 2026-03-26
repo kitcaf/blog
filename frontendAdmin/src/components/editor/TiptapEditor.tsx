@@ -3,6 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 
 import { usePageBlocksQuery } from '@/hooks/useBlocksQuery';
 import { cn } from '@/lib/utils';
+import { createBlockSyncSession } from '@/store/useBlockStore';
 import { PageHeaderContainer } from './components/PageHeaderContainer';
 import { createEditorExtensions } from './extensions';
 import { useEditorTheme } from './hooks/useEditorTheme';
@@ -19,8 +20,19 @@ interface TiptapEditorProps {
 
 function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
   const { blocks, isLoading: blocksLoading } = usePageBlocksQuery(pageId ?? null);
-  const { sync } = useBlockSyncRunner(pageId ?? null);
   const { pageBlock, contentBlocks } = splitPageDocumentBlocks(blocks, pageId);
+  const isSessionSeedReady = !blocksLoading && Boolean(pageBlock);
+  const blockSyncSession = useMemo(() => {
+    if (!isSessionSeedReady || !pageBlock) {
+      return createBlockSyncSession();
+    }
+
+    return createBlockSyncSession({
+      pageBlock,
+      contentBlocks,
+    });
+  }, [contentBlocks, isSessionSeedReady, pageBlock, pageId]);
+  const { sync } = useBlockSyncRunner(pageId ?? null, blockSyncSession);
   const { editorCssVars, editorThemeClassName } = useEditorTheme();
   const { handleImagePaste } = useImageUpload();
   console.log("TiptapEditorComponent render(永远不要删除)", pageBlock)
@@ -48,8 +60,8 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
     editor,
     pageId,
     pageBlock,
-    contentBlocks,
     isBlocksLoading: blocksLoading,
+    session: blockSyncSession,
     sync,
   });
 
@@ -86,10 +98,11 @@ function TiptapEditorComponent({ className = '', pageId }: TiptapEditorProps) {
         <PageHeaderContainer
           key={pageId ?? 'page-header'}
           pageId={pageId}
-          fallbackTitle={
+          initialTitle={
             'title' in pageBlock.props ? (pageBlock.props.title as string) : '未命名'
           }
           isPageLoaded
+          session={blockSyncSession}
           onEnter={handleTitleEnter}
           scheduleSync={scheduleSync}
           flushSync={flushSync}

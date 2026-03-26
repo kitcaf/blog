@@ -1,14 +1,13 @@
 /**
  * @file useBlockStore.ts
- * @description 编辑器 Block 缓存与待同步状态。
+ * @description 当前编辑页的 Block 同步会话。
  *
- * 设计原则：
- *  1. Store 只保存当前页面的 canonical block cache 与 pending 变更。
- *  2. 只暴露“标题更新”和“编辑器 flush 提交”两个高层入口。
- *  3. 同步请求在真正发送前才从 Store 读取，Store 不维护预入队状态。
+ * 说明：
+ *  1. 这里不再暴露 React hook 形态的 store，而是一个普通 class。
+ *  2. 会话只服务于当前活跃编辑页，供 editor/title/sync runner 共享最新本地快照。
+ *  3. 仍然保留 pending revision 语义，确保异步同步成功后只确认本次请求覆盖的变更。
  */
 
-import { create } from 'zustand';
 import type {
   Block,
   BlockData,
@@ -58,23 +57,24 @@ export interface EditorSyncDraft {
   };
 }
 
-interface BlockStoreState {
+export interface BlockStoreState {
   blocksById: Record<string, Block>;
   pendingChangesById: Record<string, PendingChange>;
   revisionCounter: number;
 }
 
-interface BlockStoreActions {
-  hydratePage: (pageBlock: BlockData, contentBlocks: BlockData[]) => void;
-  reset: () => void;
-  applyPageTitleChange: (pageId: string, title: string) => boolean;
-  applyEditorSyncDraft: (draft: EditorSyncDraft) => void;
-  buildSyncRequest: (pageId: string) => PreparedBlockSync | null;
-  hasPendingChanges: (pageId?: string) => boolean;
-  acknowledgeSync: (snapshot: BlockSyncSnapshot) => void;
+interface BlockSessionSeed {
+  pageBlock: BlockData;
+  contentBlocks: BlockData[];
 }
 
-export type BlockStore = BlockStoreState & BlockStoreActions;
+function createEmptyBlockStoreState(): BlockStoreState {
+  return {
+    blocksById: {},
+    pendingChangesById: {},
+    revisionCounter: 0,
+  };
+}
 
 function normalizeBlocks(pageBlock: BlockData, contentBlocks: BlockData[]): Record<string, Block> {
   return Object.fromEntries([pageBlock, ...contentBlocks].map((block) => [block.id, block]));
@@ -122,49 +122,54 @@ function buildBlockUpdate(block: Block): BlockUpdateDelta {
   };
 }
 
-export const useBlockStore = create<BlockStore>()((set, get) => ({
-  blocksById: {},
-  pendingChangesById: {},
-  revisionCounter: 0,
+export class BlockSyncSession {
+  private state: BlockStoreState;
 
-  hydratePage: (pageBlock, contentBlocks) => {
-    set({
+  constructor(seed?: BlockSessionSeed) {
+    this.state = createEmptyBlockStoreState();
+
+    if (seed) {
+      this.hydratePage(seed.pageBlock, seed.contentBlocks);
+    }
+  }
+
+  getState(): Readonly<BlockStoreState> {
+    return this.state;
+  }
+
+  hydratePage(pageBlock: BlockData, contentBlocks: BlockData[]): void {
+    this.state = {
       blocksById: normalizeBlocks(pageBlock, contentBlocks),
       pendingChangesById: {},
       revisionCounter: 0,
-    });
-  },
+    };
+  }
 
-  reset: () => {
-    set({
-      blocksById: {},
-      pendingChangesById: {},
-      revisionCounter: 0,
-    });
-  },
+  reset(): void {
+    this.state = createEmptyBlockStoreState();
+  }
 
-  applyPageTitleChange: (pageId, title) => {
-    let didChange = false;
+  applyPageTitleChange(pageId: string, title: string): boolean {
+    const pageBlock = this.state.blocksById[pageId];
+    if (!pageBlock) {
+      return false;
+    }
 
-    set((state) => {
-      const pageBlock = state.blocksById[pageId];
-      if (!pageBlock) {
-        return state;
-      }
+    const currentTitle =
+      'title' in pageBlock.props && typeof pageBlock.props.title === 'string'
+        ? pageBlock.props.title
+        : '';
 
-      const currentTitle =
-        'title' in pageBlock.props && typeof pageBlock.props.title === 'string'
-          ? pageBlock.props.title
-          : '';
+    if (currentTitle === title) {
+      return false;
+    }
 
-      if (currentTitle === title) {
-        return state;
-      }
+    const nextPending = { ...this.state.pendingChangesById };
+    const nextCounter = markPendingChange(nextPending, pageId, 'upsert', this.state.revisionCounter);
 
-      didChange = true;
-
-      const nextBlocks = {
-        ...state.blocksById,
+    this.state = {
+      blocksById: {
+        ...this.state.blocksById,
         [pageId]: {
           ...pageBlock,
           props: {
@@ -172,106 +177,97 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
             title,
           },
         } as Block,
-      };
+      },
+      pendingChangesById: nextPending,
+      revisionCounter: nextCounter,
+    };
 
-      const nextPending = { ...state.pendingChangesById };
-      const nextCounter = markPendingChange(nextPending, pageId, 'upsert', state.revisionCounter);
+    return true;
+  }
 
-      return {
-        blocksById: nextBlocks,
-        pendingChangesById: nextPending,
-        revisionCounter: nextCounter,
-      };
-    });
+  applyEditorSyncDraft(draft: EditorSyncDraft): void {
+    let didChange = false;
+    let nextCounter = this.state.revisionCounter;
+    const nextBlocks = { ...this.state.blocksById };
+    const nextPending = { ...this.state.pendingChangesById };
 
-    return didChange;
-  },
+    for (const update of draft.updates) {
+      const existingBlock = nextBlocks[update.id];
 
-  applyEditorSyncDraft: (draft) => {
-    set((state) => {
-      let didChange = false;
-      let nextCounter = state.revisionCounter;
-      const nextBlocks = { ...state.blocksById };
-      const nextPending = { ...state.pendingChangesById };
+      if (existingBlock) {
+        nextBlocks[update.id] = {
+          ...existingBlock,
+          content: update.content,
+          props: {
+            ...existingBlock.props,
+            ...update.props,
+          },
+        } as Block;
+      } else if (update.metadata) {
+        nextBlocks[update.id] = {
+          id: update.id,
+          parentId: update.metadata.parentId,
+          path: update.metadata.path,
+          type: update.metadata.type,
+          content: update.content,
+          props: update.props,
+          contentIds: [],
+        } as Block;
+      } else {
+        continue;
+      }
 
-      for (const update of draft.updates) {
-        const existingBlock = nextBlocks[update.id];
+      nextCounter = markPendingChange(nextPending, update.id, 'upsert', nextCounter);
+      didChange = true;
+    }
 
-        if (existingBlock) {
-          nextBlocks[update.id] = {
-            ...existingBlock,
-            content: update.content,
-            props: {
-              ...existingBlock.props,
-              ...update.props,
-            },
-          } as Block;
-        } else if (update.metadata) {
-          nextBlocks[update.id] = {
-            id: update.id,
-            parentId: update.metadata.parentId,
-            path: update.metadata.path,
-            type: update.metadata.type,
-            content: update.content,
-            props: update.props,
-            contentIds: [],
-          } as Block;
-        } else {
-          continue;
-        }
-
-        nextCounter = markPendingChange(nextPending, update.id, 'upsert', nextCounter);
+    for (const id of draft.deletedIds) {
+      if (nextBlocks[id]) {
+        delete nextBlocks[id];
         didChange = true;
       }
 
-      for (const id of draft.deletedIds) {
-        if (nextBlocks[id]) {
-          delete nextBlocks[id];
+      nextCounter = markPendingChange(nextPending, id, 'delete', nextCounter);
+    }
+
+    if (draft.pageStructure) {
+      const pageBlock = nextBlocks[draft.pageStructure.pageId];
+      if (pageBlock) {
+        const oldContentIds = pageBlock.contentIds;
+        const hasStructureChange =
+          oldContentIds.length !== draft.pageStructure.contentIds.length ||
+          !oldContentIds.every((id, index) => id === draft.pageStructure?.contentIds[index]);
+
+        if (hasStructureChange) {
+          nextBlocks[draft.pageStructure.pageId] = {
+            ...pageBlock,
+            contentIds: draft.pageStructure.contentIds,
+          } as Block;
+
+          nextCounter = markPendingChange(
+            nextPending,
+            draft.pageStructure.pageId,
+            'upsert',
+            nextCounter,
+          );
           didChange = true;
         }
-
-        nextCounter = markPendingChange(nextPending, id, 'delete', nextCounter);
       }
+    }
 
-      if (draft.pageStructure) {
-        const pageBlock = nextBlocks[draft.pageStructure.pageId];
-        if (pageBlock) {
-          const oldContentIds = pageBlock.contentIds;
-          const hasStructureChange =
-            oldContentIds.length !== draft.pageStructure.contentIds.length ||
-            !oldContentIds.every((id, index) => id === draft.pageStructure?.contentIds[index]);
+    if (!didChange) {
+      return;
+    }
 
-          if (hasStructureChange) {
-            nextBlocks[draft.pageStructure.pageId] = {
-              ...pageBlock,
-              contentIds: draft.pageStructure.contentIds,
-            } as Block;
+    this.state = {
+      blocksById: nextBlocks,
+      pendingChangesById: nextPending,
+      revisionCounter: nextCounter,
+    };
+  }
 
-            nextCounter = markPendingChange(
-              nextPending,
-              draft.pageStructure.pageId,
-              'upsert',
-              nextCounter,
-            );
-            didChange = true;
-          }
-        }
-      }
-
-      if (!didChange) {
-        return state;
-      }
-
-      return {
-        blocksById: nextBlocks,
-        pendingChangesById: nextPending,
-        revisionCounter: nextCounter,
-      };
-    });
-  },
-
-  buildSyncRequest: (pageId) => {
-    const { blocksById, pendingChangesById } = get();
+  buildSyncRequest(pageId: string): PreparedBlockSync | null {
+    const { blocksById, pendingChangesById } = this.state;
     const pageBlock = blocksById[pageId];
     if (!pageBlock || pageBlock.type !== 'page') {
       return null;
@@ -311,10 +307,10 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
         revisionsById,
       },
     };
-  },
+  }
 
-  hasPendingChanges: (pageId) => {
-    const { blocksById, pendingChangesById } = get();
+  hasPendingChanges(pageId?: string): boolean {
+    const { blocksById, pendingChangesById } = this.state;
     if (pageId) {
       const pageBlock = blocksById[pageId];
       if (!pageBlock || pageBlock.type !== 'page') {
@@ -323,30 +319,33 @@ export const useBlockStore = create<BlockStore>()((set, get) => ({
     }
 
     return Object.keys(pendingChangesById).length > 0;
-  },
+  }
 
-  acknowledgeSync: (snapshot) => {
-    set((state) => {
-      let didChange = false;
-      const nextPending = { ...state.pendingChangesById };
+  acknowledgeSync(snapshot: BlockSyncSnapshot): void {
+    let didChange = false;
+    const nextPending = { ...this.state.pendingChangesById };
 
-      for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
-        const currentChange = nextPending[id];
-        if (!currentChange || currentChange.revision !== revision) {
-          continue;
-        }
-
-        delete nextPending[id];
-        didChange = true;
+    for (const [id, revision] of Object.entries(snapshot.revisionsById)) {
+      const currentChange = nextPending[id];
+      if (!currentChange || currentChange.revision !== revision) {
+        continue;
       }
 
-      if (!didChange) {
-        return state;
-      }
+      delete nextPending[id];
+      didChange = true;
+    }
 
-      return {
-        pendingChangesById: nextPending,
-      };
-    });
-  },
-}));
+    if (!didChange) {
+      return;
+    }
+
+    this.state = {
+      ...this.state,
+      pendingChangesById: nextPending,
+    };
+  }
+}
+
+export function createBlockSyncSession(seed?: BlockSessionSeed): BlockSyncSession {
+  return new BlockSyncSession(seed);
+}

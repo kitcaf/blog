@@ -1,11 +1,11 @@
 /**
  * @file useEditorSyncController.ts
- * @description 编辑器同步控制器 - 协调变更检测、防抖和 editor -> store flush。
+ * @description 编辑器同步控制器 - 协调变更检测、防抖和 editor -> session flush。
  *
  * 核心职责：
  *   1. 监听编辑器 update 事件，标记需要 flush
- *   2. 标准 1 秒防抖后将编辑器变更写入 Store
- *   3. 防抖结束或显式 flush 后，通知同步 runner 基于 Store 最新状态发起同步
+ *   2. 标准 1 秒防抖后将编辑器变更写入 session
+ *   3. 防抖结束或显式 flush 后，通知同步 runner 基于 session 最新状态发起同步
  *   4. 管理页面切换时的初始化和清理
  */
 
@@ -19,7 +19,7 @@ import {
   isAllDirty,
   isStructureDirty,
 } from '../extensions/DirtyTrackerExtension';
-import { useBlockStore } from '@/store/useBlockStore';
+import type { BlockSyncSession } from '@/store/useBlockStore';
 import { collectEditorSyncDraft } from './collectEditorSyncDraft';
 
 const DEBOUNCE_MS = 1000;
@@ -30,8 +30,8 @@ interface UseEditorSyncControllerParams {
   editor: Editor | null;
   pageId?: string;
   pageBlock: BlockData | null;
-  contentBlocks: BlockData[];
   isBlocksLoading: boolean;
+  session: BlockSyncSession;
   sync: (reason?: SyncRequestReason) => void;
 }
 
@@ -44,12 +44,11 @@ export function useEditorSyncController({
   editor,
   pageId,
   pageBlock,
-  contentBlocks,
   isBlocksLoading,
+  session,
   sync,
 }: UseEditorSyncControllerParams): UseEditorSyncControllerResult {
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hydratedPageRef = useRef<string | null>(null);
   const initializedPageRef = useRef<string | null>(null);
   const needsEditorFlushRef = useRef(false);
 
@@ -60,8 +59,8 @@ export function useEditorSyncController({
 
     needsEditorFlushRef.current = false;
 
-    const store = useBlockStore.getState();
-    const currentPageBlock = store.blocksById[pageId];
+    const sessionState = session.getState();
+    const currentPageBlock = sessionState.blocksById[pageId];
     if (!currentPageBlock) {
       resetDirtyTracker(editor);
       return;
@@ -91,14 +90,14 @@ export function useEditorSyncController({
       pageId,
       pageBlock: currentPageBlock,
       candidateIds,
-      blocksById: store.blocksById,
+      blocksById: sessionState.blocksById,
       structureDirty,
     });
 
     if (draft.updates.length > 0 || draft.deletedIds.length > 0 || draft.pageStructure) {
-      store.applyEditorSyncDraft(draft);
+      session.applyEditorSyncDraft(draft);
     }
-  }, [editor, pageId]);
+  }, [editor, pageId, session]);
 
   const flushAndRequestSync = useCallback(
     (reason: SyncRequestReason) => {
@@ -137,25 +136,6 @@ export function useEditorSyncController({
   }, [flushAndRequestSync]);
 
   useEffect(() => {
-    if (!pageId || !pageBlock) {
-      useBlockStore.getState().reset();
-      return;
-    }
-
-    if (isBlocksLoading) {
-      return;
-    }
-
-    if (hydratedPageRef.current === pageId) {
-      return;
-    }
-
-    useBlockStore.getState().hydratePage(pageBlock, contentBlocks);
-    hydratedPageRef.current = pageId;
-  }, [contentBlocks, isBlocksLoading, pageBlock, pageId]);
-
-  useEffect(() => {
-    hydratedPageRef.current = null;
     initializedPageRef.current = null;
     needsEditorFlushRef.current = false;
 
@@ -165,7 +145,7 @@ export function useEditorSyncController({
     }
 
     resetDirtyTracker(editor);
-  }, [editor, pageId]);
+  }, [editor, pageId, session]);
 
   useEffect(() => {
     if (!editor || !pageId || !pageBlock || isBlocksLoading) {
@@ -176,7 +156,7 @@ export function useEditorSyncController({
       return;
     }
 
-    const { blocksById } = useBlockStore.getState();
+    const { blocksById } = session.getState();
     const storePageBlock = blocksById[pageId];
     if (!storePageBlock) {
       return;
@@ -189,7 +169,7 @@ export function useEditorSyncController({
     editor.commands.setContent(hydrateToTiptap(editorContentBlocks), { emitUpdate: false });
     resetDirtyTracker(editor);
     initializedPageRef.current = pageId;
-  }, [contentBlocks, editor, isBlocksLoading, pageBlock, pageId]);
+  }, [editor, isBlocksLoading, pageBlock, pageId, session]);
 
   useEffect(() => {
     if (!editor) {

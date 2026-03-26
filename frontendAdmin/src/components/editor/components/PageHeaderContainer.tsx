@@ -1,12 +1,13 @@
-import { memo, useCallback } from 'react';
-import { useBlockStore } from '@/store/useBlockStore';
+import { memo, useCallback, useState } from 'react';
+import type { BlockSyncSession } from '@/store/useBlockStore';
 import { usePageTitleSyncController } from '../sync/usePageTitleSyncController';
 import { PageHeader } from './PageHeader';
 
 interface PageHeaderContainerProps {
   pageId?: string;
-  fallbackTitle: string;
+  initialTitle: string;
   isPageLoaded: boolean;
+  session: BlockSyncSession;
   onEnter: () => void;
   scheduleSync: () => void;
   flushSync: () => void;
@@ -14,36 +15,25 @@ interface PageHeaderContainerProps {
 
 export const PageHeaderContainer = memo(function PageHeaderContainer({
   pageId,
-  fallbackTitle,
+  initialTitle,
   isPageLoaded,
+  session,
   onEnter,
   scheduleSync,
   flushSync,
 }: PageHeaderContainerProps) {
-  const storeTitle = useBlockStore((state) => {
-    if (!pageId) {
-      return undefined;
-    }
-
-    const pageBlock = state.blocksById[pageId];
-    if (!pageBlock || pageBlock.type !== 'page') {
-      return undefined;
-    }
-
-    const nextTitle = pageBlock.props.title;
-    return typeof nextTitle === 'string' ? nextTitle : undefined;
-  });
-
-  const title = storeTitle ?? fallbackTitle;
+  const [title, setTitle] = useState(initialTitle);
 
   const { scheduleTitleSync, flushTitleSync } = usePageTitleSyncController({
     pageId,
+    session,
     scheduleSync,
     flushSync,
   });
 
   const handleTitleChange = useCallback(
     (nextTitle: string) => {
+      setTitle(nextTitle);
       scheduleTitleSync(nextTitle);
     },
     [scheduleTitleSync],

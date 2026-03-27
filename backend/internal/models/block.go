@@ -111,6 +111,7 @@ type Block struct {
 	Category   *BlogCategory `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;foreignKey:CategoryID;references:ID" json:"-"`
 
 	// 审计字段：记录追踪
+	// CreatedBy很重要属于用户id
 	CreatedBy    *uuid.UUID `gorm:"type:uuid;index" json:"created_by,omitempty"`
 	LastEditedBy *uuid.UUID `gorm:"type:uuid;index" json:"last_edited_by,omitempty"`
 

@@ -327,6 +327,7 @@ func (s *BlockService) prepareSyncBlocks(
 	pageSnapshot := *page
 	hasPageUpdate := false
 
+	// 验证删除的 block ID
 	for _, deletedID := range deletedIDs {
 		if deletedID == uuid.Nil {
 			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "deleted block id is required")
@@ -341,6 +342,7 @@ func (s *BlockService) prepareSyncBlocks(
 			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "block id is required")
 		}
 
+		// 处理 page block 更新
 		if block.Type == "page" {
 			if block.ID != page.ID {
 				return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "SyncBlocks only accepts updates for the active page")
@@ -352,14 +354,16 @@ func (s *BlockService) prepareSyncBlocks(
 				return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "page path cannot be changed via SyncBlocks")
 			}
 
+			// 强制保留不可变字段（防止前端绕过业务流程）
 			block.ParentID = page.ParentID
 			block.Path = page.Path
 			block.Type = page.Type
-			block.Slug = page.Slug
-			block.PublishedAt = page.PublishedAt
-			block.CategoryID = page.CategoryID
+			block.Slug = page.Slug               // slug 只能通过发布接口修改
+			block.PublishedAt = page.PublishedAt // published_at 只能通过发布接口修改
+			block.CategoryID = page.CategoryID   // category_id 只能通过分类接口修改
 			block.CreatedBy = page.CreatedBy
 
+			// 更新 page 快照（用于索引和缓存清理）
 			pageSnapshot.ContentIDs = block.ContentIDs
 			if len(block.Properties) > 0 {
 				pageSnapshot.Properties = block.Properties
@@ -369,19 +373,35 @@ func (s *BlockService) prepareSyncBlocks(
 			continue
 		}
 
+		// 验证 content block 类型
 		if block.Type == "root" || block.Type == "folder" {
 			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "SyncBlocks only accepts page content blocks")
 		}
-		if block.ParentID == nil || *block.ParentID != page.ID {
+
+		// 验证 parent_id（前端应该发送，如果没有则拒绝）
+		if block.ParentID == nil {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "parent_id is required for content blocks")
+		}
+
+		// 验证 parent_id 必须是当前 page
+		if *block.ParentID != page.ID {
 			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "all synced content blocks must belong to the active page")
 		}
-		if block.Path == "" || !strings.HasPrefix(block.Path, page.Path) {
+
+		// 验证 path（前端应该发送，如果没有则拒绝）
+		if block.Path == "" {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "path is required for content blocks")
+		}
+
+		// 验证 path 必须在 page 的子树下
+		if !strings.HasPrefix(block.Path, page.Path) {
 			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "block path must stay within the active page subtree")
 		}
 
 		preparedBlocks = append(preparedBlocks, block)
 	}
 
+	// 删除时必须更新 page 的 contentIds
 	if len(deletedIDs) > 0 && !hasPageUpdate {
 		return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "page structure update is required when deleting blocks")
 	}
@@ -442,11 +462,6 @@ func (s *BlockService) publishIndexTask(ctx context.Context, userID, pageID uuid
 
 	// 3. 发布到 Redis Stream
 	return s.searchIndexer.PublishBatchIndexTask(ctx, indexData, deletedIDs)
-}
-
-// GetChildren 获取某个节点的直接子节点（侧边栏使用，带用户隔离）
-func (s *BlockService) GetChildren(userID uuid.UUID, parentID *uuid.UUID) ([]models.Block, error) {
-	return s.blockRepo.FindChildren(userID, *parentID)
 }
 
 // GetSidebarTree 获取完整侧边栏目录树

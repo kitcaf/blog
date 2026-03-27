@@ -108,6 +108,11 @@ func (r *BlockRepository) Upsert(userID uuid.UUID, blocks []models.Block) error 
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"properties", "content_ids", "path", "parent_id", "type", "slug", "published_at", "last_edited_by", "updated_at"}),
+		Where: clause.Where{
+			Exprs: []clause.Expression{
+				clause.Eq{Column: "blocks.created_by", Value: userID},
+			},
+		},
 	}).Create(&blocks).Error
 }
 

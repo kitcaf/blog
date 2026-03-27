@@ -62,6 +62,7 @@ export function collectEditorSyncDraft({
   const rawUpdates: EditorBlockUpdateDraft[] = []; // 候选 block 的原始数据
   const remainingCandidateIds = new Set(candidateIds);
 
+  // 遍历编辑器文档，收集所有信息
   collectDocumentBlocks({
     content: editor.getJSON().content,
     pageId,

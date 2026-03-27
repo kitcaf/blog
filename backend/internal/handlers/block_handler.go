@@ -50,6 +50,7 @@ type SyncRequest struct {
 // 2. 【核心】利用 Postgres 原生的 UPSERT (ON CONFLICT DO UPDATE) 特性，仅针对内容相关字段做批量更新或插入，规避审计时间被覆盖
 // 3. 利用原生的 IN(?) 语句执行批量式软删除 (UPDATE deleted_at)
 // 4. 主动失效/清除对应的 Redis 缓存键
+// 保证一次SyncBlocks里面的一定同一篇文章的block变更
 func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -62,7 +63,7 @@ func (h *BlockHandler) SyncBlocks(c *gin.Context) {
 
 	// 步骤2-4：调用 service 层处理批量同步
 	if err := h.blockService.SyncBlocks(userID, req.PageID, req.UpdatedBlocks, req.DeletedBlocks); err != nil {
-		response.Error(c, http.StatusInternalServerError, "Sync failed: "+err.Error())
+		response.HandleError(c, err)
 		return
 	}
 

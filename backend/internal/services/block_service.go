@@ -239,13 +239,16 @@ func (s *BlockService) AppendContentID(userID, parentID, childID uuid.UUID) erro
 // SyncBlocks 增量同步 Block 数据（带用户隔离）
 // 核心逻辑：
 // 1. 最小验证（防止 DoS 攻击）
-// 2. 批量 UPSERT 更新/新增的块
-// 3. 软删除指定的块
-// 4. 收集所有受影响的父块 ID
-// 5. 批量更新父块的 content_ids（基于实际子块查询）
-// 6. 异步发布索引任务到 Redis Stream（传递完整数据，不阻塞用户操作）
+// 2. 验证当前请求只包含同一篇文章的 block 变更
+// 3. 信任前端提交的 page.content_ids 作为结构真相，并批量 UPSERT 更新/新增的块
+// 4. 软删除指定的块
+// 5. 异步发布索引任务到 Redis Stream（传递完整数据，不阻塞用户操作）
 func (s *BlockService) SyncBlocks(userID, pageID uuid.UUID, updatedBlocks []models.Block, deletedIDs []uuid.UUID) error {
 	ctx := context.Background()
+
+	if len(updatedBlocks) == 0 && len(deletedIDs) == 0 {
+		return nil
+	}
 
 	// 1. 最小验证（防止 DoS）
 	if err := validateBlocksSize(updatedBlocks); err != nil {
@@ -261,51 +264,33 @@ func (s *BlockService) SyncBlocks(userID, pageID uuid.UUID, updatedBlocks []mode
 		return pkgerrors.New(pkgerrors.ErrInvalidInput, "target is not a page")
 	}
 
-	// 3. 收集受影响的父节点
-	affectedParents := make(map[uuid.UUID]bool)
+	preparedBlocks, indexPage, err := s.prepareSyncBlocks(page, updatedBlocks, deletedIDs)
+	if err != nil {
+		return err
+	}
+
+	// 3. 信任前端同步后的页面结构，直接持久化最新块数据
 	if len(updatedBlocks) > 0 {
-		for _, block := range updatedBlocks {
-			if block.ParentID != nil {
-				affectedParents[*block.ParentID] = true
-			}
-		}
-
-		if err := s.blockRepo.Upsert(userID, updatedBlocks); err != nil {
+		if err := s.blockRepo.Upsert(userID, preparedBlocks); err != nil {
 			return err
 		}
 	}
 
+	// 4. 软删除指定块，不再为重建父节点 content_ids 做额外查询
 	if len(deletedIDs) > 0 {
-		for _, id := range deletedIDs {
-			block, findErr := s.blockRepo.FindByID(userID, id)
-			if findErr == nil && block.ParentID != nil {
-				affectedParents[*block.ParentID] = true
-			}
-		}
-
 		if err := s.blockRepo.SoftDelete(userID, deletedIDs); err != nil {
-			return err
-		}
-	}
-
-	// 4. 更新父节点的 content_ids
-	if len(affectedParents) > 0 {
-		parentIDs := make([]uuid.UUID, 0, len(affectedParents))
-		for parentID := range affectedParents {
-			parentIDs = append(parentIDs, parentID)
-		}
-		if err := s.blockRepo.RebuildContentIDs(userID, parentIDs); err != nil {
 			return err
 		}
 	}
 
 	// 5. 异步发布索引任务（传递完整数据）
 	if s.searchIndexer != nil {
-		go func() {
-			if err := s.publishIndexTask(context.Background(), userID, pageID, page, updatedBlocks, deletedIDs); err != nil {
+		indexBlocks := append([]models.Block(nil), preparedBlocks...)
+		go func(pageSnapshot *models.Block, blocks []models.Block, ids []uuid.UUID) {
+			if err := s.publishIndexTask(context.Background(), userID, pageID, pageSnapshot, blocks, ids); err != nil {
 				log.Printf("Failed to publish index task: %v", err)
 			}
-		}()
+		}(indexPage, indexBlocks, append([]uuid.UUID(nil), deletedIDs...))
 	}
 
 	// 6. 清除 Redis 缓存
@@ -331,6 +316,88 @@ func validateBlocksSize(blocks []models.Block) error {
 		}
 	}
 	return nil
+}
+
+func (s *BlockService) prepareSyncBlocks(
+	page *models.Block,
+	updatedBlocks []models.Block,
+	deletedIDs []uuid.UUID,
+) ([]models.Block, *models.Block, error) {
+	preparedBlocks := make([]models.Block, 0, len(updatedBlocks))
+	pageSnapshot := *page
+	hasPageUpdate := false
+
+	for _, deletedID := range deletedIDs {
+		if deletedID == uuid.Nil {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "deleted block id is required")
+		}
+		if deletedID == page.ID {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "page block cannot be deleted via SyncBlocks")
+		}
+	}
+
+	for _, block := range updatedBlocks {
+		if block.ID == uuid.Nil {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "block id is required")
+		}
+
+		if block.Type == "page" {
+			if block.ID != page.ID {
+				return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "SyncBlocks only accepts updates for the active page")
+			}
+			if !sameUUIDPointerValue(block.ParentID, page.ParentID) {
+				return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "page parent_id cannot be changed via SyncBlocks")
+			}
+			if block.Path != "" && block.Path != page.Path {
+				return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "page path cannot be changed via SyncBlocks")
+			}
+
+			block.ParentID = page.ParentID
+			block.Path = page.Path
+			block.Type = page.Type
+			block.Slug = page.Slug
+			block.PublishedAt = page.PublishedAt
+			block.CategoryID = page.CategoryID
+			block.CreatedBy = page.CreatedBy
+
+			pageSnapshot.ContentIDs = block.ContentIDs
+			if len(block.Properties) > 0 {
+				pageSnapshot.Properties = block.Properties
+			}
+			hasPageUpdate = true
+			preparedBlocks = append(preparedBlocks, block)
+			continue
+		}
+
+		if block.Type == "root" || block.Type == "folder" {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "SyncBlocks only accepts page content blocks")
+		}
+		if block.ParentID == nil || *block.ParentID != page.ID {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "all synced content blocks must belong to the active page")
+		}
+		if block.Path == "" || !strings.HasPrefix(block.Path, page.Path) {
+			return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "block path must stay within the active page subtree")
+		}
+
+		preparedBlocks = append(preparedBlocks, block)
+	}
+
+	if len(deletedIDs) > 0 && !hasPageUpdate {
+		return nil, nil, pkgerrors.New(pkgerrors.ErrInvalidInput, "page structure update is required when deleting blocks")
+	}
+
+	return preparedBlocks, &pageSnapshot, nil
+}
+
+func sameUUIDPointerValue(left, right *uuid.UUID) bool {
+	switch {
+	case left == nil && right == nil:
+		return true
+	case left == nil || right == nil:
+		return false
+	default:
+		return *left == *right
+	}
 }
 
 // publishIndexTask 发布索引任务（传递完整数据）

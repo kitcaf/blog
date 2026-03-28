@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { DialogContent, DialogOverlay, DialogRoot } from '@/components/dialog';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -39,28 +40,12 @@ export function ConfirmDialog({
     }
   }, [isOpen]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
-  if (!isOpen) return null;
-
   return (
-    <>
-      {/* 遮罩层 */}
-      <div
-        className="fixed inset-0 bg-black/50 z-50 animate-in fade-in duration-200"
-        onClick={onClose}
-      />
+    <DialogRoot open={isOpen} onClose={onClose}>
+      <DialogOverlay className="fixed inset-0 z-50 bg-black/50 animate-in fade-in duration-200" />
 
-      {/* 对话框 */}
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
-        <div 
-          className="bg-card border border-border rounded-lg shadow-lg p-6"
-          onKeyDown={handleKeyDown}
-        >
+      <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 animate-in fade-in zoom-in-95 duration-200">
+        <div className="bg-card border border-border rounded-lg shadow-lg p-6">
           {/* 标题栏 */}
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">
@@ -114,7 +99,7 @@ export function ConfirmDialog({
             </button>
           </div>
         </div>
-      </div>
-    </>
+      </DialogContent>
+    </DialogRoot>
   );
 }

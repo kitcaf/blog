@@ -12,6 +12,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { X, FolderOpen, Tag, Loader2, CheckCircle2, Send } from 'lucide-react';
 import { usePublishSubtree } from '@/hooks/usePublishMutations';
 import { useBlogCategories } from '@/hooks/useBlogCategories';
+import { DialogContent, DialogOverlay, DialogRoot } from '@/components/dialog';
 
 interface BatchPublishDialogProps {
   isOpen: boolean;
@@ -43,14 +44,6 @@ export function BatchPublishDialog({
     setTagInput('');
     onClose();
   }, [initialTags, initialCategoryId, onClose]);
-
-  // 键盘导航
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      handleClose();
-    }
-  }, [handleClose]);
 
   // 添加标签
   const handleAddTag = useCallback(() => {
@@ -101,15 +94,10 @@ export function BatchPublishDialog({
   const isSuccess = publishMutation.isSuccess;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={handleClose}
-      onKeyDown={handleKeyDown}
-    >
-      <div
-        className="w-[90vw] max-w-2xl max-h-[85vh] bg-app-bg rounded-2xl shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <DialogRoot open={isOpen} onClose={handleClose}>
+      <DialogOverlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" />
+
+      <DialogContent className="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[90vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-app-bg shadow-2xl animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
@@ -226,8 +214,8 @@ export function BatchPublishDialog({
             批量发布
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </DialogRoot>
   );
 }
 

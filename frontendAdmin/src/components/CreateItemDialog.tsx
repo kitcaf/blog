@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { X, Folder, FileText } from 'lucide-react';
+import { DialogContent, DialogOverlay, DialogRoot } from '@/components/dialog';
 
 interface CreateItemDialogProps {
   isOpen: boolean;
@@ -45,27 +46,14 @@ export function CreateItemDialog({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
-  if (!isOpen) return null;
-
   const typeText = type === 'folder' ? '文件夹' : '页面';
   const Icon = type === 'folder' ? Folder : FileText;
 
   return (
-    <>
-      {/* 遮罩层 */}
-      <div
-        className="fixed inset-0 bg-black/50 z-50 animate-in fade-in duration-200"
-        onClick={onClose}
-      />
+    <DialogRoot open={isOpen} onClose={onClose}>
+      <DialogOverlay className="fixed inset-0 z-50 bg-black/50 animate-in fade-in duration-200" />
 
-      {/* 对话框 */}
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
+      <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-card border border-border rounded-lg shadow-lg p-6">
           {/* 标题栏 */}
           <div className="flex items-center justify-between mb-4">
@@ -108,7 +96,6 @@ export function CreateItemDialog({
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={handleKeyDown}
                 placeholder={`输入${typeText}名称`}
                 className="w-full px-3 py-2 bg-app-bg border border-border rounded-md
                          text-app-fg-deeper placeholder:text-app-fg-light
@@ -143,7 +130,7 @@ export function CreateItemDialog({
             </div>
           </form>
         </div>
-      </div>
-    </>
+      </DialogContent>
+    </DialogRoot>
   );
 }

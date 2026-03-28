@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useFlattenedResults } from './hooks/useFlattenedResults';
+import { DialogContent, DialogOverlay, DialogRoot } from '@/components/dialog';
 import SearchInput from './SearchInput';
 import SearchSkeleton from './Skeleton';
 import SearchResultItem from './SearchResultItem.tsx';
@@ -77,12 +78,6 @@ export function SearchDialog({ isOpen, onClose }: SearchDialogProps) {
 
     // 键盘导航（跳过标题项）
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            onClose();
-            return;
-        }
-
         if (e.key === 'Enter') {
             e.preventDefault();
             const currentItem = flattenedItems[selectedIndex];
@@ -124,14 +119,10 @@ export function SearchDialog({ isOpen, onClose }: SearchDialogProps) {
     if (!isOpen) return null;
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={onClose}
-        >
-            <div
-                className="w-[90vw] max-w-4xl h-[80vh] bg-app-bg rounded-2xl shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col"
-                onClick={(e) => e.stopPropagation()}
-            >
+        <DialogRoot open={isOpen} onClose={onClose}>
+            <DialogOverlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" />
+
+            <DialogContent className="fixed left-1/2 top-1/2 z-50 flex h-[80vh] w-[90vw] max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-app-bg shadow-2xl animate-in zoom-in-95 duration-200">
                 {/* 搜索输入框 */}
                 <SearchInput
                     ref={inputRef}
@@ -184,8 +175,8 @@ export function SearchDialog({ isOpen, onClose }: SearchDialogProps) {
                         </span>
                     </div>
                 </div>
-            </div>
-        </div>
+            </DialogContent>
+        </DialogRoot>
     );
 }
 

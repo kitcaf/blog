@@ -12,7 +12,7 @@ const (
 	defaultSlugHashLength = 4
 )
 
-var slugSanitizer = regexp.MustCompile(`[^\w\u4e00-\u9fa5]+`)
+var slugSanitizer = regexp.MustCompile(`[^\w\x{4e00}-\x{9fa5}]+`)
 
 // GenerateSlug 根据标题生成 SEO 友好的 slug
 // 格式：标题转换 + 短随机哈希
@@ -61,6 +61,6 @@ func ValidateSlug(slug string) bool {
 	if len(slug) < 3 || len(slug) > 100 {
 		return false
 	}
-	matched, _ := regexp.MatchString(`^[a-z0-9\u4e00-\u9fa5]+(-[a-z0-9\u4e00-\u9fa5]+)*$`, slug)
+	matched, _ := regexp.MatchString(`^[a-z0-9\x{4e00}-\x{9fa5}]+(-[a-z0-9\x{4e00}-\x{9fa5}]+)*$`, slug)
 	return matched
 }

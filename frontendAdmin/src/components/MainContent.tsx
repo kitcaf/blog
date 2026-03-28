@@ -36,7 +36,7 @@ export function MainContent() {
   return (
     <main className="flex-1 h-full bg-app-bg flex flex-col relative">
       {/* 顶部：ArticleNavBar 全宽（包含侧边栏切换按钮） */}
-      <ArticleNavBar />
+      <ArticleNavBar currentPageId={pageId} />
 
       {/* 底部：TiptapEditor 容器（可滚动） */}
       <div className="flex-1 overflow-y-auto">

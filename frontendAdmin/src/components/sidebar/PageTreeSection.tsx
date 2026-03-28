@@ -11,6 +11,7 @@ import { type PageTreeNode, moveBlock } from '@/api/blocks';
 import { type ActionMenuItem } from '@/components/ui/ActionMenu';
 import { ActionMenuIcons } from '@/components/ui/ActionMenuIcons';
 import { Tree, type NodeRendererProps, type MoveHandler } from 'react-arborist';
+import { BatchPublishDialog } from '@/components/publish';
 
 interface PageTreeSectionProps {
   tree: PageTreeNode[];
@@ -37,6 +38,19 @@ export function PageTreeSection({
 }: PageTreeSectionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [treeHeight, setTreeHeight] = useState(400);
+  const [batchPublishState, setBatchPublishState] = useState<{
+    isOpen: boolean;
+    folderId: string;
+    folderTitle: string;
+  }>({ isOpen: false, folderId: '', folderTitle: '' });
+
+  const handleBatchPublish = useCallback((folderId: string, folderTitle: string) => {
+    setBatchPublishState({ isOpen: true, folderId, folderTitle });
+  }, []);
+
+  const handleCloseBatchPublish = useCallback(() => {
+    setBatchPublishState({ isOpen: false, folderId: '', folderTitle: '' });
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -139,7 +153,7 @@ export function PageTreeSection({
 
       {/* 目录树 */}
       {!isLoading && !isError && tree.length > 0 && (
-        <PageTreeContext.Provider value={{ onCreateFolder, onCreatePage, onDeleteNode }}>
+        <PageTreeContext.Provider value={{ onCreateFolder, onCreatePage, onDeleteNode, onBatchPublish: handleBatchPublish }}>
           <div ref={containerRef} className="flex-1 min-h-[200px]" style={{ position: 'relative' }}>
             <Tree
               data={tree}
@@ -159,6 +173,14 @@ export function PageTreeSection({
           </div>
         </PageTreeContext.Provider>
       )}
+
+      {/* 批量发布对话框 */}
+      <BatchPublishDialog
+        isOpen={batchPublishState.isOpen}
+        onClose={handleCloseBatchPublish}
+        folderId={batchPublishState.folderId}
+        folderTitle={batchPublishState.folderTitle}
+      />
     </div>
   );
 }
@@ -213,10 +235,12 @@ const PageTreeContext = React.createContext<{
   onCreateFolder: (parentId?: string | null) => void;
   onCreatePage: (parentId?: string | null) => void;
   onDeleteNode: (id: string, title: string) => void;
+  onBatchPublish: (folderId: string, folderTitle: string) => void;
 }>({
   onCreateFolder: () => { },
   onCreatePage: () => { },
   onDeleteNode: () => { },
+  onBatchPublish: () => { },
 });
 
 const PageTreeItem = React.memo(function PageTreeItem({
@@ -224,7 +248,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
   style,
   dragHandle,
 }: NodeRendererProps<PageTreeNode>) {
-  const { onCreateFolder, onCreatePage, onDeleteNode } = React.useContext(PageTreeContext);
+  const { onCreateFolder, onCreatePage, onDeleteNode, onBatchPublish } = React.useContext(PageTreeContext);
   const navigate = useNavigate();
   const { pageId: currentPageId } = useParams<{ pageId?: string }>();
 
@@ -263,6 +287,14 @@ const PageTreeItem = React.memo(function PageTreeItem({
     [data.id, onCreatePage],
   );
 
+  const handleBatchPublish = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onBatchPublish(data.id, data.title);
+    },
+    [data.id, data.title, onBatchPublish],
+  );
+
   const getIcon = () => {
     // 后端返回的 icon 字段在顶层，直接使用
     if (data.icon) return data.icon;
@@ -287,6 +319,13 @@ const PageTreeItem = React.memo(function PageTreeItem({
         label: '新建页面',
         icon: ActionMenuIcons.createPage,
         onClick: handleCreatePage,
+      });
+      items.push({
+        id: 'batch-publish',
+        label: '批量发布',
+        icon: ActionMenuIcons.publish,
+        divided: true,
+        onClick: handleBatchPublish,
       });
     }
     items.push({
@@ -318,7 +357,7 @@ const PageTreeItem = React.memo(function PageTreeItem({
       },
     });
     return items;
-  }, [data.type, data.id, data.title, handleCreateFolder, handleCreatePage, onDeleteNode]);
+  }, [data.type, data.id, data.title, handleCreateFolder, handleCreatePage, handleBatchPublish, onDeleteNode]);
 
   const rightIndicator = data.type === 'page' ? (
     <span className="w-1.5 h-1.5 rounded-full bg-green-400 opacity-70" title="页面" />

@@ -4,4 +4,5 @@
  */
 
 export { PublishDialog } from './PublishDialog';
+export { BatchPublishDialog } from './BatchPublishDialog';
 

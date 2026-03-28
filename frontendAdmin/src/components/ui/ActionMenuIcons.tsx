@@ -15,6 +15,7 @@ import {
   PanelRightOpen,
   FolderPlus,
   FilePlus2,
+  Send,
 } from 'lucide-react';
 
 export const ActionMenuIcons = {
@@ -28,5 +29,6 @@ export const ActionMenuIcons = {
   sidePeek: <PanelRightOpen size={13} />,
   star: <Star size={13} />,
   createFolder: <FolderPlus size={13} />,
-  createPage: <FilePlus2 size={13} />
+  createPage: <FilePlus2 size={13} />,
+  publish: <Send size={13} />,
 };

@@ -14,6 +14,7 @@ import type {
 } from './types.js'
 
 const NOTION_API_BASE_URL = 'https://api.notion.com/v1'
+const NOTION_API_VERSION = '2026-03-11'
 const DEFAULT_PAGE_SIZE = 100
 const DEFAULT_MAX_RETRIES = 3
 const BASE_RETRY_DELAY_MS = 500
@@ -86,7 +87,7 @@ const safeJson = async (response: Response): Promise<unknown | undefined> => {
 const buildNotionHeaders = (config: SyncConfig): Record<string, string> => ({
   Authorization: `Bearer ${config.notionToken}`,
   'Content-Type': 'application/json',
-  'Notion-Version': config.notionVersion
+  'Notion-Version': NOTION_API_VERSION
 })
 
 const getRetryDelay = (response: Response, attemptIndex: number): number => {

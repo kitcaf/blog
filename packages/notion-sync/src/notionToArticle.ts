@@ -16,13 +16,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_CATEGORY = 'General'
-const MIN_READING_TIME = 1
-const WORDS_PER_MINUTE = 220
-const CJK_CHARS_PER_MINUTE = 500
 const ID_FRAGMENT_LENGTH = 8
-
-const cjkCharacterPattern = /[\u3400-\u9fff]/g
-const latinWordPattern = /[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*/g
 
 const getProperty = (
   properties: Record<string, NotionProperty> | undefined,
@@ -171,11 +165,10 @@ const toIsoDate = (value: string | undefined, fallbackValue: string): string => 
   return date.toISOString()
 }
 
-const formatDisplayDate = (isoDate: string, timeZone: string): string => {
+const formatDisplayDate = (isoDate: string): string => {
   const formatter = new Intl.DateTimeFormat('en-US', {
     month: '2-digit',
-    day: '2-digit',
-    timeZone
+    day: '2-digit'
   })
 
   const parts = formatter.formatToParts(new Date(isoDate))
@@ -198,18 +191,6 @@ const truncateDescription = (value: string, maxLength: number): string => {
   }
 
   return `${characters.slice(0, maxLength).join('').trimEnd()}...`
-}
-
-const calculateReadingTime = (plainText: string): number => {
-  const normalizedText = normalizePlainText(plainText)
-  const cjkCharacters = normalizedText.match(cjkCharacterPattern)?.length ?? 0
-  const latinWords = normalizedText.replace(cjkCharacterPattern, ' ').match(latinWordPattern)?.length ?? 0
-  const estimatedMinutes = Math.max(
-    cjkCharacters / CJK_CHARS_PER_MINUTE,
-    latinWords / WORDS_PER_MINUTE
-  )
-
-  return Math.max(MIN_READING_TIME, Math.ceil(estimatedMinutes))
 }
 
 const getExternalCoverUrl = (page: NotionPage): string | undefined => {
@@ -299,17 +280,16 @@ export const mapNotionPageToArticle = ({
     sourceId,
     slug: buildSlug({ explicitSlug, title, sourceId }),
     title,
-    date: formatDisplayDate(publishedAt, config.displayTimeZone),
+    date: formatDisplayDate(publishedAt),
     publishedAt,
     description,
     tags,
     category,
     author: config.author,
     ...(cover ? { cover } : {}),
-    seoTitle: `${title} - ${config.siteName}`,
+    seoTitle: title,
     seoDescription: description,
     contentMarkdown: renderedContent.markdown,
-    readingTime: calculateReadingTime(renderedContent.plainText),
     updatedAt: toIsoDate(page.last_edited_time, publishedAt)
   }
 }

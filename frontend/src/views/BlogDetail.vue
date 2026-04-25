@@ -38,46 +38,34 @@ useSeo({
 
 <template>
   <main v-if="post" class="max-w-3xl mx-auto pb-24 w-full">
-        
-        <button 
-          @click="goBack"
-          class="flex items-center gap-2 text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)] transition-colors mb-12 group"
-        >
-          <span class="group-hover:-translate-x-1 transition-transform inline-block">←</span>
-          <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
-        </button>
 
-        <div class="flex items-center gap-4 text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)] mb-6">
-          <time class="tabular-nums">{{ post.date }}</time>
-          <span class="w-1 h-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
-          <span>By {{ post.author }}</span>
-          <span v-if="post.readingTime" class="w-1 h-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
-          <span v-if="post.readingTime">{{ post.readingTime }} min read</span>
-        </div>
-
-        <h1
-          class="text-4xl md:text-5xl font-serif italic text-[var(--color-fg-deeper)] leading-tight mb-16"
-        >
-          {{ post.title }}
-        </h1>
-
-        <p class="text-xl leading-relaxed text-[var(--color-fg)] font-light mb-12">
-          {{ post.description }}
-        </p>
-
-        <article class="markdown-prose" v-html="renderedContentHtml"></article>
-  </main>
-
-  <main v-else class="max-w-3xl mx-auto pb-24 w-full">
-    <button
-      @click="goBack"
-      class="flex items-center gap-2 text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)] transition-colors mb-12 group"
-    >
+    <button @click="goBack"
+      class="flex items-center gap-2 text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)] transition-colors mb-12 group">
       <span class="group-hover:-translate-x-1 transition-transform inline-block">←</span>
       <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
     </button>
 
-    <h1 class="text-4xl md:text-5xl font-serif italic text-[var(--color-fg-deeper)] leading-tight mb-8">
+    <div class="flex items-center gap-4 text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)] mb-6">
+      <time class="tabular-nums">{{ post.date }}</time>
+      <span class="w-1 h-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
+      <span>By {{ post.author }}</span>
+    </div>
+
+    <h1 class="text-4xl md:text-5xl font-serif text-[var(--color-fg-deeper)] leading-tight mb-16">
+      {{ post.title }}
+    </h1>
+
+    <article class="markdown-prose" v-html="renderedContentHtml"></article>
+  </main>
+
+  <main v-else class="max-w-3xl mx-auto pb-24 w-full">
+    <button @click="goBack"
+      class="flex items-center gap-2 text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)] transition-colors mb-12 group">
+      <span class="group-hover:-translate-x-1 transition-transform inline-block">←</span>
+      <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
+    </button>
+
+    <h1 class="text-4xl md:text-5xl font-serif text-[var(--color-fg-deeper)] leading-tight mb-8">
       Article not found
     </h1>
     <p class="text-lg leading-relaxed text-[var(--color-fg)] font-light">
@@ -90,5 +78,4 @@ useSeo({
 .font-serif {
   font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
 }
-
 </style>

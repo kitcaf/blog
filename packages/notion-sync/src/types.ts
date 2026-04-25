@@ -18,11 +18,8 @@ export interface SyncConfig {
   rootDir: string
   notionToken: string
   notionDatabaseId: string
-  notionVersion: string
   outputPath: string
-  siteName: string
   author: string
-  displayTimeZone: string
   allowEmptySync: boolean
   descriptionMaxLength: number
   properties: SyncPropertyNames
@@ -193,6 +190,5 @@ export interface ArticleDetail {
   seoTitle?: string
   seoDescription?: string
   contentMarkdown: string
-  readingTime?: number
   updatedAt?: string
 }

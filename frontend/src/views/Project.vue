@@ -80,7 +80,7 @@ onMounted(() => {
               <!-- Icon + Project Name -->
               <div class="flex items-center gap-3 mb-3">
                 <span class="text-xl">{{ project.icon }}</span>
-                <h3 class="text-xl font-serif italic text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] transition-colors duration-300">
+                <h3 class="text-xl font-serif text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] transition-colors duration-300">
                   {{ project.name }}
                 </h3>
               </div>
@@ -105,7 +105,7 @@ onMounted(() => {
           </div>
 
           <!-- Empty State -->
-          <div v-if="projects.length === 0" class="py-24 text-center text-[var(--color-fg-light)] font-light italic">
+          <div v-if="projects.length === 0" class="py-24 text-center text-[var(--color-fg-light)] font-light">
             More projects coming soon.
           </div>
         </div>

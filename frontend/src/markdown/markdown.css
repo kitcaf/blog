@@ -19,7 +19,6 @@
   .markdown-prose h4 {
     color: var(--color-fg-deeper);
     font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-    font-style: italic;
     font-weight: 400;
     line-height: 1.2;
   }
@@ -98,7 +97,6 @@
     border-left: 2px solid var(--markdown-border);
     padding-left: 1.25rem;
     color: var(--color-fg);
-    font-style: italic;
   }
 
   .markdown-prose code {

@@ -1,7 +1,7 @@
 /**
  * 同步配置入口。
  *
- * 这个文件只从外部读取 Notion 访问所需的两个敏感/环境相关值，其余发布模型约定都固定在包内，
+ * 这个文件只从外部读取 Notion 访问所需的敏感/环境相关值，其余发布模型约定都固定在包内，
  * 避免 `.env` 变成第二套业务配置中心。
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -21,11 +21,8 @@ const DEFAULT_ENV_FILES = [
 ]
 
 const SYNC_SETTINGS = {
-  notionVersion: '2026-03-11',
   outputPath: 'frontend/src/data/posts.json',
-  siteName: 'kitcaf',
-  author: 'xjj',
-  displayTimeZone: 'Asia/Shanghai',
+  author: 'kitcaf',
   descriptionMaxLength: 160,
   allowEmptySync: false,
   properties: {
@@ -156,11 +153,8 @@ export const loadSyncConfig = (rootDir = PROJECT_ROOT): SyncConfig => {
     rootDir,
     notionToken: requireEnvValue(env, 'NOTION_TOKEN'),
     notionDatabaseId: normalizeNotionIdInput(requireEnvValue(env, 'NOTION_DATABASE_ID'), 'NOTION_DATABASE_ID'),
-    notionVersion: SYNC_SETTINGS.notionVersion,
     outputPath: resolveProjectPath(rootDir, SYNC_SETTINGS.outputPath),
-    siteName: SYNC_SETTINGS.siteName,
     author: SYNC_SETTINGS.author,
-    displayTimeZone: SYNC_SETTINGS.displayTimeZone,
     allowEmptySync: SYNC_SETTINGS.allowEmptySync,
     descriptionMaxLength: SYNC_SETTINGS.descriptionMaxLength,
     properties: SYNC_SETTINGS.properties

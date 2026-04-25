@@ -28,7 +28,7 @@ const isActiveLink = (path: string) => {
   <header class="flex items-center justify-between mb-24">
     <router-link
       to="/"
-      class="font-serif italic text-2xl text-[var(--color-fg-deeper)] transition-colors duration-200"
+      class="font-serif text-2xl text-[var(--color-fg-deeper)] transition-colors duration-200"
     >
       kitcaf
     </router-link>

@@ -35,7 +35,7 @@ onMounted(() => {
   <main class="flex-1 flex items-center justify-center px-8 pb-32 animate-in fade-in duration-1000">
       <div class="max-w-2xl text-center">
         <h1 
-          class="text-3xl md:text-4xl font-serif italic text-[var(--color-fg-deep)] leading-relaxed inline"
+          class="text-3xl md:text-4xl font-serif text-[var(--color-fg-deep)] leading-relaxed inline"
         >
           {{ displayText }}
           <!-- Blinking Cursor -->

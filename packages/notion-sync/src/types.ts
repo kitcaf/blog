@@ -170,6 +170,15 @@ export interface RenderedContent extends RenderedBlock {
   warnings: RenderWarning[]
 }
 
+export interface RenderedMarkdownBlock {
+  markdown: string
+  plainText: string
+}
+
+export interface RenderedMarkdownContent extends RenderedMarkdownBlock {
+  warnings: RenderWarning[]
+}
+
 export interface ArticleDetail {
   sourceId: string
   slug: string
@@ -183,7 +192,7 @@ export interface ArticleDetail {
   cover?: string
   seoTitle?: string
   seoDescription?: string
-  content: string
+  contentMarkdown: string
   readingTime?: number
   updatedAt?: string
 }

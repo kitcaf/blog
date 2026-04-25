@@ -1,7 +1,7 @@
 /**
  * Notion 页面到前端文章模型的映射层。
  *
- * 这里负责把 Notion properties 和正文纯文本整理成现有 SSG 可以直接消费的 ArticleDetail。
+ * 这里负责把 Notion properties 和 Markdown 正文整理成现有 SSG 可以直接消费的 ArticleDetail。
  */
 import { normalizePlainText, plainTextFromRichText } from './richText.js'
 import type {
@@ -11,7 +11,7 @@ import type {
   NotionFormula,
   NotionPage,
   NotionProperty,
-  RenderedContent,
+  RenderedMarkdownContent,
   SyncConfig
 } from './types.js'
 
@@ -272,7 +272,7 @@ export const mapNotionPageToArticle = ({
   config
 }: {
   page: NotionPage
-  renderedContent: RenderedContent
+  renderedContent: RenderedMarkdownContent
   config: SyncConfig
 }): ArticleDetail => {
   const properties = page.properties ?? {}
@@ -308,7 +308,7 @@ export const mapNotionPageToArticle = ({
     ...(cover ? { cover } : {}),
     seoTitle: `${title} - ${config.siteName}`,
     seoDescription: description,
-    content: renderedContent.html,
+    contentMarkdown: renderedContent.markdown,
     readingTime: calculateReadingTime(renderedContent.plainText),
     updatedAt: toIsoDate(page.last_edited_time, publishedAt)
   }

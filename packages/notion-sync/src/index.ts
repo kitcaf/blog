@@ -3,7 +3,7 @@
  *
  * 这里集中导出“Notion 内容 -> 博客发布模型”的核心转换能力，CLI 只负责把这些能力编排起来。
  */
-export { renderNotionBlocksToHtml } from './notionBlocksToHtml.js'
+export { renderNotionBlocksToMarkdown } from './notionBlocksToMarkdown.js'
 export {
   buildPublishedFilter,
   getQueryPropertyNames,
@@ -16,6 +16,6 @@ export type {
   NotionClient,
   NotionDataSource,
   NotionPage,
-  RenderedContent,
+  RenderedMarkdownContent,
   SyncConfig
 } from './types.js'

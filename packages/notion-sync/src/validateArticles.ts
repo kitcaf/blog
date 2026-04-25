@@ -14,7 +14,7 @@ const requiredStringFields = [
   'description',
   'category',
   'author',
-  'content'
+  'contentMarkdown'
 ] as const
 
 const isNonEmptyString = (value: unknown): value is string => {

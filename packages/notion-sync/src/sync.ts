@@ -13,7 +13,7 @@ import {
   getQueryPropertyNames,
   mapNotionPageToArticle
 } from './notionToArticle.js'
-import { renderNotionBlocksToHtml } from './notionBlocksToHtml.js'
+import { renderNotionBlocksToMarkdown } from './notionBlocksToMarkdown.js'
 import { validateArticles } from './validateArticles.js'
 import type {
   ArticleDetail,
@@ -88,7 +88,7 @@ const renderPage = async ({
   config: SyncConfig
 }): Promise<{ article: ArticleDetail; warnings: RenderWarning[] }> => {
   const blocks = await client.listBlockChildren(page.id)
-  const renderedContent = await renderNotionBlocksToHtml(blocks, client)
+  const renderedContent = await renderNotionBlocksToMarkdown(blocks, client)
   const article = mapNotionPageToArticle({ page, renderedContent, config })
 
   return {

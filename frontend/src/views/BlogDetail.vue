@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { renderMarkdown } from '@blog/markdown-renderer'
 import { getArticleBySlug } from '@/data/articles'
 import { siteConfig } from '@/config/site'
 import { useSeo } from '@/utils/seo'
@@ -14,6 +15,9 @@ const route = useRoute()
 const router = useRouter()
 
 const post = computed(() => getArticleBySlug(route.params.slug))
+const renderedContentHtml = computed(() => {
+  return post.value ? renderMarkdown({ markdown: post.value.contentMarkdown }) : ''
+})
 
 const goBack = () => {
   if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -61,9 +65,7 @@ useSeo({
           {{ post.description }}
         </p>
 
-        <article class="prose prose-neutral dark:prose-invert max-w-none">
-          <div class="text-[var(--color-fg-deep)] leading-relaxed font-light text-lg space-y-8" v-html="post.content"></div>
-        </article>
+        <article class="markdown-prose" v-html="renderedContentHtml"></article>
   </main>
 
   <main v-else class="max-w-3xl mx-auto pb-24 w-full">
@@ -89,8 +91,4 @@ useSeo({
   font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
 }
 
-/* Custom styles for rendered HTML content */
-:deep(p) {
-  margin-bottom: 2rem;
-}
 </style>

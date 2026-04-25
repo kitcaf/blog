@@ -11,7 +11,7 @@
     "author": "xjj",
     "seoTitle": "测试页面 - kitcaf",
     "seoDescription": "第一章 怎么成功",
-    "content": "<h2>第一章</h2><p>怎么成功</p>",
+    "contentMarkdown": "## 第一章\n\n怎么成功",
     "readingTime": 1,
     "updatedAt": "2026-04-25T07:09:00.000Z"
   }

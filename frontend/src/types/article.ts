@@ -14,7 +14,7 @@ export interface ArticleMeta {
 }
 
 export interface ArticleDetail extends ArticleMeta {
-  content: string
+  contentMarkdown: string
   readingTime?: number
   updatedAt?: string
 }

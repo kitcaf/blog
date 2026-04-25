@@ -1,0 +1,166 @@
+@layer components {
+  .markdown-prose {
+    --markdown-border: var(--color-fg-lightest);
+    --markdown-code-bg: color-mix(in srgb, var(--color-fg-lightest) 48%, transparent);
+    --markdown-code-border: color-mix(in srgb, var(--color-fg-lighter) 48%, transparent);
+
+    color: var(--color-fg-deep);
+    font-size: 1.125rem;
+    font-weight: 300;
+    line-height: 1.85;
+  }
+
+  .markdown-prose > * + * {
+    margin-top: 1.75rem;
+  }
+
+  .markdown-prose h2,
+  .markdown-prose h3,
+  .markdown-prose h4 {
+    color: var(--color-fg-deeper);
+    font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.2;
+  }
+
+  .markdown-prose h2 {
+    margin-top: 3.5rem;
+    font-size: 2rem;
+  }
+
+  .markdown-prose h3 {
+    margin-top: 3rem;
+    font-size: 1.625rem;
+  }
+
+  .markdown-prose h4 {
+    margin-top: 2.5rem;
+    font-size: 1.375rem;
+  }
+
+  .markdown-prose h2 + *,
+  .markdown-prose h3 + *,
+  .markdown-prose h4 + * {
+    margin-top: 1rem;
+  }
+
+  .markdown-prose p {
+    margin: 0;
+  }
+
+  .markdown-prose a {
+    color: var(--color-fg-deeper);
+    text-decoration-line: underline;
+    text-decoration-color: var(--color-fg-lighter);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+    transition: text-decoration-color 160ms ease;
+  }
+
+  .markdown-prose a:hover {
+    text-decoration-color: var(--color-fg-deeper);
+  }
+
+  .markdown-prose strong {
+    color: var(--color-fg-deeper);
+    font-weight: 600;
+  }
+
+  .markdown-prose em {
+    color: var(--color-fg);
+  }
+
+  .markdown-prose ul,
+  .markdown-prose ol {
+    padding-left: 1.35rem;
+  }
+
+  .markdown-prose ul {
+    list-style: disc;
+  }
+
+  .markdown-prose ol {
+    list-style: decimal;
+  }
+
+  .markdown-prose li + li {
+    margin-top: 0.5rem;
+  }
+
+  .markdown-prose li > ul,
+  .markdown-prose li > ol {
+    margin-top: 0.5rem;
+  }
+
+  .markdown-prose blockquote {
+    margin-left: 0;
+    border-left: 2px solid var(--markdown-border);
+    padding-left: 1.25rem;
+    color: var(--color-fg);
+    font-style: italic;
+  }
+
+  .markdown-prose code {
+    border: 1px solid var(--markdown-code-border);
+    border-radius: 5px;
+    background: var(--markdown-code-bg);
+    padding: 0.1rem 0.35rem;
+    color: var(--color-fg-deeper);
+    font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Consolas, monospace;
+    font-size: 0.9em;
+    font-weight: 400;
+  }
+
+  .markdown-prose pre {
+    overflow-x: auto;
+    border: 1px solid var(--markdown-code-border);
+    border-radius: 8px;
+    background: var(--markdown-code-bg);
+    padding: 1rem;
+    line-height: 1.65;
+  }
+
+  .markdown-prose pre code {
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.9rem;
+  }
+
+  .markdown-prose hr {
+    margin: 3rem 0;
+    border: 0;
+    border-top: 1px solid var(--markdown-border);
+  }
+
+  .markdown-prose img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+  }
+
+  .markdown-prose table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+
+  .markdown-prose th,
+  .markdown-prose td {
+    border-bottom: 1px solid var(--markdown-border);
+    padding: 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .markdown-prose th {
+    color: var(--color-fg-deeper);
+    font-weight: 600;
+  }
+}

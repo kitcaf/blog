@@ -1,4 +1,4 @@
-/node_modules
+
 /frontend/node_modules
 /packages/*/dist
 .env
@@ -13,3 +13,4 @@
 /.agents
 /frontendAdmin/logs
 /.idea
+node_modules

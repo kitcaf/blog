@@ -30,9 +30,6 @@ importers:
 
   frontend:
     dependencies:
-      '@blog/types':
-        specifier: workspace:*
-        version: link:../packages/types
       '@blog/utils':
         specifier: workspace:*
         version: link:../packages/utils
@@ -64,8 +61,6 @@ importers:
       vue-tsc:
         specifier: ^3.1.5
         version: 3.2.5(typescript@5.9.3)
-
-  packages/types: {}
 
   packages/utils: {}
 

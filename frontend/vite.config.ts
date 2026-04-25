@@ -13,6 +13,7 @@ const ssgOptions: ViteSSGOptions = {
       .map((routePath) => routePath || '/')
       .filter((routePath) => !routePath.includes(':') && !routePath.includes('*'))
 
+    // 原始路由 + getArticleRoutePaths（真实数据构建的路由）
     return Array.from(new Set([...staticRoutes, ...getArticleRoutePaths()]))
   }
 }

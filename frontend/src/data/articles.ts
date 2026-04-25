@@ -12,6 +12,7 @@ const byPublishedAtDesc = (left: ArticleDetail, right: ArticleDetail) => {
 export const articles: ArticleDetail[] = [...posts].sort(byPublishedAtDesc)
 
 export const articleMetas: ArticleMeta[] = articles.map((article) => ({
+  sourceId: article.sourceId,
   slug: article.slug,
   title: article.title,
   date: article.date,
@@ -35,6 +36,10 @@ export const getArticleBySlug = (slug: string | string[] | undefined): ArticleDe
   return articles.find((article) => article.slug === slug)
 }
 
+/**
+ * 去根据真实数据形成所有的路由
+ * @returns 
+ */
 export const getArticleRoutePaths = (): string[] => {
   return articles.map((article) => `/blog/${article.slug}`)
 }

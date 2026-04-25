@@ -1,0 +1,275 @@
+import { normalizePlainText, plainTextFromRichText } from './richText.mjs'
+
+const DEFAULT_CATEGORY = 'General'
+const MIN_READING_TIME = 1
+const WORDS_PER_MINUTE = 220
+const CJK_CHARS_PER_MINUTE = 500
+const ID_FRAGMENT_LENGTH = 8
+
+const cjkCharacterPattern = /[\u3400-\u9fff]/g
+const latinWordPattern = /[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*/g
+
+const getProperty = (properties, propertyName) => {
+  return properties?.[propertyName]
+}
+
+const getPropertySchema = (dataSource, propertyName) => {
+  return dataSource.properties?.[propertyName]
+}
+
+const getFormulaValue = (formula) => {
+  switch (formula?.type) {
+    case 'string':
+      return formula.string ?? ''
+    case 'number':
+      return formula.number === null ? '' : String(formula.number)
+    case 'boolean':
+      return formula.boolean === null ? '' : String(formula.boolean)
+    case 'date':
+      return formula.date?.start ?? ''
+    default:
+      return ''
+  }
+}
+
+const getStringPropertyValue = (properties, propertyName) => {
+  const property = getProperty(properties, propertyName)
+
+  if (!property) {
+    return ''
+  }
+
+  switch (property.type) {
+    case 'title':
+      return plainTextFromRichText(property.title)
+    case 'rich_text':
+      return plainTextFromRichText(property.rich_text)
+    case 'select':
+      return property.select?.name ?? ''
+    case 'status':
+      return property.status?.name ?? ''
+    case 'date':
+      return property.date?.start ?? ''
+    case 'url':
+      return property.url ?? ''
+    case 'email':
+      return property.email ?? ''
+    case 'phone_number':
+      return property.phone_number ?? ''
+    case 'formula':
+      return getFormulaValue(property.formula)
+    case 'created_time':
+      return property.created_time ?? ''
+    case 'last_edited_time':
+      return property.last_edited_time ?? ''
+    default:
+      return ''
+  }
+}
+
+const getTagsPropertyValue = (properties, propertyName) => {
+  const property = getProperty(properties, propertyName)
+
+  if (!property) {
+    return []
+  }
+
+  switch (property.type) {
+    case 'multi_select':
+      return property.multi_select.map((option) => option.name).filter(Boolean)
+    case 'select':
+      return property.select?.name ? [property.select.name] : []
+    case 'status':
+      return property.status?.name ? [property.status.name] : []
+    case 'rich_text':
+      return splitTags(plainTextFromRichText(property.rich_text))
+    case 'title':
+      return splitTags(plainTextFromRichText(property.title))
+    default:
+      return []
+  }
+}
+
+const splitTags = (value) => {
+  return value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+}
+
+const normalizeNotionId = (id) => {
+  return id.replaceAll('-', '')
+}
+
+const getSourceId = (pageId) => {
+  return normalizeNotionId(pageId).slice(0, ID_FRAGMENT_LENGTH)
+}
+
+const slugify = (value) => {
+  return normalizePlainText(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+}
+
+const buildSlug = ({ explicitSlug, title, sourceId }) => {
+  const normalizedExplicitSlug = slugify(explicitSlug)
+
+  if (normalizedExplicitSlug) {
+    return normalizedExplicitSlug
+  }
+
+  const titleSlug = slugify(title)
+  const slugBase = titleSlug || 'post'
+  return `${slugBase}-${sourceId}`
+}
+
+const toIsoDate = (value, fallbackValue) => {
+  const dateValue = value || fallbackValue
+  const date = new Date(dateValue)
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid Notion date value: ${dateValue}`)
+  }
+
+  return date.toISOString()
+}
+
+const formatDisplayDate = (isoDate, timeZone) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    timeZone
+  })
+
+  const parts = formatter.formatToParts(new Date(isoDate))
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+
+  if (!month || !day) {
+    throw new Error(`Unable to format display date for: ${isoDate}`)
+  }
+
+  return `${month}.${day}`
+}
+
+const truncateDescription = (value, maxLength) => {
+  const normalizedValue = normalizePlainText(value)
+  const characters = Array.from(normalizedValue)
+
+  if (characters.length <= maxLength) {
+    return normalizedValue
+  }
+
+  return `${characters.slice(0, maxLength).join('').trimEnd()}...`
+}
+
+const calculateReadingTime = (plainText) => {
+  const normalizedText = normalizePlainText(plainText)
+  const cjkCharacters = normalizedText.match(cjkCharacterPattern)?.length ?? 0
+  const latinWords = normalizedText.replace(cjkCharacterPattern, ' ').match(latinWordPattern)?.length ?? 0
+  const estimatedMinutes = Math.max(
+    cjkCharacters / CJK_CHARS_PER_MINUTE,
+    latinWords / WORDS_PER_MINUTE
+  )
+
+  return Math.max(MIN_READING_TIME, Math.ceil(estimatedMinutes))
+}
+
+const getExternalCoverUrl = (page) => {
+  if (page.cover?.type === 'external') {
+    return page.cover.external.url
+  }
+
+  return undefined
+}
+
+export const buildPublishedFilter = (dataSource, config) => {
+  const statusSchema = getPropertySchema(dataSource, config.properties.status)
+
+  if (!statusSchema) {
+    throw new Error(`Missing Notion status property "${config.properties.status}" in data source schema.`)
+  }
+
+  if (statusSchema.type === 'status' || statusSchema.type === 'select') {
+    return {
+      property: config.properties.status,
+      [statusSchema.type]: {
+        equals: config.properties.publishedStatus
+      }
+    }
+  }
+
+  if (statusSchema.type === 'checkbox') {
+    return {
+      property: config.properties.status,
+      checkbox: {
+        equals: true
+      }
+    }
+  }
+
+  throw new Error(
+    `Notion status property "${config.properties.status}" must be status, select, or checkbox. Received: ${statusSchema.type}`
+  )
+}
+
+export const getQueryPropertyNames = (dataSource, config) => {
+  const configuredPropertyNames = [
+    config.properties.title,
+    config.properties.status,
+    config.properties.category,
+    config.properties.tags,
+    config.properties.publishedAt,
+    config.properties.slug,
+    config.properties.description
+  ]
+
+  return configuredPropertyNames.filter((propertyName) => {
+    return Boolean(dataSource.properties?.[propertyName])
+  })
+}
+
+export const mapNotionPageToArticle = ({ page, renderedContent, config }) => {
+  const properties = page.properties ?? {}
+  const sourceId = getSourceId(page.id)
+  const title = normalizePlainText(getStringPropertyValue(properties, config.properties.title))
+
+  if (!title) {
+    throw new Error(`Notion page ${page.id} is missing a title.`)
+  }
+
+  const explicitSlug = getStringPropertyValue(properties, config.properties.slug)
+  const publishedAt = toIsoDate(
+    getStringPropertyValue(properties, config.properties.publishedAt),
+    page.created_time
+  )
+  const descriptionProperty = getStringPropertyValue(properties, config.properties.description)
+  const descriptionSource = descriptionProperty || renderedContent.plainText || title
+  const description = truncateDescription(descriptionSource, config.descriptionMaxLength)
+  const category = normalizePlainText(getStringPropertyValue(properties, config.properties.category)) || DEFAULT_CATEGORY
+  const tags = getTagsPropertyValue(properties, config.properties.tags)
+  const cover = getExternalCoverUrl(page)
+
+  return {
+    sourceId,
+    slug: buildSlug({ explicitSlug, title, sourceId }),
+    title,
+    date: formatDisplayDate(publishedAt, config.displayTimeZone),
+    publishedAt,
+    description,
+    tags,
+    category,
+    author: config.author,
+    ...(cover ? { cover } : {}),
+    seoTitle: `${title} - ${config.siteName}`,
+    seoDescription: description,
+    content: renderedContent.html,
+    readingTime: calculateReadingTime(renderedContent.plainText),
+    updatedAt: toIsoDate(page.last_edited_time, publishedAt)
+  }
+}

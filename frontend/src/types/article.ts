@@ -1,4 +1,5 @@
 export interface ArticleMeta {
+  sourceId: string
   slug: string
   title: string
   date: string

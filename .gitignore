@@ -1,5 +1,10 @@
 /node_modules
 /frontend/node_modules
+.env
+.env.*
+!/frontend/.env.example
+/frontend/.env
+/frontend/.env.local
 /docs
 /frontendAdmin/.agents
 /frontend/.agents

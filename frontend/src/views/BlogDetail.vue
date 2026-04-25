@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { getArticleBySlug } from '@/data/articles'
+import { siteConfig } from '@/config/site'
+import { useSeo } from '@/utils/seo'
 
 /**
  * Blog Detail Page
@@ -9,33 +12,28 @@ import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
-const id = route.params.id as string
 
-// In a real app, this would be a fetch based on route.params.id
-const post = ref({
-  id,
-  title: 'agent的未来是什么',
-  date: '2025.10.24',
-  author: 'xjj',
-  tags: ['AGENT', 'AI'],
-  content: `
-    <p>AI Agent 的发展正在进入一个新的篇章。从最初的简单脚本到现在的复杂多步推理，我们正见证着从工具到助手的深刻变革。</p>
-    <p>在这个过程中，交互模式的演进、底层模型的推理能力以及对长上下文的处理能力，共同构成了 Agent 的核心竞争力。</p>
-    <p>本文将从技术演进、应用场景以及未来挑战三个维度，深度探讨 AI Agent 的发展趋势及其对软件工程领域的影响。</p>
-  `
-})
+const post = computed(() => getArticleBySlug(route.params.slug))
 
 const goBack = () => {
-  router.back()
+  if (typeof window !== 'undefined' && window.history.length > 1) {
+    router.back()
+    return
+  }
+
+  router.push('/')
 }
 
-onMounted(() => {
-  // Simulate data fetching or other side effects
+useSeo({
+  title: computed(() => post.value?.seoTitle ?? `Post not found - ${siteConfig.name}`),
+  description: computed(() => post.value?.seoDescription ?? 'The requested article does not exist.'),
+  path: computed(() => post.value ? `/blog/${post.value.slug}` : route.path),
+  type: 'article'
 })
 </script>
 
 <template>
-  <main class="max-w-3xl mx-auto pb-24 w-full">
+  <main v-if="post" class="max-w-3xl mx-auto pb-24 w-full">
         
         <!-- Back Button Area -->
         <button 
@@ -51,6 +49,8 @@ onMounted(() => {
           <time class="tabular-nums">{{ post.date }}</time>
           <span class="w-1 h-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
           <span>By {{ post.author }}</span>
+          <span v-if="post.readingTime" class="w-1 h-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
+          <span v-if="post.readingTime">{{ post.readingTime }} min read</span>
         </div>
 
         <!-- Blog Title with Transition Support -->
@@ -60,10 +60,31 @@ onMounted(() => {
           {{ post.title }}
         </h1>
 
+        <p class="text-xl leading-relaxed text-[var(--color-fg)] font-light mb-12">
+          {{ post.description }}
+        </p>
+
         <!-- Content Area -->
         <article class="prose prose-neutral dark:prose-invert max-w-none">
           <div class="text-[var(--color-fg-deep)] leading-relaxed font-light text-lg space-y-8" v-html="post.content"></div>
         </article>
+  </main>
+
+  <main v-else class="max-w-3xl mx-auto pb-24 w-full">
+    <button
+      @click="goBack"
+      class="flex items-center gap-2 text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)] transition-colors mb-12 group"
+    >
+      <span class="group-hover:-translate-x-1 transition-transform inline-block">←</span>
+      <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
+    </button>
+
+    <h1 class="text-4xl md:text-5xl font-serif italic text-[var(--color-fg-deeper)] leading-tight mb-8">
+      Article not found
+    </h1>
+    <p class="text-lg leading-relaxed text-[var(--color-fg)] font-light">
+      This article does not exist in the local SSG article data.
+    </p>
   </main>
 </template>
 

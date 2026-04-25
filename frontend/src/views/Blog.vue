@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { articleCategories, articleMetas, TIMELINE_CATEGORY } from '@/data/articles'
+import { siteConfig } from '@/config/site'
+import { useSeo } from '@/utils/seo'
 
 defineOptions({ name: 'Blog' })
 
@@ -10,43 +13,36 @@ defineOptions({ name: 'Blog' })
  */
 
 const router = useRouter()
-const activeCategory = ref('Timeline')
+const route = useRoute()
+const activeCategory = ref(TIMELINE_CATEGORY)
 
-const categories = ref([
-  { label: 'Timeline' },
-  { label: 'agent' },
-  { label: 'Vue' },
-  { label: 'Backend' },
-  { label: 'Life' }
+const categories = computed(() => [
+  { label: TIMELINE_CATEGORY },
+  ...articleCategories.map((label) => ({ label }))
 ])
-
-const allPosts = [
-  { id: '1', date: '10.24', title: 'agent的未来是什么', tags: ['AGENT', 'AI'], cat: 'agent' },
-  { id: '2', date: '09.12', title: 'Building a Custom Vue 3 Renderer', tags: ['VUE3', 'CANVAS'], cat: 'Vue' },
-  { id: '3', date: '08.05', title: 'Designing Idempotent APIs in Go', tags: ['GO', 'API'], cat: 'Backend' },
-  { id: '4', date: '07.22', title: 'A Deep Dive into Layout Animations', tags: ['ANIMATION', 'UX'], cat: 'Vue' },
-  { id: '5', date: '06.15', title: 'PostgreSQL Performance Tuning for Analytics', tags: ['DB', 'SQL'], cat: 'Backend' },
-  { id: '6', date: '05.30', title: 'Micro-frontends: The Good, The Bad, and The Ugly', tags: ['SCALE', 'TEAM'], cat: 'Vue' },
-  { id: '7', date: '04.12', title: 'Implementing a RAG System from Scratch', tags: ['AI', 'LLM'], cat: 'agent' },
-  { id: '8', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
-  { id: '9', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
-  { id: '10', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
-  { id: '11', date: '03.08', title: 'My 2025 Setup: Hardware & Software', tags: ['SETUP', 'TOOLS'], cat: 'Life' },
-]
 
 // Filtering logic
 const filteredPosts = computed(() => {
-  if (activeCategory.value === 'Timeline') return allPosts
-  return allPosts.filter(post => post.cat === activeCategory.value)
+  if (activeCategory.value === TIMELINE_CATEGORY) {
+    return articleMetas
+  }
+
+  return articleMetas.filter((post) => post.category === activeCategory.value)
 })
 
 const setCategory = (label: string) => {
   activeCategory.value = label
 }
 
-const goToDetail = (id: string) => {
-  router.push(`/blog/${id}`)
+const goToDetail = (slug: string) => {
+  router.push(`/blog/${slug}`)
 }
+
+useSeo({
+  title: computed(() => route.path === '/blog' ? `Blog - ${siteConfig.name}` : siteConfig.name),
+  description: siteConfig.description,
+  path: computed(() => route.path === '/blog' ? '/blog' : '/')
+})
 
 </script>
 
@@ -81,7 +77,7 @@ const goToDetail = (id: string) => {
             <!-- Nested Transition for Category Switching -->
             <Transition name="list-switch" mode="out-in">
               <div :key="activeCategory" class="space-y-1">
-                <article v-for="post in filteredPosts" :key="post.id" @click="goToDetail(post.id)"
+                <article v-for="post in filteredPosts" :key="post.slug" @click="goToDetail(post.slug)"
                   class="group flex items-center py-7 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
                   <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
                   <h2

@@ -5,10 +5,7 @@
   "type": "module",
   "scripts": {
     "dev:frontend": "pnpm --filter frontend dev",
-    "dev:admin": "pnpm --filter frontendadmin dev",
     "build:frontend": "pnpm --filter frontend build",
-    "build:admin": "pnpm --filter frontendadmin build",
-    "build:all": "pnpm -r build",
     "lint": "pnpm -r lint",
     "type-check": "pnpm -r type-check"
   },

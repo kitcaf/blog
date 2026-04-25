@@ -53,8 +53,6 @@
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-::view-transition-old(search-input),
-::view-transition-new(search-input),
 ::view-transition-old(nav-links),
 ::view-transition-new(nav-links) {
   animation-duration: 0.8s;

@@ -1,33 +1,41 @@
 <script setup lang="ts">
-import { useSearch } from '@/composables/useSearch'
 import { useThemeToggle } from '@/composables/useThemeToggle'
-import SearchInput from '@/components/SearchInput.vue'
+import { useRoute } from 'vue-router'
 
 /**
  * Shared Header Component for Blog Index and Detail pages
  */
 
-const { query } = useSearch()
+const route = useRoute()
 const { toggleTheme } = useThemeToggle()
 
 const navLinks = [
-  { path: '/blog', label: 'Blog' },
+  { path: '/', label: 'Blog' },
   { path: '/project', label: 'Project' },
   { path: '/me', label: 'Me' }
 ]
+
+const isActiveLink = (path: string) => {
+  if (path === '/') {
+    return route.path === '/' || route.path.startsWith('/blog')
+  }
+
+  return route.path.startsWith(path)
+}
 </script>
 
 <template>
-  <header class="flex items-end justify-between mb-24">
-    <div class="w-full max-w-xl group relative" style="view-transition-name: search-input">
-      <span
-        class="absolute -left-6 top-1/2 -translate-y-1/2 text-[var(--color-fg-light)] opacity-0 group-hover:opacity-100 transition-opacity duration-300">›</span>
-      <SearchInput v-model="query" variant="small" placeholder="Search 【ctrl + p】..." />
-    </div>
+  <header class="flex items-center justify-between mb-24">
+    <router-link
+      to="/"
+      class="font-serif italic text-2xl text-[var(--color-fg-deeper)] transition-colors duration-200"
+    >
+      kitcaf
+    </router-link>
 
     <nav class="flex items-center gap-8 text-sm font-medium" style="view-transition-name: nav-links">
       <router-link v-for="link in navLinks" :key="link.label" :to="link.path" class="transition-colors duration-200"
-        :class="$route.path.startsWith(link.path) ? 'text-[var(--color-fg-deeper)] font-bold' : 'text-[var(--color-fg-light)] hover:text-[var(--color-fg-deeper)]'">
+        :class="isActiveLink(link.path) ? 'text-[var(--color-fg-deeper)] font-bold' : 'text-[var(--color-fg-light)] hover:text-[var(--color-fg-deeper)]'">
         {{ link.label }}
       </router-link>
 
@@ -51,3 +59,9 @@ const navLinks = [
     </nav>
   </header>
 </template>
+
+<style scoped>
+.font-serif {
+  font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
+}
+</style>

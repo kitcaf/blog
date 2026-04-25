@@ -2,6 +2,14 @@ import postsData from './posts.json'
 import type { ArticleDetail, ArticleMeta } from '../types/article'
 
 export const TIMELINE_CATEGORY = 'Timeline'
+const ARTICLE_EXCERPT_MAX_LENGTH = 160
+
+const markdownImagePattern = /!\[([^\]]*)\]\([^)]+\)/g
+const markdownLinkPattern = /\[([^\]]+)\]\([^)]+\)/g
+const fencedCodePattern = /```[\s\S]*?```/g
+const inlineCodePattern = /`([^`]+)`/g
+const markdownSyntaxPattern = /[*_~>#-]/g
+const whitespacePattern = /\s+/g
 
 const posts = postsData as ArticleDetail[]
 
@@ -17,13 +25,10 @@ export const articleMetas: ArticleMeta[] = articles.map((article) => ({
   title: article.title,
   date: article.date,
   publishedAt: article.publishedAt,
-  description: article.description,
   tags: article.tags,
   category: article.category,
   author: article.author,
-  cover: article.cover,
-  seoTitle: article.seoTitle,
-  seoDescription: article.seoDescription
+  cover: article.cover
 }))
 
 export const articleCategories: string[] = Array.from(new Set(articleMetas.map((article) => article.category)))
@@ -34,6 +39,29 @@ export const getArticleBySlug = (slug: string | string[] | undefined): ArticleDe
   }
 
   return articles.find((article) => article.slug === slug)
+}
+
+export const getArticleExcerpt = (article: ArticleDetail): string => {
+  const normalizedText = article.contentMarkdown
+    .replace(fencedCodePattern, ' ')
+    .replace(markdownImagePattern, '$1')
+    .replace(markdownLinkPattern, '$1')
+    .replace(inlineCodePattern, '$1')
+    .replace(markdownSyntaxPattern, ' ')
+    .replace(whitespacePattern, ' ')
+    .trim()
+
+  if (!normalizedText) {
+    return article.title
+  }
+
+  const characters = Array.from(normalizedText)
+
+  if (characters.length <= ARTICLE_EXCERPT_MAX_LENGTH) {
+    return normalizedText
+  }
+
+  return `${characters.slice(0, ARTICLE_EXCERPT_MAX_LENGTH).join('').trimEnd()}...`
 }
 
 /**

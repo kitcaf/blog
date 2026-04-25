@@ -1,16 +1,13 @@
 [
   {
     "sourceId": "34dee003",
-    "slug": "post-34dee003",
+    "slug": "ce-shi-ye-mian-34dee003",
     "title": "测试页面",
     "date": "04.25",
     "publishedAt": "2026-04-25T02:32:00.000Z",
-    "description": "第一章 怎么成功",
     "tags": [],
     "category": "vue源码实现",
     "author": "kitcaf",
-    "seoTitle": "测试页面",
-    "seoDescription": "第一章 怎么成功",
     "contentMarkdown": "## 第一章\n\n怎么成功",
     "updatedAt": "2026-04-25T07:09:00.000Z"
   }

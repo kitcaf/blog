@@ -23,7 +23,6 @@ const DEFAULT_ENV_FILES = [
 const SYNC_SETTINGS = {
   outputPath: 'frontend/src/data/posts.json',
   author: 'kitcaf',
-  descriptionMaxLength: 160,
   allowEmptySync: false,
   properties: {
     title: 'Title',
@@ -32,8 +31,7 @@ const SYNC_SETTINGS = {
     category: 'Category',
     tags: 'Tags',
     publishedAt: 'PublishedAt',
-    slug: 'Slug',
-    description: 'Description'
+    slug: 'Slug'
   }
 } satisfies Omit<SyncConfig, 'rootDir' | 'notionToken' | 'notionDatabaseId'>
 
@@ -156,7 +154,6 @@ export const loadSyncConfig = (rootDir = PROJECT_ROOT): SyncConfig => {
     outputPath: resolveProjectPath(rootDir, SYNC_SETTINGS.outputPath),
     author: SYNC_SETTINGS.author,
     allowEmptySync: SYNC_SETTINGS.allowEmptySync,
-    descriptionMaxLength: SYNC_SETTINGS.descriptionMaxLength,
     properties: SYNC_SETTINGS.properties
   }
 }

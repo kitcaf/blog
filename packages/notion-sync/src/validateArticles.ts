@@ -11,7 +11,6 @@ const requiredStringFields = [
   'title',
   'date',
   'publishedAt',
-  'description',
   'category',
   'author',
   'contentMarkdown'

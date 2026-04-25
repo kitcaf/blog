@@ -16,5 +16,8 @@
     "build": "tsc -p tsconfig.json",
     "sync": "pnpm run build && node dist/sync.js",
     "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "pinyin-pro": "^3.28.1"
   }
 }

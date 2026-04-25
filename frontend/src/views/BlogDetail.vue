@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { renderMarkdown } from '@blog/markdown-renderer'
-import { getArticleBySlug } from '@/data/articles'
+import { getArticleBySlug, getArticleExcerpt } from '@/data/articles'
 import { siteConfig } from '@/config/site'
 import { useSeo } from '@/utils/seo'
 
@@ -18,6 +18,9 @@ const post = computed(() => getArticleBySlug(route.params.slug))
 const renderedContentHtml = computed(() => {
   return post.value ? renderMarkdown({ markdown: post.value.contentMarkdown }) : ''
 })
+const articleMetaDescription = computed(() => {
+  return post.value ? getArticleExcerpt(post.value) : 'The requested article does not exist.'
+})
 
 const goBack = () => {
   if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -29,8 +32,8 @@ const goBack = () => {
 }
 
 useSeo({
-  title: computed(() => post.value?.seoTitle ?? `Post not found - ${siteConfig.name}`),
-  description: computed(() => post.value?.seoDescription ?? 'The requested article does not exist.'),
+  title: computed(() => post.value?.title ?? `Post not found - ${siteConfig.name}`),
+  description: articleMetaDescription,
   path: computed(() => post.value ? `/blog/${post.value.slug}` : route.path),
   type: 'article'
 })

@@ -11,7 +11,6 @@ export interface SyncPropertyNames {
   tags: string
   publishedAt: string
   slug: string
-  description: string
 }
 
 export interface SyncConfig {
@@ -21,7 +20,6 @@ export interface SyncConfig {
   outputPath: string
   author: string
   allowEmptySync: boolean
-  descriptionMaxLength: number
   properties: SyncPropertyNames
 }
 
@@ -182,13 +180,10 @@ export interface ArticleDetail {
   title: string
   date: string
   publishedAt: string
-  description: string
   tags: string[]
   category: string
   author: string
   cover?: string
-  seoTitle?: string
-  seoDescription?: string
   contentMarkdown: string
   updatedAt?: string
 }

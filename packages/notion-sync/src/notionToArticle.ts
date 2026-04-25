@@ -3,6 +3,7 @@
  *
  * 这里负责把 Notion properties 和 Markdown 正文整理成现有 SSG 可以直接消费的 ArticleDetail。
  */
+import { pinyin } from 'pinyin-pro'
 import { normalizePlainText, plainTextFromRichText } from './richText.js'
 import type {
   ArticleDetail,
@@ -17,6 +18,7 @@ import type {
 
 const DEFAULT_CATEGORY = 'General'
 const ID_FRAGMENT_LENGTH = 8
+const FALLBACK_SLUG_BASE = 'post'
 
 const getProperty = (
   properties: Record<string, NotionProperty> | undefined,
@@ -149,8 +151,14 @@ const buildSlug = ({
     return normalizedExplicitSlug
   }
 
-  const titleSlug = slugify(title)
-  const slugBase = titleSlug || 'post'
+  const titlePinyin = pinyin(title, {
+    toneType: 'none',
+    separator: '-',
+    nonZh: 'consecutive',
+    v: true
+  })
+  const titleSlug = slugify(titlePinyin)
+  const slugBase = titleSlug || FALLBACK_SLUG_BASE
   return `${slugBase}-${sourceId}`
 }
 
@@ -180,17 +188,6 @@ const formatDisplayDate = (isoDate: string): string => {
   }
 
   return `${month}.${day}`
-}
-
-const truncateDescription = (value: string, maxLength: number): string => {
-  const normalizedValue = normalizePlainText(value)
-  const characters = Array.from(normalizedValue)
-
-  if (characters.length <= maxLength) {
-    return normalizedValue
-  }
-
-  return `${characters.slice(0, maxLength).join('').trimEnd()}...`
 }
 
 const getExternalCoverUrl = (page: NotionPage): string | undefined => {
@@ -238,8 +235,7 @@ export const getQueryPropertyNames = (dataSource: NotionDataSource, config: Sync
     config.properties.category,
     config.properties.tags,
     config.properties.publishedAt,
-    config.properties.slug,
-    config.properties.description
+    config.properties.slug
   ]
 
   return configuredPropertyNames.filter((propertyName) => {
@@ -269,9 +265,6 @@ export const mapNotionPageToArticle = ({
     getStringPropertyValue(properties, config.properties.publishedAt),
     page.created_time
   )
-  const descriptionProperty = getStringPropertyValue(properties, config.properties.description)
-  const descriptionSource = descriptionProperty || renderedContent.plainText || title
-  const description = truncateDescription(descriptionSource, config.descriptionMaxLength)
   const category = normalizePlainText(getStringPropertyValue(properties, config.properties.category)) || DEFAULT_CATEGORY
   const tags = getTagsPropertyValue(properties, config.properties.tags)
   const cover = getExternalCoverUrl(page)
@@ -282,13 +275,10 @@ export const mapNotionPageToArticle = ({
     title,
     date: formatDisplayDate(publishedAt),
     publishedAt,
-    description,
     tags,
     category,
     author: config.author,
     ...(cover ? { cover } : {}),
-    seoTitle: title,
-    seoDescription: description,
     contentMarkdown: renderedContent.markdown,
     updatedAt: toIsoDate(page.last_edited_time, publishedAt)
   }

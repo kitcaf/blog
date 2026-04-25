@@ -35,7 +35,6 @@ useSeo({
 <template>
   <main v-if="post" class="max-w-3xl mx-auto pb-24 w-full">
         
-        <!-- Back Button Area -->
         <button 
           @click="goBack"
           class="flex items-center gap-2 text-[var(--color-fg-light)] hover:text-[var(--color-fg-deep)] transition-colors mb-12 group"
@@ -44,7 +43,6 @@ useSeo({
           <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
         </button>
 
-        <!-- Meta Info - Grey-themed as per requirements -->
         <div class="flex items-center gap-4 text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)] mb-6">
           <time class="tabular-nums">{{ post.date }}</time>
           <span class="w-1 h-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
@@ -53,7 +51,6 @@ useSeo({
           <span v-if="post.readingTime">{{ post.readingTime }} min read</span>
         </div>
 
-        <!-- Blog Title with Transition Support -->
         <h1
           class="text-4xl md:text-5xl font-serif italic text-[var(--color-fg-deeper)] leading-tight mb-16"
         >
@@ -64,7 +61,6 @@ useSeo({
           {{ post.description }}
         </p>
 
-        <!-- Content Area -->
         <article class="prose prose-neutral dark:prose-invert max-w-none">
           <div class="text-[var(--color-fg-deep)] leading-relaxed font-light text-lg space-y-8" v-html="post.content"></div>
         </article>

@@ -1,4 +1,11 @@
-export const escapeHtml = (value) => {
+/**
+ * Notion rich_text 辅助工具。
+ *
+ * 提供 HTML 转义、富文本转 HTML 和纯文本规整，避免正文转换时散落重复的字符串处理。
+ */
+import type { NotionRichText, NotionRichTextSegment } from './types.js'
+
+export const escapeHtml = (value: unknown): string => {
   return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -9,7 +16,7 @@ export const escapeHtml = (value) => {
 
 export const escapeAttribute = escapeHtml
 
-export const plainTextFromRichText = (richText) => {
+export const plainTextFromRichText = (richText: NotionRichText | undefined): string => {
   if (!Array.isArray(richText)) {
     return ''
   }
@@ -17,11 +24,11 @@ export const plainTextFromRichText = (richText) => {
   return richText.map((segment) => segment.plain_text ?? '').join('')
 }
 
-const wrapWhenEnabled = (html, enabled, tagName) => {
+const wrapWhenEnabled = (html: string, enabled: boolean | undefined, tagName: string): string => {
   return enabled ? `<${tagName}>${html}</${tagName}>` : html
 }
 
-const richTextSegmentToHtml = (segment) => {
+const richTextSegmentToHtml = (segment: NotionRichTextSegment): string => {
   const annotations = segment.annotations ?? {}
   let html = escapeHtml(segment.plain_text ?? '')
 
@@ -40,7 +47,7 @@ const richTextSegmentToHtml = (segment) => {
   return html
 }
 
-export const htmlFromRichText = (richText) => {
+export const htmlFromRichText = (richText: NotionRichText | undefined): string => {
   if (!Array.isArray(richText)) {
     return ''
   }
@@ -48,6 +55,6 @@ export const htmlFromRichText = (richText) => {
   return richText.map(richTextSegmentToHtml).join('')
 }
 
-export const normalizePlainText = (value) => {
+export const normalizePlainText = (value: unknown): string => {
   return String(value).replace(/\s+/g, ' ').trim()
 }

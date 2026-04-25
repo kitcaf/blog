@@ -1,3 +1,10 @@
+/**
+ * 同步产物校验器。
+ *
+ * 在覆盖本地 posts.json 之前检查文章模型完整性，避免一次异常同步破坏前端 SSG 数据。
+ */
+import type { ArticleDetail } from './types.js'
+
 const requiredStringFields = [
   'sourceId',
   'slug',
@@ -8,19 +15,19 @@ const requiredStringFields = [
   'category',
   'author',
   'content'
-]
+] as const
 
-const isNonEmptyString = (value) => {
+const isNonEmptyString = (value: unknown): value is string => {
   return typeof value === 'string' && value.trim() !== ''
 }
 
-const isValidDate = (value) => {
+const isValidDate = (value: unknown): value is string => {
   return isNonEmptyString(value) && !Number.isNaN(new Date(value).getTime())
 }
 
-export const validateArticles = (articles) => {
-  const errors = []
-  const seenSlugs = new Map()
+export const validateArticles = (articles: ArticleDetail[]): void => {
+  const errors: string[] = []
+  const seenSlugs = new Map<string, number>()
 
   if (!Array.isArray(articles)) {
     throw new Error('Article payload must be an array.')

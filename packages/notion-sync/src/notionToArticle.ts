@@ -1,4 +1,19 @@
-import { normalizePlainText, plainTextFromRichText } from './richText.mjs'
+/**
+ * Notion 页面到前端文章模型的映射层。
+ *
+ * 这里负责把 Notion properties 和正文纯文本整理成现有 SSG 可以直接消费的 ArticleDetail。
+ */
+import { normalizePlainText, plainTextFromRichText } from './richText.js'
+import type {
+  ArticleDetail,
+  NotionDataSource,
+  NotionFilter,
+  NotionFormula,
+  NotionPage,
+  NotionProperty,
+  RenderedContent,
+  SyncConfig
+} from './types.js'
 
 const DEFAULT_CATEGORY = 'General'
 const MIN_READING_TIME = 1
@@ -9,15 +24,18 @@ const ID_FRAGMENT_LENGTH = 8
 const cjkCharacterPattern = /[\u3400-\u9fff]/g
 const latinWordPattern = /[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*/g
 
-const getProperty = (properties, propertyName) => {
+const getProperty = (
+  properties: Record<string, NotionProperty> | undefined,
+  propertyName: string
+): NotionProperty | undefined => {
   return properties?.[propertyName]
 }
 
-const getPropertySchema = (dataSource, propertyName) => {
+const getPropertySchema = (dataSource: NotionDataSource, propertyName: string) => {
   return dataSource.properties?.[propertyName]
 }
 
-const getFormulaValue = (formula) => {
+const getFormulaValue = (formula: NotionFormula | undefined): string => {
   switch (formula?.type) {
     case 'string':
       return formula.string ?? ''
@@ -32,7 +50,10 @@ const getFormulaValue = (formula) => {
   }
 }
 
-const getStringPropertyValue = (properties, propertyName) => {
+const getStringPropertyValue = (
+  properties: Record<string, NotionProperty> | undefined,
+  propertyName: string
+): string => {
   const property = getProperty(properties, propertyName)
 
   if (!property) {
@@ -67,7 +88,10 @@ const getStringPropertyValue = (properties, propertyName) => {
   }
 }
 
-const getTagsPropertyValue = (properties, propertyName) => {
+const getTagsPropertyValue = (
+  properties: Record<string, NotionProperty> | undefined,
+  propertyName: string
+): string[] => {
   const property = getProperty(properties, propertyName)
 
   if (!property) {
@@ -76,7 +100,7 @@ const getTagsPropertyValue = (properties, propertyName) => {
 
   switch (property.type) {
     case 'multi_select':
-      return property.multi_select.map((option) => option.name).filter(Boolean)
+      return property.multi_select?.map((option) => option.name).filter(Boolean) ?? []
     case 'select':
       return property.select?.name ? [property.select.name] : []
     case 'status':
@@ -90,22 +114,22 @@ const getTagsPropertyValue = (properties, propertyName) => {
   }
 }
 
-const splitTags = (value) => {
+const splitTags = (value: string): string[] => {
   return value
     .split(/[,，]/)
     .map((tag) => tag.trim())
     .filter(Boolean)
 }
 
-const normalizeNotionId = (id) => {
+const normalizeNotionId = (id: string): string => {
   return id.replaceAll('-', '')
 }
 
-const getSourceId = (pageId) => {
+const getSourceId = (pageId: string): string => {
   return normalizeNotionId(pageId).slice(0, ID_FRAGMENT_LENGTH)
 }
 
-const slugify = (value) => {
+const slugify = (value: string): string => {
   return normalizePlainText(value)
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -116,7 +140,15 @@ const slugify = (value) => {
     .replace(/-{2,}/g, '-')
 }
 
-const buildSlug = ({ explicitSlug, title, sourceId }) => {
+const buildSlug = ({
+  explicitSlug,
+  title,
+  sourceId
+}: {
+  explicitSlug: string
+  title: string
+  sourceId: string
+}): string => {
   const normalizedExplicitSlug = slugify(explicitSlug)
 
   if (normalizedExplicitSlug) {
@@ -128,7 +160,7 @@ const buildSlug = ({ explicitSlug, title, sourceId }) => {
   return `${slugBase}-${sourceId}`
 }
 
-const toIsoDate = (value, fallbackValue) => {
+const toIsoDate = (value: string | undefined, fallbackValue: string): string => {
   const dateValue = value || fallbackValue
   const date = new Date(dateValue)
 
@@ -139,7 +171,7 @@ const toIsoDate = (value, fallbackValue) => {
   return date.toISOString()
 }
 
-const formatDisplayDate = (isoDate, timeZone) => {
+const formatDisplayDate = (isoDate: string, timeZone: string): string => {
   const formatter = new Intl.DateTimeFormat('en-US', {
     month: '2-digit',
     day: '2-digit',
@@ -157,7 +189,7 @@ const formatDisplayDate = (isoDate, timeZone) => {
   return `${month}.${day}`
 }
 
-const truncateDescription = (value, maxLength) => {
+const truncateDescription = (value: string, maxLength: number): string => {
   const normalizedValue = normalizePlainText(value)
   const characters = Array.from(normalizedValue)
 
@@ -168,7 +200,7 @@ const truncateDescription = (value, maxLength) => {
   return `${characters.slice(0, maxLength).join('').trimEnd()}...`
 }
 
-const calculateReadingTime = (plainText) => {
+const calculateReadingTime = (plainText: string): number => {
   const normalizedText = normalizePlainText(plainText)
   const cjkCharacters = normalizedText.match(cjkCharacterPattern)?.length ?? 0
   const latinWords = normalizedText.replace(cjkCharacterPattern, ' ').match(latinWordPattern)?.length ?? 0
@@ -180,15 +212,15 @@ const calculateReadingTime = (plainText) => {
   return Math.max(MIN_READING_TIME, Math.ceil(estimatedMinutes))
 }
 
-const getExternalCoverUrl = (page) => {
-  if (page.cover?.type === 'external') {
+const getExternalCoverUrl = (page: NotionPage): string | undefined => {
+  if (page.cover?.type === 'external' && page.cover.external?.url) {
     return page.cover.external.url
   }
 
   return undefined
 }
 
-export const buildPublishedFilter = (dataSource, config) => {
+export const buildPublishedFilter = (dataSource: NotionDataSource, config: SyncConfig): NotionFilter => {
   const statusSchema = getPropertySchema(dataSource, config.properties.status)
 
   if (!statusSchema) {
@@ -218,7 +250,7 @@ export const buildPublishedFilter = (dataSource, config) => {
   )
 }
 
-export const getQueryPropertyNames = (dataSource, config) => {
+export const getQueryPropertyNames = (dataSource: NotionDataSource, config: SyncConfig): string[] => {
   const configuredPropertyNames = [
     config.properties.title,
     config.properties.status,
@@ -234,7 +266,15 @@ export const getQueryPropertyNames = (dataSource, config) => {
   })
 }
 
-export const mapNotionPageToArticle = ({ page, renderedContent, config }) => {
+export const mapNotionPageToArticle = ({
+  page,
+  renderedContent,
+  config
+}: {
+  page: NotionPage
+  renderedContent: RenderedContent
+  config: SyncConfig
+}): ArticleDetail => {
   const properties = page.properties ?? {}
   const sourceId = getSourceId(page.id)
   const title = normalizePlainText(getStringPropertyValue(properties, config.properties.title))

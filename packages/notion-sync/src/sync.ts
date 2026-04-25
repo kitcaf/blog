@@ -1,18 +1,31 @@
+/**
+ * Notion 同步 CLI 编排入口。
+ *
+ * 负责把配置读取、Notion 拉取、内容转换、产物校验和 JSON 写入串起来；
+ * 具体转换规则放在独立模块里，方便未来复用或测试。
+ */
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { loadSyncConfig } from './config.mjs'
-import { createNotionClient } from './notionClient.mjs'
+import { loadSyncConfig } from './config.js'
+import { createNotionClient } from './notionClient.js'
 import {
   buildPublishedFilter,
   getQueryPropertyNames,
   mapNotionPageToArticle
-} from './notionToArticle.mjs'
-import { renderNotionBlocksToHtml } from './notionBlocksToHtml.mjs'
-import { validateArticles } from './validateArticles.mjs'
+} from './notionToArticle.js'
+import { renderNotionBlocksToHtml } from './notionBlocksToHtml.js'
+import { validateArticles } from './validateArticles.js'
+import type {
+  ArticleDetail,
+  NotionClient,
+  NotionPage,
+  RenderWarning,
+  SyncConfig
+} from './types.js'
 
 const BLOCK_CONCURRENCY = 2
 
-const writeJsonAtomically = async (filePath, payload) => {
+const writeJsonAtomically = async (filePath: string, payload: unknown): Promise<void> => {
   const outputDirectory = path.dirname(filePath)
   const temporaryPath = `${filePath}.tmp`
 
@@ -21,8 +34,12 @@ const writeJsonAtomically = async (filePath, payload) => {
   await rename(temporaryPath, filePath)
 }
 
-const mapWithConcurrency = async (items, concurrency, mapper) => {
-  const results = new Array(items.length)
+const mapWithConcurrency = async <TItem, TResult>(
+  items: TItem[],
+  concurrency: number,
+  mapper: (item: TItem, index: number) => Promise<TResult>
+): Promise<TResult[]> => {
+  const results = new Array<TResult>(items.length)
   let nextIndex = 0
 
   const worker = async () => {
@@ -40,11 +57,7 @@ const mapWithConcurrency = async (items, concurrency, mapper) => {
   return results
 }
 
-const resolveDataSourceId = async (client, config) => {
-  if (config.notionDataSourceId) {
-    return config.notionDataSourceId
-  }
-
+const resolveDataSourceId = async (client: NotionClient, config: SyncConfig): Promise<string> => {
   const database = await client.retrieveDatabase(config.notionDatabaseId)
   const dataSources = database.data_sources ?? []
 
@@ -58,14 +71,22 @@ const resolveDataSourceId = async (client, config) => {
       .join(', ')
 
     throw new Error(
-      `Notion database has multiple data sources. Set NOTION_DATA_SOURCE_ID explicitly. Available: ${availableSources}`
+      `Notion database has multiple data sources. Keep one Blog data source or update the package convention. Available: ${availableSources}`
     )
   }
 
   return dataSources[0].id
 }
 
-const renderPage = async ({ page, client, config }) => {
+const renderPage = async ({
+  page,
+  client,
+  config
+}: {
+  page: NotionPage
+  client: NotionClient
+  config: SyncConfig
+}): Promise<{ article: ArticleDetail; warnings: RenderWarning[] }> => {
   const blocks = await client.listBlockChildren(page.id)
   const renderedContent = await renderNotionBlocksToHtml(blocks, client)
   const article = mapNotionPageToArticle({ page, renderedContent, config })
@@ -76,7 +97,7 @@ const renderPage = async ({ page, client, config }) => {
   }
 }
 
-const logWarnings = (pageTitle, warnings) => {
+const logWarnings = (pageTitle: string, warnings: RenderWarning[]): void => {
   for (const warning of warnings) {
     console.warn(
       `[notion-sync] ${pageTitle}: ${warning.message} (${warning.blockType}, ${warning.blockId})`
@@ -84,7 +105,7 @@ const logWarnings = (pageTitle, warnings) => {
   }
 }
 
-const main = async () => {
+const main = async (): Promise<void> => {
   const config = loadSyncConfig()
   const client = createNotionClient(config)
   const dataSourceId = await resolveDataSourceId(client, config)
@@ -97,7 +118,7 @@ const main = async () => {
 
   if (pages.length === 0 && !config.allowEmptySync) {
     throw new Error(
-      'Notion returned 0 published pages. Refusing to overwrite posts.json. Set NOTION_ALLOW_EMPTY_SYNC=true to allow this.'
+      'Notion returned 0 published pages. Refusing to overwrite posts.json.'
     )
   }
 

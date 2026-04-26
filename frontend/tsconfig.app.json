@@ -6,7 +6,6 @@
       "vite/client"
     ],
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"

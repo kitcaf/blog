@@ -10,9 +10,11 @@ import BlogHeader from '@/components/BlogHeader.vue'
       <div class="relative flex-1 w-full flex flex-col">
         <div class="w-full">
           <router-view v-slot="{ Component }">
-            <keep-alive include="Blog">
-              <component :is="Component" />
-            </keep-alive>
+            <Suspense>
+              <keep-alive include="Blog">
+                <component :is="Component" />
+              </keep-alive>
+            </Suspense>
           </router-view>
         </div>
       </div>

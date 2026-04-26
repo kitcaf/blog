@@ -1,17 +1,22 @@
 @layer components {
   .markdown-prose {
     --markdown-border: var(--color-fg-lightest);
-    --markdown-code-bg: color-mix(in srgb, var(--color-fg-lightest) 48%, transparent);
-    --markdown-code-border: color-mix(in srgb, var(--color-fg-lighter) 48%, transparent);
+    --markdown-code-bg: color-mix(in srgb, var(--color-fg-lightest) 44%, transparent);
+    --markdown-code-border: color-mix(in srgb, var(--color-fg-lighter) 54%, transparent);
+    --markdown-code-label-bg: color-mix(in srgb, var(--color-bg) 88%, transparent);
 
     color: var(--color-fg-deep);
     font-size: 1.125rem;
     font-weight: 300;
-    line-height: 1.85;
+    line-height: 1.76;
   }
 
   .markdown-prose > * + * {
-    margin-top: 1.75rem;
+    margin-top: 1.55rem;
+  }
+
+  .markdown-prose > :first-child {
+    margin-top: 0;
   }
 
   .markdown-prose h2,
@@ -21,6 +26,7 @@
     font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
     font-weight: 400;
     line-height: 1.2;
+    scroll-margin-top: 6rem;
   }
 
   .markdown-prose h2 {
@@ -72,6 +78,7 @@
 
   .markdown-prose ul,
   .markdown-prose ol {
+    margin-bottom: 0;
     padding-left: 1.35rem;
   }
 
@@ -84,17 +91,17 @@
   }
 
   .markdown-prose li + li {
-    margin-top: 0.5rem;
+    margin-top: 0.45rem;
   }
 
   .markdown-prose li > ul,
   .markdown-prose li > ol {
-    margin-top: 0.5rem;
+    margin-top: 0.45rem;
   }
 
   .markdown-prose blockquote {
     margin-left: 0;
-    border-left: 2px solid var(--markdown-border);
+    border-left: 3px solid var(--markdown-border);
     padding-left: 1.25rem;
     color: var(--color-fg);
   }
@@ -111,12 +118,34 @@
   }
 
   .markdown-prose pre {
+    position: relative;
     overflow-x: auto;
     border: 1px solid var(--markdown-code-border);
     border-radius: 8px;
     background: var(--markdown-code-bg);
-    padding: 1rem;
-    line-height: 1.65;
+    padding: 1rem 1.125rem;
+    color: var(--color-fg-deep);
+    line-height: 1.62;
+  }
+
+  .markdown-prose pre[data-language] {
+    padding-top: 2.5rem;
+  }
+
+  .markdown-prose pre[data-language]::before {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.875rem;
+    border: 1px solid var(--markdown-code-border);
+    border-radius: 999px;
+    background: var(--markdown-code-label-bg);
+    padding: 0.125rem 0.5rem;
+    color: var(--color-fg-light);
+    content: attr(data-language);
+    font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Consolas, monospace;
+    font-size: 0.675rem;
+    font-weight: 500;
+    line-height: 1.35;
   }
 
   .markdown-prose pre code {
@@ -126,6 +155,24 @@
     background: transparent;
     padding: 0;
     font-size: 0.9rem;
+    line-height: inherit;
+  }
+
+  .markdown-prose pre.shiki {
+    background: var(--markdown-code-bg);
+  }
+
+  .markdown-prose pre.shiki span {
+    color: var(--shiki-light, inherit);
+  }
+
+  .dark .markdown-prose pre.shiki span {
+    color: var(--shiki-dark, inherit);
+  }
+
+  .markdown-prose pre .line {
+    display: block;
+    min-height: 1.62em;
   }
 
   .markdown-prose hr {
@@ -147,6 +194,7 @@
     overflow-x: auto;
     border-collapse: collapse;
     font-size: 0.95rem;
+    line-height: 1.55;
   }
 
   .markdown-prose th,

@@ -8,7 +8,7 @@
     "tags": [],
     "category": "vue源码实现",
     "author": "kitcaf",
-    "contentMarkdown": "## 第一章\n\n怎么成功",
-    "updatedAt": "2026-04-25T07:09:00.000Z"
+    "contentMarkdown": "## 第一章\n\n底层实现\n\n```typescript\nconst a = 1\nfunction add(a, b) {return a + b}\n```",
+    "updatedAt": "2026-04-25T10:27:00.000Z"
   }
 ]

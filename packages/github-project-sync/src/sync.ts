@@ -116,7 +116,7 @@ const preserveExistingData = async ({
 }
 
 const syncProjects = async (): Promise<void> => {
-  const config = loadProjectSyncConfig()
+  const config = await loadProjectSyncConfig()
 
   try {
     const projects = await Promise.all(
@@ -146,4 +146,3 @@ syncProjects().catch((error) => {
   console.error(`[github-project-sync] ${getErrorMessage(error)}`)
   process.exitCode = 1
 })
-

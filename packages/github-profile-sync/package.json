@@ -17,8 +17,10 @@
     "sync": "pnpm run build && node dist/sync.js",
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@blog/blog-data-config": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "~5.9.3"
   }
 }
-

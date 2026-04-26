@@ -198,7 +198,7 @@ const syncContributions = async (config: ProfileSyncConfig): Promise<void> => {
 }
 
 const main = async (): Promise<void> => {
-  const config = loadProfileSyncConfig()
+  const config = await loadProfileSyncConfig()
 
   await syncProfile(config)
   await syncContributions(config)
@@ -208,4 +208,3 @@ main().catch((error) => {
   console.error(`[github-profile-sync] ${getErrorMessage(error)}`)
   process.exitCode = 1
 })
-

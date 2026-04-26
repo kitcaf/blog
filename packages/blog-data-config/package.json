@@ -1,26 +1,26 @@
 {
-  "name": "@blog/github-project-sync",
+  "name": "@blog/blog-data-config",
   "version": "1.0.0",
-  "description": "GitHub 项目静态数据同步模块",
+  "description": "博客静态数据构建配置加载模块",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "src/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "import": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "sync": "pnpm run build && node dist/sync.js",
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@blog/blog-data-config": "workspace:*"
+    "typescript": "~5.9.3"
   },
   "devDependencies": {
-    "typescript": "~5.9.3"
+    "@types/node": "^24.10.1"
   }
 }
+

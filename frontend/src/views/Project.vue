@@ -1,114 +1,106 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-
-/**
- * Project Showcase Page
- * Features a grid of projects with GIF previews and GitHub stats
- */
-
-const isLoading = ref(true)
+import projectsData from '@/data/projects.generated.json'
 
 interface Project {
   id: string
+  repo: string
   name: string
   description: string
-  icon: string
-  gif: string
-  repoUrl: string
   stars: number
+  forks: number
+  language: string | null
+  updatedAt: string | null
+  repoUrl: string
+  homepage: string | null
+  topics: string[]
+  coverUrl: string
+  featured: boolean
+  order: number
 }
 
-const projects = ref<Project[]>([
-  {
-    id: '1',
-    name: 'Gemini CLI',
-    description: 'An interactive CLI agent that helps you manage your codebase with ease and precision. Supports multi-model switching and context-aware commands.',
-    icon: '🤖',
-    gif: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKMGpxxT1Z5fO7e/giphy.gif',
-    repoUrl: 'https://github.com/google/gemini-cli',
-    stars: 1250
-  },
-  {
-    id: '2',
-    name: 'Vue Flow Engine',
-    description: 'A lightweight, high-performance node-based editor engine built for Vue 3. Perfect for building visual workflow builders.',
-    icon: '⚡',
-    gif: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/l41lTfuxmQJ7q6vG8/giphy.gif',
-    repoUrl: 'https://github.com/vuejs/core',
-    stars: 840
-  },
-  {
-    id: '3',
-    name: 'Serif UI Kit',
-    description: 'A design system focused on typography and white space, bringing the elegance of print design to the digital world.',
-    icon: '🖋️',
-    gif: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJqZ3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKVUn7iM8FMEU24/giphy.gif',
-    repoUrl: 'https://github.com/tailwindlabs/tailwindcss',
-    stars: 420
-  }
-])
+const projects = projectsData as Project[]
 
-onMounted(() => {
-  setTimeout(() => {
-    isLoading.value = false
-  }, 150)
-})
+const formatCount = (value: number): string => {
+  return new Intl.NumberFormat('en', {
+    notation: value >= 1000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1
+  }).format(value)
+}
+
+const formatUpdatedDate = (updatedAt: string | null): string => {
+  if (!updatedAt) {
+    return 'Unknown'
+  }
+
+  return updatedAt.slice(0, 10)
+}
 </script>
 
 <template>
   <Transition name="content-fade" appear>
-    <div v-if="!isLoading" style="view-transition-name: project-content" class="w-full">
-          <!-- Grid Layout: 3 columns on desktop -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
-            <a 
-              v-for="project in projects" 
-              :key="project.id"
-              :href="project.repoUrl"
-              target="_blank"
-              class="group flex flex-col"
+    <main style="view-transition-name: project-content" class="w-full pb-24">
+      <div v-if="projects.length > 0" class="grid grid-cols-1 gap-x-8 gap-y-14 md:grid-cols-2 lg:grid-cols-3">
+        <a
+          v-for="project in projects"
+          :key="project.id"
+          :href="project.repoUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="group flex min-w-0 flex-col"
+        >
+          <div class="relative mb-5 aspect-[16/9] overflow-hidden rounded-lg border border-[var(--color-fg-lightest)] bg-[var(--color-fg-lightest)]/20">
+            <img
+              :src="project.coverUrl"
+              :alt="`${project.name} preview`"
+              class="h-full w-full object-cover transition duration-700 group-hover:scale-[1.03]"
+              loading="lazy"
             >
-              <!-- Project Preview GIF -->
-              <div class="relative aspect-video overflow-hidden rounded-2xl bg-[var(--color-fg-lightest)]/30 mb-6 border border-[var(--color-fg-lightest)]/50">
-                <img 
-                  :src="project.gif" 
-                  :alt="project.name"
-                  class="w-full h-full object-cover grayscale-[0.2] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
-                />
-                <div class="absolute inset-0 ring-1 ring-inset ring-black/5 rounded-2xl"></div>
-              </div>
+            <div class="absolute inset-0 rounded-lg ring-1 ring-inset ring-black/5"></div>
+          </div>
 
-              <!-- Icon + Project Name -->
-              <div class="flex items-center gap-3 mb-3">
-                <span class="text-xl">{{ project.icon }}</span>
-                <h3 class="text-xl text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] transition-colors duration-300">
-                  {{ project.name }}
-                </h3>
-              </div>
-
-              <!-- Short Description (Line Clamp) -->
-              <p class="text-sm text-[var(--color-fg-light)] font-light leading-relaxed mb-6 line-clamp-2 h-10">
-                {{ project.description }}
+          <div class="mb-3 flex min-w-0 items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="truncate text-xl text-[var(--color-fg-deep)] transition-colors duration-300 group-hover:text-[var(--color-fg-deeper)]">
+                {{ project.name }}
+              </h2>
+              <p class="mt-1 truncate text-xs text-[var(--color-fg-light)]">
+                {{ project.repo }}
               </p>
-
-              <!-- Footer: GitHub + Stars -->
-              <div class="flex items-center gap-4 mt-auto">
-                <div class="flex items-center gap-1.5 text-[var(--color-fg-lighter)] group-hover:text-[var(--color-fg-light)] transition-colors duration-300">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-                  </svg>
-                  <span class="text-[10px] uppercase tracking-wider tabular-nums">{{ project.stars.toLocaleString() }}</span>
-                </div>
-                
-                <span class="text-[var(--color-fg-lightest)] text-xs group-hover:translate-x-1 transition-transform duration-300">→</span>
-              </div>
-            </a>
+            </div>
+            <span
+              v-if="project.language"
+              class="shrink-0 rounded-full border border-[var(--color-fg-lightest)] px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--color-fg)]"
+            >
+              {{ project.language }}
+            </span>
           </div>
 
-          <!-- Empty State -->
-          <div v-if="projects.length === 0" class="py-24 text-center text-[var(--color-fg-light)] font-light">
-            More projects coming soon.
+          <p class="mb-5 line-clamp-3 min-h-[4.5rem] text-sm font-light leading-6 text-[var(--color-fg-light)]">
+            {{ project.description }}
+          </p>
+
+          <div class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--color-fg-lighter)]">
+            <span class="tabular-nums">{{ formatCount(project.stars) }} stars</span>
+            <span class="tabular-nums">{{ formatCount(project.forks) }} forks</span>
+            <span>Updated {{ formatUpdatedDate(project.updatedAt) }}</span>
           </div>
-        </div>
+
+          <div v-if="project.topics.length > 0" class="mt-4 flex flex-wrap gap-2">
+            <span
+              v-for="topic in project.topics.slice(0, 4)"
+              :key="topic"
+              class="rounded-full bg-[var(--color-fg-lightest)]/40 px-2 py-1 text-[10px] text-[var(--color-fg-light)]"
+            >
+              {{ topic }}
+            </span>
+          </div>
+        </a>
+      </div>
+
+      <div v-else class="py-24 text-center text-sm font-light text-[var(--color-fg-light)]">
+        More projects coming soon.
+      </div>
+    </main>
   </Transition>
 </template>
 

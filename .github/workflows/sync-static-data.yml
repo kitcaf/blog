@@ -1,0 +1,42 @@
+name: Sync static data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      GITHUB_TOKEN: ${{ secrets.GH_STATS_TOKEN || github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync Notion articles
+        run: pnpm sync:notion
+
+      - name: Sync GitHub projects
+        run: pnpm sync:github-projects
+
+      - name: Sync GitHub profile
+        run: pnpm sync:github-profile
+
+      - name: Build frontend
+        run: pnpm build:frontend

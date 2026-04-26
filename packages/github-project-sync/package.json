@@ -1,0 +1,24 @@
+{
+  "name": "@blog/github-project-sync",
+  "version": "1.0.0",
+  "description": "GitHub 项目静态数据同步模块",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "sync": "pnpm run build && node dist/sync.js",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
+

@@ -69,7 +69,7 @@ useSeo({
     <main class="flex-1 max-w-3xl">
       <div
         class="flex text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)] mb-4 border-b border-[var(--color-fg-lightest)] pb-4 px-2">
-        <span class="w-20">Date</span>
+        <span class="w-24">Date</span>
         <span class="flex-1">Title</span>
         <span class="w-32 text-right">Tags</span>
       </div>
@@ -79,7 +79,7 @@ useSeo({
         <div :key="activeCategory" class="space-y-1">
           <article v-for="post in filteredPosts" :key="post.slug" @click="goToDetail(post.slug)"
             class="group flex items-center py-3 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
-            <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
+            <time class="w-24 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
             <h2
               class="flex-1 text-xl text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
               {{ post.title }}

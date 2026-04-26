@@ -174,20 +174,13 @@ const toIsoDate = (value: string | undefined, fallbackValue: string): string => 
 }
 
 const formatDisplayDate = (isoDate: string): string => {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    month: '2-digit',
-    day: '2-digit'
-  })
+  const [displayDate] = isoDate.split('T')
 
-  const parts = formatter.formatToParts(new Date(isoDate))
-  const month = parts.find((part) => part.type === 'month')?.value
-  const day = parts.find((part) => part.type === 'day')?.value
-
-  if (!month || !day) {
+  if (!displayDate) {
     throw new Error(`Unable to format display date for: ${isoDate}`)
   }
 
-  return `${month}.${day}`
+  return displayDate
 }
 
 const getExternalCoverUrl = (page: NotionPage): string | undefined => {

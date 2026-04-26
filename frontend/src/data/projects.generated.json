@@ -1,0 +1,23 @@
+[
+  {
+    "id": "kitcaf/repotoc",
+    "repo": "kitcaf/repotoc",
+    "name": "repotoc",
+    "description": "专门为 GitHub 知识库和文档库打造的自动化目录生成工具 Automated Table of Contents Generator for GitHub Documentation Libraries.",
+    "stars": 3,
+    "forks": 0,
+    "language": "TypeScript",
+    "updatedAt": "2026-01-25T02:19:48Z",
+    "repoUrl": "https://github.com/kitcaf/repotoc",
+    "homepage": null,
+    "topics": [
+      "cli",
+      "github-tools",
+      "markdown",
+      "toc-generator"
+    ],
+    "coverUrl": "https://opengraph.githubassets.com/kitcaf-blog/kitcaf/repotoc",
+    "featured": true,
+    "order": 1
+  }
+]

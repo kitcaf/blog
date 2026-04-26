@@ -8,6 +8,24 @@ Notion + 图床 JSON + 自定义前端的 SSG blog架构
 
 SSG 魔法：vite-ssg 开始工作，它会遍历你配置的所有路由（首页、分类页、10个文章页）。对于每一个路由，它在后台悄悄运行你的 Vue 组件，把最终渲染出来的完整 DOM 结构，直接保存成一长串 HTML 字符串，写入 .html 文件。
 
+# 部署方案
+
+方式一：自建服务器（比如买了一台腾讯云/阿里云跑定时任务）
+
+代码拉到服务器上。
+
+在服务器目录下手动新建一个 .env 文件写上 Token。
+
+用 pm2 或者 Linux 的 crontab 设定每天凌晨跑一次 node scripts/build-data.js。
+
+方式二：纯白嫖流（GitHub Actions）
+
+没有任何服务器。
+
+Token 存在 GitHub Secrets 里。
+
+依靠 .github/workflows/deploy.yml 让 GitHub 的机器人在云端帮你把 Token 注入并运行脚本。
+
 # 流程示意图
 
 Notion

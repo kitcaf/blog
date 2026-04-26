@@ -14,6 +14,7 @@ import type {
   NotionBlock,
   NotionClient,
   NotionImageBlockPayload,
+  NotionRichText,
   NotionRichTextBlockPayload,
   RenderWarning,
   RenderedMarkdownBlock,
@@ -49,6 +50,10 @@ const createWarning = (block: NotionBlock, message: string): RenderWarning => ({
 
 const getRichTextPayload = (block: NotionBlock): NotionRichTextBlockPayload => {
   return block[block.type] as NotionRichTextBlockPayload | undefined ?? {}
+}
+
+const isTableRowBlock = (block: NotionBlock): boolean => {
+  return block.type === 'table_row'
 }
 
 const indentMarkdown = (markdown: string, spaces: number): string => {
@@ -166,6 +171,70 @@ const renderImage = (block: NotionBlock, context: BlockRenderContext): RenderedM
   }
 }
 
+const normalizeTableCellMarkdown = (cell: NotionRichText): string => {
+  return markdownFromRichText(cell).replace(/\r?\n/g, '<br>').trim()
+}
+
+const padTableRowCells = (cells: string[], columnCount: number): string[] => {
+  return Array.from({ length: columnCount }, (_, index) => cells[index] ?? '')
+}
+
+const renderMarkdownTableRow = (cells: string[]): string => {
+  return `| ${cells.join(' | ')} |`
+}
+
+const renderMarkdownTableSeparator = (columnCount: number): string => {
+  return renderMarkdownTableRow(Array.from({ length: columnCount }, () => '---'))
+}
+
+const getTableColumnCount = (block: NotionBlock, rows: NotionBlock[]): number => {
+  const tableWidth = block.table?.table_width ?? 0
+  const rowColumnCounts = rows.map((row) => row.table_row?.cells?.length ?? 0)
+
+  return Math.max(tableWidth, ...rowColumnCounts, 0)
+}
+
+const renderTable = async (
+  block: NotionBlock,
+  context: BlockRenderContext
+): Promise<RenderedMarkdownBlock> => {
+  if (!block.has_children) {
+    context.warnings.push(createWarning(block, 'Skipped an empty Notion table.'))
+    return EMPTY_RENDERED_BLOCK
+  }
+
+  const children = await context.client.listBlockChildren(block.id)
+  const tableRows = children.filter(isTableRowBlock)
+  const columnCount = getTableColumnCount(block, tableRows)
+
+  if (tableRows.length === 0 || columnCount === 0) {
+    context.warnings.push(createWarning(block, 'Skipped a Notion table without rows or cells.'))
+    return EMPTY_RENDERED_BLOCK
+  }
+
+  const rows = tableRows.map((row) => {
+    const cells = row.table_row?.cells?.map(normalizeTableCellMarkdown) ?? []
+    return padTableRowCells(cells, columnCount)
+  })
+  // GFM tables require a header row, so the first Notion row is used structurally even when column headers are disabled.
+  const headerRow = rows[0]
+  const bodyRows = rows.slice(1)
+  const markdownRows = [
+    renderMarkdownTableRow(headerRow),
+    renderMarkdownTableSeparator(columnCount),
+    ...bodyRows.map(renderMarkdownTableRow)
+  ]
+  const plainText = tableRows
+    .map((row) => row.table_row?.cells?.map(plainTextFromRichText).join('\t') ?? '')
+    .filter(Boolean)
+    .join('\n')
+
+  return {
+    markdown: markdownRows.join('\n'),
+    plainText
+  }
+}
+
 const renderListItem = async (
   block: NotionBlock,
   context: BlockRenderContext,
@@ -247,6 +316,8 @@ const renderBlock = async (block: NotionBlock, context: BlockRenderContext): Pro
       return { markdown: '---', plainText: '' }
     case 'image':
       return renderImage(block, context)
+    case 'table':
+      return renderTable(block, context)
     default:
       return renderFallbackBlock(block, context)
   }

@@ -118,6 +118,16 @@ export interface NotionImageBlockPayload {
   caption?: NotionRichText
 }
 
+export interface NotionTableBlockPayload {
+  table_width?: number
+  has_column_header?: boolean
+  has_row_header?: boolean
+}
+
+export interface NotionTableRowBlockPayload {
+  cells?: NotionRichText[]
+}
+
 export interface NotionBlock {
   id: string
   type: string
@@ -131,6 +141,8 @@ export interface NotionBlock {
   numbered_list_item?: NotionRichTextBlockPayload
   code?: NotionCodeBlockPayload
   image?: NotionImageBlockPayload
+  table?: NotionTableBlockPayload
+  table_row?: NotionTableRowBlockPayload
   [blockType: string]: unknown
 }
 

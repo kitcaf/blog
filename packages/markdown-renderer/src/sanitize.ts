@@ -18,6 +18,10 @@ export const sanitizeSchema = {
       ...(defaultSchema.attributes?.code ?? []),
       ['className', languageClassPattern]
     ],
+    div: [
+      ...(defaultSchema.attributes?.div ?? []),
+      ['className', 'markdown-table-wrapper']
+    ],
     pre: [
       ...(defaultSchema.attributes?.pre ?? []),
       ['className', 'shiki', 'shiki-themes', 'github-light', 'github-dark', 'markdown-code-block', languageClassPattern],

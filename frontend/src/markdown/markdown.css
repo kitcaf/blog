@@ -186,11 +186,19 @@
     border-radius: 8px;
   }
 
-  .markdown-prose table {
-    display: block;
+  .markdown-prose .markdown-table-wrapper {
     width: 100%;
     overflow-x: auto;
+    border: 1px solid var(--markdown-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-bg) 96%, var(--color-fg-lightest));
+  }
+
+  .markdown-prose table {
+    width: 100%;
+    min-width: 42rem;
     border-collapse: collapse;
+    table-layout: fixed;
     font-size: 0.95rem;
     line-height: 1.55;
   }
@@ -198,13 +206,25 @@
   .markdown-prose th,
   .markdown-prose td {
     border-bottom: 1px solid var(--markdown-border);
-    padding: 0.75rem;
+    padding: 0.8rem 0.95rem;
     text-align: left;
     vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .markdown-prose tr:last-child td {
+    border-bottom: 0;
   }
 
   .markdown-prose th {
+    background: color-mix(in srgb, var(--color-fg-lightest) 36%, transparent);
     color: var(--color-fg-deeper);
     font-weight: 600;
+  }
+
+  @media (max-width: 48rem) {
+    .markdown-prose table {
+      min-width: 36rem;
+    }
   }
 }

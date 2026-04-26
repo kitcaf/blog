@@ -6,6 +6,7 @@ import rehypeStringify from 'rehype-stringify'
 import { rehypeCodeHighlight } from './plugins/codeHighlight.js'
 import { rehypeExternalLinks } from './plugins/externalLinks.js'
 import { rehypeHeadingMetadata } from './plugins/headingMetadata.js'
+import { rehypeTableWrapper } from './plugins/tableWrapper.js'
 import { rehypeSafeMarkdownHtml } from './sanitize.js'
 import type { MarkdownRenderOptions, MarkdownTocItem, RenderedMarkdown } from './types.js'
 
@@ -20,6 +21,7 @@ export const renderMarkdown = async ({ markdown }: MarkdownRenderOptions): Promi
     .use(remarkGfm)
     .use(remarkRehype)
     .use(rehypeCodeHighlight)
+    .use(rehypeTableWrapper)
     .use(...rehypeSafeMarkdownHtml)
     .use(rehypeHeadingMetadata, { toc })
     .use(rehypeExternalLinks)

@@ -62,11 +62,12 @@ export const configureRouter = (router: Router) => {
 
     // 完全关闭 Blog ↔ BlogDetail 之间的所有过渡动画（不要淡入淡出），彻底解决频闪问题
     const isBlogListRoute = (routeName: unknown) => routeName === 'Blog' || routeName === 'BlogArchive'
+    const isSamePageHashNavigation = _to.path === _from.path && _to.hash !== _from.hash
     const isBlogToDetailFlow =
       (isBlogListRoute(_from.name) && _to.name === 'BlogDetail') ||
       (_from.name === 'BlogDetail' && isBlogListRoute(_to.name))
 
-    if (isBlogToDetailFlow) {
+    if (isBlogToDetailFlow || isSamePageHashNavigation) {
       next()
       return
     }

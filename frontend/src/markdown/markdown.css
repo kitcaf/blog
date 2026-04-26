@@ -4,6 +4,7 @@
     --markdown-code-bg: color-mix(in srgb, var(--color-fg-lightest) 44%, transparent);
     --markdown-code-border: color-mix(in srgb, var(--color-fg-lighter) 54%, transparent);
     --markdown-code-label-bg: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    /* md正文字体 */
     --markdown-text-font: "Times New Roman", Times, -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "MiSans L3", "Segoe UI", sans-serif;
 
     color: var(--color-fg-deep);

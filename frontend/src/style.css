@@ -1,8 +1,9 @@
 @import "tailwindcss";
 @import "./markdown/markdown.css";
 
+/* 全站字体：英文优先使用 serif，中文保留清晰的 sans 字体栈 */
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "MiSans L3", "Segoe UI", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: ui-serif, Georgia, Cambria, "Times New Roman", Times, "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "MiSans L3", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", serif;
 }
 
 /* ──────── Theme Variables ──────── */

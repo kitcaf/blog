@@ -80,7 +80,7 @@ onMounted(() => {
               <!-- Icon + Project Name -->
               <div class="flex items-center gap-3 mb-3">
                 <span class="text-xl">{{ project.icon }}</span>
-                <h3 class="text-xl font-serif text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] transition-colors duration-300">
+                <h3 class="text-xl text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] transition-colors duration-300">
                   {{ project.name }}
                 </h3>
               </div>
@@ -113,10 +113,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.font-serif {
-  font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-}
-
 .content-fade-enter-active {
   transition: all 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 }

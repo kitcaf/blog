@@ -81,7 +81,7 @@ useSeo({
                   class="group flex items-center py-7 px-2 hover:bg-[var(--color-fg-lightest)]/30 rounded-xl transition-all duration-500 cursor-pointer border-b border-[var(--color-fg-lightest)]/40 last:border-0">
                   <time class="w-20 text-sm text-[var(--color-fg-light)] tabular-nums font-light">{{ post.date }}</time>
                   <h2
-                    class="flex-1 text-xl font-serif text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
+                    class="flex-1 text-xl text-[var(--color-fg-deep)] group-hover:text-[var(--color-fg-deeper)] group-hover:translate-x-1 transition-all duration-500">
                     {{ post.title }}
                   </h2>
                   <div
@@ -104,10 +104,6 @@ useSeo({
 </template>
 
 <style scoped>
-.font-serif {
-  font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-}
-
 /* Category list switching animation */
 .list-switch-enter-active,
 .list-switch-leave-active {

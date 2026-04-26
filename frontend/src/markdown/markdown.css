@@ -4,18 +4,20 @@
     --markdown-code-bg: color-mix(in srgb, var(--color-fg-lightest) 44%, transparent);
     --markdown-code-border: color-mix(in srgb, var(--color-fg-lighter) 54%, transparent);
     --markdown-code-label-bg: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    --markdown-text-font: "Times New Roman", Times, -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "MiSans L3", "Segoe UI", sans-serif;
 
     color: var(--color-fg-deep);
+    font-family: var(--markdown-text-font);
     font-size: 1.125rem;
-    font-weight: 300;
+    font-weight: 400;
     line-height: 1.76;
   }
 
-  .markdown-prose > * + * {
+  .markdown-prose>*+* {
     margin-top: 1.55rem;
   }
 
-  .markdown-prose > :first-child {
+  .markdown-prose> :first-child {
     margin-top: 0;
   }
 
@@ -23,8 +25,8 @@
   .markdown-prose h3,
   .markdown-prose h4 {
     color: var(--color-fg-deeper);
-    font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-    font-weight: 400;
+    font-family: var(--markdown-text-font);
+    font-weight: 500;
     line-height: 1.2;
     scroll-margin-top: 6rem;
   }
@@ -35,8 +37,8 @@
   }
 
   .markdown-prose h3 {
-    margin-top: 3rem;
-    font-size: 1.625rem;
+    margin-top: 2.6rem;
+    font-size: 1.825rem;
   }
 
   .markdown-prose h4 {
@@ -44,9 +46,9 @@
     font-size: 1.375rem;
   }
 
-  .markdown-prose h2 + *,
-  .markdown-prose h3 + *,
-  .markdown-prose h4 + * {
+  .markdown-prose h2+*,
+  .markdown-prose h3+*,
+  .markdown-prose h4+* {
     margin-top: 1rem;
   }
 
@@ -90,12 +92,12 @@
     list-style: decimal;
   }
 
-  .markdown-prose li + li {
+  .markdown-prose li+li {
     margin-top: 0.45rem;
   }
 
-  .markdown-prose li > ul,
-  .markdown-prose li > ol {
+  .markdown-prose li>ul,
+  .markdown-prose li>ol {
     margin-top: 0.45rem;
   }
 

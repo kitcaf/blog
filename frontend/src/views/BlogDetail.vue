@@ -16,6 +16,7 @@ import { useSeo } from '@/utils/seo'
 const route = useRoute()
 const router = useRouter()
 const emptyRenderedMarkdown: RenderedMarkdown = { html: '', toc: [] }
+const BLOG_ARCHIVE_ROUTE_NAME = 'BlogArchive'
 
 const post = computed(() => getArticleBySlug(route.params.slug))
 const renderedMarkdown = shallowRef<RenderedMarkdown>(emptyRenderedMarkdown)
@@ -45,19 +46,14 @@ watch(
 )
 
 const renderedContentHtml = computed(() => renderedMarkdown.value.html)
-const tocItems = computed(() => renderedMarkdown.value.toc.filter((item) => item.depth <= 3))
+const tocItems = computed(() => renderedMarkdown.value.toc.filter((item) => item.depth <= 4))
 const hasToc = computed(() => tocItems.value.length > 0)
 const articleMetaDescription = computed(() => {
   return post.value ? getArticleExcerpt(post.value) : 'The requested article does not exist.'
 })
 
 const goBack = () => {
-  if (typeof window !== 'undefined' && window.history.length > 1) {
-    router.back()
-    return
-  }
-
-  router.push('/')
+  router.push({ name: BLOG_ARCHIVE_ROUTE_NAME })
 }
 
 useSeo({
@@ -83,7 +79,7 @@ useSeo({
         <span>By {{ post.author }}</span>
       </div>
 
-      <h1 class="mb-8 text-4xl leading-tight font-serif text-[var(--color-fg-deeper)] md:text-5xl">
+      <h1 class="mb-8 text-4xl leading-tight text-[var(--color-fg-deeper)] md:text-5xl">
         {{ post.title }}
       </h1>
 
@@ -100,7 +96,7 @@ useSeo({
       <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
     </button>
 
-    <h1 class="text-4xl md:text-5xl font-serif text-[var(--color-fg-deeper)] leading-tight mb-8">
+    <h1 class="text-4xl md:text-5xl text-[var(--color-fg-deeper)] leading-tight mb-8">
       Article not found
     </h1>
     <p class="text-lg leading-relaxed text-[var(--color-fg)] font-light">
@@ -108,9 +104,3 @@ useSeo({
     </p>
   </main>
 </template>
-
-<style scoped>
-.font-serif {
-  font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-}
-</style>

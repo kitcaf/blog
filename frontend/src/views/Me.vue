@@ -35,7 +35,7 @@ onMounted(() => {
   <main class="flex-1 flex items-center justify-center px-8 pb-32 animate-in fade-in duration-1000">
       <div class="max-w-2xl text-center">
         <h1 
-          class="text-3xl md:text-4xl font-serif text-[var(--color-fg-deep)] leading-relaxed inline"
+          class="text-3xl md:text-4xl text-[var(--color-fg-deep)] leading-relaxed inline"
         >
           {{ displayText }}
           <!-- Blinking Cursor -->
@@ -49,10 +49,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.font-serif {
-  font-family: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", serif;
-}
-
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }

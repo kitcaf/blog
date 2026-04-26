@@ -54,7 +54,7 @@
   }
 
   .markdown-prose p {
-    margin: 0;
+    margin-top: 1rem;
   }
 
   .markdown-prose a {
@@ -126,13 +126,13 @@
     border: 1px solid var(--markdown-code-border);
     border-radius: 8px;
     background: var(--markdown-code-bg);
-    padding: 0.9rem 1rem;
+    padding: 1rem 1.2rem;
     color: var(--color-fg-deep);
-    line-height: 1.45;
+    line-height: 1.55;
   }
 
   .markdown-prose pre[data-language] {
-    min-height: 1.45em;
+    min-height: 1.5em;
   }
 
   .markdown-prose pre[data-language]::before {

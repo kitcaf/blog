@@ -126,13 +126,13 @@
     border: 1px solid var(--markdown-code-border);
     border-radius: 8px;
     background: var(--markdown-code-bg);
-    padding: 1rem 1.125rem;
+    padding: 0.9rem 1rem;
     color: var(--color-fg-deep);
-    line-height: 1.62;
+    line-height: 1.45;
   }
 
   .markdown-prose pre[data-language] {
-    padding-top: 2.5rem;
+    min-height: 1.45em;
   }
 
   .markdown-prose pre[data-language]::before {
@@ -171,11 +171,6 @@
 
   .dark .markdown-prose pre.shiki span {
     color: var(--shiki-dark, inherit);
-  }
-
-  .markdown-prose pre .line {
-    display: block;
-    min-height: 1.62em;
   }
 
   .markdown-prose hr {

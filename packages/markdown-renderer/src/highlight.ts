@@ -165,7 +165,7 @@ const createHighlightedCodeNode = (
   language: string,
   requestedLanguage: string | undefined
 ): HtmlElementNode => {
-  const highlightedRoot = highlighter.codeToHast(code, {
+  const highlightedRoot = highlighter.codeToHast(normalizeCodeBlockContent(code), {
     lang: language,
     rootStyle: false,
     themes: {
@@ -190,6 +190,10 @@ const createHighlightedCodeNode = (
   }
 
   return preElement
+}
+
+const normalizeCodeBlockContent = (code: string): string => {
+  return code.replace(/\r?\n$/, '')
 }
 
 const getPreElement = (root: HtmlRootNode): HtmlElementNode => {

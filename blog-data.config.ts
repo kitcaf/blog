@@ -25,10 +25,10 @@ const blogDataConfig = {
     ]
   },
   outputs: {
-    posts: 'frontend/src/data/posts.json',
-    projects: 'frontend/src/data/projects.generated.json',
-    profile: 'frontend/src/data/profile.generated.json',
-    contributions: 'frontend/src/data/github-contributions.generated.json'
+    posts: 'data/posts.json',
+    projects: 'data/projects.generated.json',
+    profile: 'data/profile.generated.json',
+    contributions: 'data/github-contributions.generated.json'
   }
 }
 

@@ -2,8 +2,19 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { readFileSync } from 'node:fs'
 import type { ViteSSGOptions } from 'vite-ssg'
-import { getArticleRoutePaths } from './src/data/articles'
+
+const postsPath = path.resolve(__dirname, '../data/posts.json')
+
+const getArticleRoutePaths = (): string[] => {
+  const posts = JSON.parse(readFileSync(postsPath, 'utf8')) as Array<{ slug?: unknown }>
+
+  return posts
+    .map((post) => post.slug)
+    .filter((slug): slug is string => typeof slug === 'string' && slug.trim() !== '')
+    .map((slug) => `/blog/${slug}`)
+}
 
 const ssgOptions: ViteSSGOptions = {
   script: 'async',
@@ -26,7 +37,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      '@data': path.resolve(__dirname, '../data')
     }
   },
   ssgOptions

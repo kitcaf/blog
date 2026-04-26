@@ -16,7 +16,4 @@
 node_modules
 /frontend/src/data/*
 !/frontend/src/data/
-!/frontend/src/data/articles.ts
-!/frontend/src/data/projects.generated.json
-!/frontend/src/data/profile.generated.json
-!/frontend/src/data/github-contributions.generated.json
+!/frontend/src/data/*.ts

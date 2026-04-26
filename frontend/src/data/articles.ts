@@ -1,4 +1,4 @@
-import postsData from './posts.json'
+import postsData from '@data/posts.json'
 import type { ArticleDetail, ArticleMeta } from '../types/article'
 
 export const TIMELINE_CATEGORY = 'Timeline'
@@ -76,10 +76,6 @@ export const getArticleExcerpt = (article: ArticleDetail): string => {
   return `${characters.slice(0, ARTICLE_EXCERPT_MAX_LENGTH).join('').trimEnd()}...`
 }
 
-/**
- * 去根据真实数据形成所有的路由
- * @returns 
- */
 export const getArticleRoutePaths = (): string[] => {
   return articles.map((article) => `/blog/${article.slug}`)
 }

@@ -1,44 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import profileData from '@/data/profile.generated.json'
-import contributionsData from '@/data/github-contributions.generated.json'
-
-interface ProfileLink {
-  label: string
-  url: string
-}
-
-interface Profile {
-  name: string
-  githubUsername: string
-  fullText: string
-  bio: string
-  links: ProfileLink[]
-}
-
-interface ContributionDay {
-  date: string
-  contributionCount: number
-  color: string
-}
-
-interface ContributionWeek {
-  contributionDays: ContributionDay[]
-}
-
-interface ContributionCalendar {
-  username: string
-  totalContributions: number
-  weeks: ContributionWeek[]
-  updatedAt: string | null
-}
+import {
+  contributionCalendar,
+  profile,
+  type ContributionDay
+} from '@/data/profile'
 
 const TYPEWRITER_DELAY_MS = 400
 const TYPEWRITER_SPEED_MS = 36
 const CONTRIBUTION_LEVEL_THRESHOLDS = [4, 8, 12] as const
-
-const profile = profileData as Profile
-const contributionCalendar = contributionsData as ContributionCalendar
 
 const displayText = ref(profile.fullText)
 const isComplete = ref(true)

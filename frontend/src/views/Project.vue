@@ -1,24 +1,5 @@
 <script setup lang="ts">
-import projectsData from '@/data/projects.generated.json'
-
-interface Project {
-  id: string
-  repo: string
-  name: string
-  description: string
-  stars: number
-  forks: number
-  language: string | null
-  updatedAt: string | null
-  repoUrl: string
-  homepage: string | null
-  topics: string[]
-  coverUrl: string
-  featured: boolean
-  order: number
-}
-
-const projects = projectsData as Project[]
+import { projects } from '@/data/projects'
 
 const formatCount = (value: number): string => {
   return new Intl.NumberFormat('en', {

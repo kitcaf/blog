@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { BlogDataEnv } from './types.js'
 
-const DEFAULT_ENV_FILES = ['.env', '.env.local', 'frontend/.env', 'frontend/.env.local']
+const DEFAULT_ENV_FILES = ['.env', '.env.local']
 const envAssignmentPattern = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/
 
 const stripInlineComment = (value: string): string => {
@@ -70,4 +70,3 @@ export const readBlogDataEnv = (rootDir: string): BlogDataEnv => {
 
   return { ...fileEnv, ...process.env }
 }
-

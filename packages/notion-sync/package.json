@@ -18,6 +18,7 @@
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@blog/blog-data-config": "workspace:*",
     "pinyin-pro": "^3.28.1"
   }
 }

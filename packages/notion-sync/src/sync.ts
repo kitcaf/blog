@@ -106,7 +106,7 @@ const logWarnings = (pageTitle: string, warnings: RenderWarning[]): void => {
 }
 
 const main = async (): Promise<void> => {
-  const config = loadSyncConfig()
+  const config = await loadSyncConfig()
   const client = createNotionClient(config)
   const dataSourceId = await resolveDataSourceId(client, config)
   const dataSource = await client.retrieveDataSource(dataSourceId)

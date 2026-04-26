@@ -3,7 +3,7 @@
 /packages/*/dist
 .env
 .env.*
-!/frontend/.env.example
+!.env.example
 /frontend/.env
 /frontend/.env.local
 /docs

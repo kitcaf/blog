@@ -1,5 +1,3 @@
-import type { BlogDataConfig } from '@blog/blog-data-config'
-
 const blogDataConfig = {
   projects: {
     sources: [
@@ -27,11 +25,11 @@ const blogDataConfig = {
     ]
   },
   outputs: {
+    posts: 'frontend/src/data/posts.json',
     projects: 'frontend/src/data/projects.generated.json',
     profile: 'frontend/src/data/profile.generated.json',
     contributions: 'frontend/src/data/github-contributions.generated.json'
   }
-} satisfies BlogDataConfig
+}
 
 export default blogDataConfig
-

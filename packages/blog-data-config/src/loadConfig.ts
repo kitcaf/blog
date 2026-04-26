@@ -12,12 +12,6 @@ import type {
 } from './types.js'
 
 const DEFAULT_CONFIG_PATH = 'blog-data.config.ts'
-const DEFAULT_OUTPUTS = {
-  projects: 'frontend/src/data/projects.generated.json',
-  profile: 'frontend/src/data/profile.generated.json',
-  contributions: 'frontend/src/data/github-contributions.generated.json'
-} as const
-
 const githubRepositoryPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const githubUsernamePattern = /^[A-Za-z0-9-]{1,39}$/
 
@@ -138,6 +132,20 @@ const normalizeProfile = (profile: BlogDataConfig['profile']): BlogDataConfig['p
   }
 }
 
+const normalizeOutputPath = (
+  outputs: BlogDataConfig['outputs'],
+  key: keyof BlogDataConfig['outputs'],
+  rootDir: string
+): string => {
+  const outputPath = typeof outputs[key] === 'string' ? outputs[key].trim() : ''
+
+  if (!outputPath) {
+    throw new Error(`outputs.${key} is required.`)
+  }
+
+  return resolveProjectPath(rootDir, outputPath)
+}
+
 const normalizeConfig = (config: BlogDataConfig, rootDir: string): ResolvedBlogDataConfig => {
   if (!config.projects || !Array.isArray(config.projects.sources)) {
     throw new Error('projects.sources must be an array.')
@@ -149,15 +157,20 @@ const normalizeConfig = (config: BlogDataConfig, rootDir: string): ResolvedBlogD
     throw new Error('projects.sources must include at least one repo.')
   }
 
+  if (!config.outputs || typeof config.outputs !== 'object') {
+    throw new Error('outputs config is required.')
+  }
+
   return {
     projects: {
       sources
     },
     profile: normalizeProfile(config.profile),
     outputs: {
-      projects: resolveProjectPath(rootDir, config.outputs?.projects || DEFAULT_OUTPUTS.projects),
-      profile: resolveProjectPath(rootDir, config.outputs?.profile || DEFAULT_OUTPUTS.profile),
-      contributions: resolveProjectPath(rootDir, config.outputs?.contributions || DEFAULT_OUTPUTS.contributions)
+      posts: normalizeOutputPath(config.outputs, 'posts', rootDir),
+      projects: normalizeOutputPath(config.outputs, 'projects', rootDir),
+      profile: normalizeOutputPath(config.outputs, 'profile', rootDir),
+      contributions: normalizeOutputPath(config.outputs, 'contributions', rootDir)
     }
   }
 }

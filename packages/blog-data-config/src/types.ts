@@ -30,10 +30,11 @@ export interface BlogDataConfig {
     bio: string
     links: BlogDataProfileLink[]
   }
-  outputs?: {
-    projects?: string
-    profile?: string
-    contributions?: string
+  outputs: {
+    posts: string
+    projects: string
+    profile: string
+    contributions: string
   }
 }
 
@@ -43,6 +44,7 @@ export interface ResolvedBlogDataConfig {
   }
   profile: BlogDataConfig['profile']
   outputs: {
+    posts: string
     projects: string
     profile: string
     contributions: string
@@ -50,4 +52,3 @@ export interface ResolvedBlogDataConfig {
 }
 
 export type BlogDataEnv = Record<string, string | undefined>
-

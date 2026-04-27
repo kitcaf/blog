@@ -7,8 +7,6 @@ export interface ProfileLink {
 }
 
 export interface Profile {
-  name: string
-  githubUsername: string
   fullText: string
   bio: string
   links: ProfileLink[]
@@ -33,4 +31,3 @@ export interface ContributionCalendar {
 
 export const profile = profileData as Profile
 export const contributionCalendar = contributionsData as ContributionCalendar
-

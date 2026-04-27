@@ -15,7 +15,6 @@ const isComplete = ref(true)
 const typewriterTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const startTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
-const githubProfileUrl = computed(() => `https://github.com/${profile.githubUsername}`)
 const contributionWeeks = computed(() => contributionCalendar.weeks ?? [])
 const hasContributionData = computed(() => contributionWeeks.value.length > 0)
 
@@ -79,41 +78,35 @@ onBeforeUnmount(clearTypewriterTimers)
 
 <template>
   <main class="w-full pb-24 animate-in fade-in duration-1000">
-    <section class="grid gap-10 border-b border-[var(--color-fg-lightest)] pb-12 md:grid-cols-[minmax(0,1fr)_18rem] md:items-end">
-      <div class="min-w-0">
-        <p class="mb-3 text-sm text-[var(--color-fg-light)]">
-          {{ profile.name }}
-        </p>
-        <h1 class="max-w-3xl text-3xl leading-relaxed text-[var(--color-fg-deep)] md:text-4xl">
-          {{ displayText }}
-          <span
-            class="ml-1 inline-block h-[1.2em] w-[2px] align-middle bg-[var(--color-fg-lightest)] transition-opacity duration-100"
-            :class="{ 'animate-pulse': isComplete, 'opacity-100': !isComplete }"
-          ></span>
-        </h1>
-      </div>
+    <section class="mx-auto max-w-3xl border-b border-[var(--color-fg-lightest)] pb-12 text-center">
+      <h1 class="text-3xl leading-relaxed text-[var(--color-fg-deep)] md:text-4xl">
+        {{ displayText }}
+        <span
+          class="ml-1 inline-block h-[1.2em] w-[2px] align-middle bg-[var(--color-fg-lightest)] transition-opacity duration-100"
+          :class="{ 'animate-pulse': isComplete, 'opacity-100': !isComplete }"
+        ></span>
+      </h1>
 
-      <div class="text-left md:text-right">
-        <p class="text-sm font-light leading-6 text-[var(--color-fg-light)]">
-          {{ profile.bio }}
-        </p>
-        <div class="mt-5 flex flex-wrap gap-3 md:justify-end">
-          <a
-            v-for="link in profile.links"
-            :key="link.url"
-            :href="link.url"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-[var(--color-fg-deep)] underline decoration-[var(--color-fg-lightest)] underline-offset-4 transition-colors hover:text-[var(--color-fg-deeper)]"
-          >
-            {{ link.label }}
-          </a>
-        </div>
+      <p class="mx-auto mt-6 max-w-xl text-sm font-light leading-6 text-[var(--color-fg-light)]">
+        {{ profile.bio }}
+      </p>
+
+      <div class="mt-6 flex flex-wrap justify-center gap-3">
+        <a
+          v-for="link in profile.links"
+          :key="link.url"
+          :href="link.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-sm text-[var(--color-fg-deep)] underline decoration-[var(--color-fg-lightest)] underline-offset-4 transition-colors hover:text-[var(--color-fg-deeper)]"
+        >
+          {{ link.label }}
+        </a>
       </div>
     </section>
 
-    <section class="pt-10">
-      <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <section class="mx-auto max-w-3xl pt-10">
+      <div class="mb-6 text-center">
         <div>
           <h2 class="text-lg text-[var(--color-fg-deep)]">
             GitHub Contributions
@@ -122,14 +115,6 @@ onBeforeUnmount(clearTypewriterTimers)
             {{ contributionCalendar.totalContributions.toLocaleString() }} contributions in the last year
           </p>
         </div>
-        <a
-          :href="githubProfileUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm text-[var(--color-fg-light)] transition-colors hover:text-[var(--color-fg-deep)]"
-        >
-          @{{ profile.githubUsername }}
-        </a>
       </div>
 
       <div v-if="hasContributionData" class="overflow-x-auto pb-2">

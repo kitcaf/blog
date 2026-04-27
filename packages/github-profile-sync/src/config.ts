@@ -15,7 +15,6 @@ export const loadProfileSyncConfig = async (rootDir = PROJECT_ROOT): Promise<Pro
     rootDir,
     githubToken: env.GITHUB_TOKEN?.trim() || env.GH_STATS_TOKEN?.trim() || '',
     githubUsername: blogDataConfig.profile.githubUsername,
-    name: blogDataConfig.profile.name,
     fullText: blogDataConfig.profile.fullText,
     bio: blogDataConfig.profile.bio,
     links: blogDataConfig.profile.links,

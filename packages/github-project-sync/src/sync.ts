@@ -55,7 +55,7 @@ const createFallbackProject = (source: ProjectSource): GeneratedProject => {
     forks: 0,
     language: null,
     updatedAt: null,
-    repoUrl: `https://github.com/${source.repo}`,
+    repoUrl: source.repoUrl,
     homepage: null,
     topics: [],
     coverUrl: source.coverUrl || source.fallbackCoverUrl || createDefaultCoverUrl(source.repo),

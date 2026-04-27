@@ -1,5 +1,6 @@
 export interface ProjectSource {
   repo: string
+  repoUrl: string
   coverUrl: string
   fallbackCoverUrl: string
   featured: boolean
@@ -42,4 +43,3 @@ export interface GeneratedProject {
   featured: boolean
   order: number
 }
-

@@ -5,8 +5,6 @@ export type {
   GeneratedContributionCalendar,
   GeneratedProfile,
   GitHubContributionCalendarResponse,
-  GitHubUserResponse,
   ProfileLink,
   ProfileSyncConfig
 } from './types.js'
-

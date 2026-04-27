@@ -6,11 +6,9 @@ import type {
   GeneratedContributionCalendar,
   GeneratedProfile,
   GitHubContributionCalendarResponse,
-  GitHubUserResponse,
   ProfileSyncConfig
 } from './types.js'
 
-const GITHUB_USER_API_BASE_URL = 'https://api.github.com/users'
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql'
 
 const CONTRIBUTIONS_QUERY = `
@@ -60,54 +58,10 @@ const readExistingJson = async <TPayload>(filePath: string, fallbackPayload: TPa
   }
 }
 
-const normalizeWebsite = (url: string | null): string | null => {
-  if (!url?.trim()) {
-    return null
-  }
-
-  try {
-    return new URL(url).toString()
-  } catch {
-    try {
-      return new URL(`https://${url}`).toString()
-    } catch {
-      return null
-    }
-  }
-}
-
 const createFallbackProfile = (config: ProfileSyncConfig): GeneratedProfile => ({
-  name: config.name,
-  githubUsername: config.githubUsername,
   fullText: config.fullText,
   bio: config.bio,
-  avatarUrl: '',
-  githubUrl: `https://github.com/${config.githubUsername}`,
-  company: null,
-  location: null,
-  website: null,
-  publicRepos: 0,
-  followers: 0,
-  following: 0,
-  links: config.links,
-  updatedAt: null
-})
-
-const mapGitHubUserToProfile = (config: ProfileSyncConfig, user: GitHubUserResponse): GeneratedProfile => ({
-  name: config.name || user.name || user.login,
-  githubUsername: user.login,
-  fullText: config.fullText,
-  bio: config.bio || user.bio || '',
-  avatarUrl: user.avatar_url,
-  githubUrl: user.html_url,
-  company: user.company,
-  location: user.location,
-  website: normalizeWebsite(user.blog),
-  publicRepos: user.public_repos,
-  followers: user.followers,
-  following: user.following,
-  links: config.links,
-  updatedAt: new Date().toISOString()
+  links: config.links
 })
 
 const createEmptyContributionCalendar = (username: string): GeneratedContributionCalendar => ({
@@ -153,23 +107,8 @@ const fetchContributionCalendar = async (config: ProfileSyncConfig): Promise<Gen
 }
 
 const syncProfile = async (config: ProfileSyncConfig): Promise<void> => {
-  try {
-    const user = await fetchGitHubJson<GitHubUserResponse>({
-      url: `${GITHUB_USER_API_BASE_URL}/${config.githubUsername}`,
-      token: config.githubToken
-    })
-    const profile = mapGitHubUserToProfile(config, user)
-
-    await writeJsonAtomically(config.profileOutputPath, profile)
-    console.info(`[github-profile-sync] Synced profile to ${path.relative(config.rootDir, config.profileOutputPath)}.`)
-  } catch (error) {
-    const fallbackProfile = createFallbackProfile(config)
-    const existingProfile = await readExistingJson(config.profileOutputPath, fallbackProfile)
-
-    await writeJsonAtomically(config.profileOutputPath, existingProfile)
-    console.warn(`[github-profile-sync] ${getErrorMessage(error)}`)
-    console.warn(`[github-profile-sync] Kept existing profile data at ${path.relative(config.rootDir, config.profileOutputPath)}.`)
-  }
+  await writeJsonAtomically(config.profileOutputPath, createFallbackProfile(config))
+  console.info(`[github-profile-sync] Synced profile to ${path.relative(config.rootDir, config.profileOutputPath)}.`)
 }
 
 const syncContributions = async (config: ProfileSyncConfig): Promise<void> => {

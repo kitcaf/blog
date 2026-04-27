@@ -1,13 +1,10 @@
 export interface BlogDataProjectSourceConfig {
   repo: string
-  coverUrl?: string
-  fallbackCoverUrl?: string
-  featured?: boolean
-  order?: number
 }
 
 export interface BlogDataProjectSource {
   repo: string
+  repoUrl: string
   coverUrl: string
   fallbackCoverUrl: string
   featured: boolean
@@ -20,15 +17,11 @@ export interface BlogDataProfileLink {
 }
 
 export interface BlogDataConfig {
-  projects: {
-    sources: BlogDataProjectSourceConfig[]
-  }
+  projects: BlogDataProjectSourceConfig[]
   profile: {
-    githubUsername: string
-    name: string
     fullText: string
     bio: string
-    links: BlogDataProfileLink[]
+    links: string[]
   }
   outputs: {
     posts: string
@@ -42,7 +35,12 @@ export interface ResolvedBlogDataConfig {
   projects: {
     sources: BlogDataProjectSource[]
   }
-  profile: BlogDataConfig['profile']
+  profile: {
+    githubUsername: string
+    fullText: string
+    bio: string
+    links: BlogDataProfileLink[]
+  }
   outputs: {
     posts: string
     projects: string

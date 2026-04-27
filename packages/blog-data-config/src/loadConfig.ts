@@ -12,8 +12,8 @@ import type {
 } from './types.js'
 
 const DEFAULT_CONFIG_PATH = 'blog-data.config.ts'
-const githubRepositoryPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const githubUsernamePattern = /^[A-Za-z0-9-]{1,39}$/
+const githubHostPattern = /^(?:www\.)?github\.com$/i
 
 const resolveProjectPath = (rootDir: string, maybeRelativePath: string): string => {
   return path.isAbsolute(maybeRelativePath)
@@ -59,76 +59,110 @@ const getConfigExport = async (configPath: string): Promise<BlogDataConfig> => {
   return config as BlogDataConfig
 }
 
+const parseGitHubRepository = (repo: string, fieldName: string): { repo: string; repoUrl: string } => {
+  const normalizedRepo = repo.trim()
+
+  try {
+    const repoUrl = new URL(normalizedRepo)
+    const [owner, name, ...extraSegments] = repoUrl.pathname.split('/').filter(Boolean)
+
+    if (
+      repoUrl.protocol !== 'https:' ||
+      !githubHostPattern.test(repoUrl.hostname) ||
+      !owner ||
+      !name ||
+      extraSegments.length > 0
+    ) {
+      throw new Error()
+    }
+
+    const repositoryName = name.replace(/\.git$/, '')
+
+    return {
+      repo: `${owner}/${repositoryName}`,
+      repoUrl: `https://github.com/${owner}/${repositoryName}`
+    }
+  } catch {
+    throw new Error(`${fieldName} must be a GitHub repository URL, for example "https://github.com/owner/name".`)
+  }
+}
+
 const normalizeProjectSource = (source: BlogDataProjectSourceConfig, index: number): BlogDataProjectSource => {
   if (!source || typeof source !== 'object') {
-    throw new Error(`projects.sources[${index}] must be an object.`)
+    throw new Error(`projects[${index}] must be an object.`)
   }
 
-  const repo = typeof source.repo === 'string' ? source.repo.trim() : ''
-
-  if (!githubRepositoryPattern.test(repo)) {
-    throw new Error(`projects.sources[${index}].repo must use "owner/name" format.`)
-  }
+  const { repo, repoUrl } = parseGitHubRepository(
+    typeof source.repo === 'string' ? source.repo.trim() : '',
+    `projects[${index}].repo`
+  )
 
   return {
     repo,
-    coverUrl: typeof source.coverUrl === 'string' ? source.coverUrl.trim() : '',
-    fallbackCoverUrl: typeof source.fallbackCoverUrl === 'string' ? source.fallbackCoverUrl.trim() : '',
-    featured: typeof source.featured === 'boolean' ? source.featured : index === 0,
-    order: Number.isFinite(source.order) ? Number(source.order) : index + 1
+    repoUrl,
+    coverUrl: '',
+    fallbackCoverUrl: '',
+    featured: index === 0,
+    order: index + 1
   }
 }
 
-const normalizeProfileLink = (link: BlogDataProfileLink, index: number): BlogDataProfileLink => {
-  if (!link || typeof link !== 'object') {
-    throw new Error(`profile.links[${index}] must be an object.`)
-  }
-
-  const label = typeof link.label === 'string' ? link.label.trim() : ''
-  const url = typeof link.url === 'string' ? link.url.trim() : ''
-
-  if (!label) {
-    throw new Error(`profile.links[${index}].label is required.`)
-  }
-
+const normalizeProfileLink = (link: string, index: number): BlogDataProfileLink => {
   try {
+    const linkUrl = new URL(link.trim())
+
     return {
-      label,
-      url: new URL(url).toString()
+      label: githubHostPattern.test(linkUrl.hostname) ? 'GitHub' : linkUrl.hostname.replace(/^www\./, ''),
+      url: linkUrl.toString()
     }
   } catch {
-    throw new Error(`profile.links[${index}].url must be a valid URL.`)
+    throw new Error(`profile.links[${index}] must be a valid URL.`)
   }
 }
 
-const normalizeProfile = (profile: BlogDataConfig['profile']): BlogDataConfig['profile'] => {
+const getGitHubUsernameFromLinks = (links: BlogDataProfileLink[]): string => {
+  const githubLink = links.find((link) => {
+    const linkUrl = new URL(link.url)
+    return githubHostPattern.test(linkUrl.hostname)
+  })
+
+  if (!githubLink) {
+    throw new Error('profile.links must include one GitHub profile URL.')
+  }
+
+  const githubUrl = new URL(githubLink.url)
+  const [username, ...extraSegments] = githubUrl.pathname.split('/').filter(Boolean)
+
+  if (!username || extraSegments.length > 0 || !githubUsernamePattern.test(username)) {
+    throw new Error('profile.links must include a valid GitHub profile URL, for example "https://github.com/kitcaf".')
+  }
+
+  return username
+}
+
+const normalizeProfile = (profile: BlogDataConfig['profile']): ResolvedBlogDataConfig['profile'] => {
   if (!profile || typeof profile !== 'object') {
     throw new Error('profile config is required.')
   }
 
-  const githubUsername = typeof profile.githubUsername === 'string' ? profile.githubUsername.trim() : ''
-  const name = typeof profile.name === 'string' ? profile.name.trim() : ''
   const fullText = typeof profile.fullText === 'string' ? profile.fullText.trim() : ''
   const bio = typeof profile.bio === 'string' ? profile.bio.trim() : ''
 
-  if (!githubUsernamePattern.test(githubUsername)) {
-    throw new Error('profile.githubUsername must be a valid GitHub username.')
-  }
-
-  if (!name || !fullText || !bio) {
-    throw new Error('profile.name, profile.fullText, and profile.bio are required.')
+  if (!fullText || !bio) {
+    throw new Error('profile.fullText and profile.bio are required.')
   }
 
   if (!Array.isArray(profile.links)) {
     throw new Error('profile.links must be an array.')
   }
 
+  const links = profile.links.map(normalizeProfileLink)
+
   return {
-    githubUsername,
-    name,
+    githubUsername: getGitHubUsernameFromLinks(links),
     fullText,
     bio,
-    links: profile.links.map(normalizeProfileLink)
+    links
   }
 }
 
@@ -147,14 +181,14 @@ const normalizeOutputPath = (
 }
 
 const normalizeConfig = (config: BlogDataConfig, rootDir: string): ResolvedBlogDataConfig => {
-  if (!config.projects || !Array.isArray(config.projects.sources)) {
-    throw new Error('projects.sources must be an array.')
+  if (!Array.isArray(config.projects)) {
+    throw new Error('projects must be an array.')
   }
 
-  const sources = config.projects.sources.map(normalizeProjectSource)
+  const sources = config.projects.map(normalizeProjectSource)
 
   if (sources.length === 0) {
-    throw new Error('projects.sources must include at least one repo.')
+    throw new Error('projects must include at least one repo.')
   }
 
   if (!config.outputs || typeof config.outputs !== 'object') {

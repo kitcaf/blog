@@ -1,25 +1,10 @@
 {
-  "name": "kitcaf",
-  "githubUsername": "kitcaf",
   "fullText": "Welcome to my digital garden. I build small tools, durable notes, and practical systems around AI-assisted engineering.",
   "bio": "Developer focused on frontend craft, automation, and personal knowledge workflows.",
-  "avatarUrl": "https://avatars.githubusercontent.com/u/97529803?v=4",
-  "githubUrl": "https://github.com/kitcaf",
-  "company": "Tianjin University",
-  "location": "Tianjin Province, China",
-  "website": null,
-  "publicRepos": 38,
-  "followers": 4,
-  "following": 12,
   "links": [
     {
       "label": "GitHub",
       "url": "https://github.com/kitcaf"
-    },
-    {
-      "label": "repotoc",
-      "url": "https://github.com/kitcaf/repotoc"
     }
-  ],
-  "updatedAt": "2026-04-26T13:09:09.153Z"
+  ]
 }

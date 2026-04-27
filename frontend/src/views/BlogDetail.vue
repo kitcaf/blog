@@ -73,15 +73,17 @@ useSeo({
         <span class="text-xs font-medium tracking-tight uppercase">Back to Timeline</span>
       </button>
 
+
+
+      <h1 class="mb-2 text-4xl leading-tight text-[var(--color-fg-deeper)] md:text-5xl">
+        {{ post.title }}
+      </h1>
+
       <div class="mb-6 flex items-center gap-4 text-[10px] uppercase tracking-[0.2em] text-[var(--color-fg-lighter)]">
         <time class="tabular-nums">{{ post.date }}</time>
         <span class="h-1 w-1 rounded-full bg-[var(--color-fg-lightest)]"></span>
         <span>By {{ post.author }}</span>
       </div>
-
-      <h1 class="mb-8 text-4xl leading-tight text-[var(--color-fg-deeper)] md:text-5xl">
-        {{ post.title }}
-      </h1>
 
       <article class="markdown-prose" v-html="renderedContentHtml"></article>
     </main>

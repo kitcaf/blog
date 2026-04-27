@@ -5,6 +5,10 @@
  */
 export { renderNotionBlocksToMarkdown } from './notionBlocksToMarkdown.js'
 export {
+  createImageAssetResolver,
+  loadImageAssetsConfig
+} from './imageAssets/index.js'
+export {
   buildPublishedFilter,
   getQueryPropertyNames,
   mapNotionPageToArticle
@@ -19,3 +23,7 @@ export type {
   RenderedMarkdownContent,
   SyncConfig
 } from './types.js'
+export type {
+  ImageAssetResolver,
+  ImageAssetsConfig
+} from './imageAssets/index.js'

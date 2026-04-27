@@ -3,6 +3,8 @@
  *
  * 只描述同步链路实际读取和生成的字段，避免把完整 Notion API 类型搬进项目导致模型过重。
  */
+import type { ImageAssetsConfig } from './imageAssets/index.js'
+
 export interface SyncPropertyNames {
   title: string
   status: string
@@ -20,6 +22,7 @@ export interface SyncConfig {
   outputPath: string
   author: string
   allowEmptySync: boolean
+  imageAssets: ImageAssetsConfig
   properties: SyncPropertyNames
 }
 
@@ -98,6 +101,10 @@ export interface NotionPage {
     external?: {
       url: string
     }
+    file?: {
+      url: string
+      expiry_time?: string
+    }
   } | null
 }
 
@@ -114,6 +121,10 @@ export interface NotionImageBlockPayload {
   type?: string
   external?: {
     url: string
+  }
+  file?: {
+    url: string
+    expiry_time?: string
   }
   caption?: NotionRichText
 }
@@ -132,6 +143,7 @@ export interface NotionBlock {
   id: string
   type: string
   has_children?: boolean
+  last_edited_time?: string
   paragraph?: NotionRichTextBlockPayload
   heading_1?: NotionRichTextBlockPayload
   heading_2?: NotionRichTextBlockPayload

@@ -1,3 +1,10 @@
+/**
+ * 读入上下文配置
+ * 方式一：自建服务器
+ * 方式二：GitHub Actions
+ * 都可以读到上下文的配置变量
+ */
+
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { BlogDataEnv } from './types.js'

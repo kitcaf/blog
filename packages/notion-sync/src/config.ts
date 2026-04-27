@@ -6,6 +6,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadBlogDataConfig, readBlogDataEnv } from '@blog/blog-data-config'
+import { loadImageAssetsConfig } from './imageAssets/index.js'
 import type { SyncConfig } from './types.js'
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
@@ -24,7 +25,7 @@ const SYNC_SETTINGS = {
     publishedAt: 'PublishedAt',
     slug: 'Slug'
   }
-} satisfies Omit<SyncConfig, 'rootDir' | 'notionToken' | 'notionDatabaseId' | 'outputPath'>
+} satisfies Omit<SyncConfig, 'rootDir' | 'notionToken' | 'notionDatabaseId' | 'outputPath' | 'imageAssets'>
 
 const dashedNotionIdPattern = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/
 const compactNotionIdPattern = /[0-9a-fA-F]{32}/
@@ -73,6 +74,7 @@ export const loadSyncConfig = async (rootDir = PROJECT_ROOT): Promise<SyncConfig
     outputPath: blogDataConfig.outputs.posts,
     author: SYNC_SETTINGS.author,
     allowEmptySync: SYNC_SETTINGS.allowEmptySync,
+    imageAssets: loadImageAssetsConfig(env),
     properties: SYNC_SETTINGS.properties
   }
 }

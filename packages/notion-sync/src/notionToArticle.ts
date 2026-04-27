@@ -239,11 +239,13 @@ export const getQueryPropertyNames = (dataSource: NotionDataSource, config: Sync
 export const mapNotionPageToArticle = ({
   page,
   renderedContent,
-  config
+  config,
+  coverUrl
 }: {
   page: NotionPage
   renderedContent: RenderedMarkdownContent
   config: SyncConfig
+  coverUrl?: string
 }): ArticleDetail => {
   const properties = page.properties ?? {}
   const sourceId = getSourceId(page.id)
@@ -260,7 +262,7 @@ export const mapNotionPageToArticle = ({
   )
   const category = normalizePlainText(getStringPropertyValue(properties, config.properties.category)) || DEFAULT_CATEGORY
   const tags = getTagsPropertyValue(properties, config.properties.tags)
-  const cover = getExternalCoverUrl(page)
+  const cover = coverUrl || getExternalCoverUrl(page)
 
   return {
     sourceId,

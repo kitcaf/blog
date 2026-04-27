@@ -31,8 +31,23 @@ Notion 数据库默认使用这些字段：
 
 ## 支持的正文块
 
-当前支持 paragraph、heading、list、quote、code、divider 和外部图片链接。
+当前支持 paragraph、heading、list、quote、code、divider、外部图片链接和 Notion 上传图片缓存。
 不支持的 block 会降级处理并输出 warning，不会中断整次同步。
 
-Notion 上传图片的链接会过期，所以暂时跳过；正式图片迁移放到后续阶段。
+external 图片会保留原始 URL。Notion-hosted file 图片会在 `sync:notion` 阶段下载、上传到配置的图床 provider，并把正文中的临时 URL 替换成稳定公开 URL。
 
+Cloudflare R2 图床参数：
+
+```bash
+IMAGE_ASSET_PROVIDER=cloudflare-r2
+R2_ACCOUNT_ID=
+R2_BUCKET_NAME=blog-images
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_ENDPOINT=https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
+R2_PUBLIC_BASE_URL=https://pub-xxxx.r2.dev
+R2_OBJECT_PREFIX=notion-images
+R2_CACHE_MANIFEST_KEY=notion-images/cache/notion-image-cache.json
+```
+
+R2 凭证只在 Node 构建脚本中使用，不要使用 `VITE_` 前缀。manifest 缓存在 R2 中共享，避免本地、服务器和 GitHub Actions 重复上传同一张未变化的 Notion 图片。

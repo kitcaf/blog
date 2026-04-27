@@ -7,8 +7,8 @@ const blogDataConfig = {
     }
   ],
   profile: {
-    fullText: 'Welcome to my digital garden. I build small tools, durable notes, and practical systems around AI-assisted engineering.',
-    bio: 'Developer focused on frontend craft, automation, and personal knowledge workflows.',
+    fullText: 'Welcome to my blog. Here I share my insights on full-stack development, document my learning journey with AI agents, and explore the practical uses of AIGC.',
+    bio: 'Full-stack developer. Sharing notes and thoughts on AI agents and AIGC.',
     links: ['https://github.com/kitcaf']
   },
   outputs: {

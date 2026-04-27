@@ -15,6 +15,11 @@ import {
 } from './notionToArticle.js'
 import { renderNotionBlocksToMarkdown } from './notionBlocksToMarkdown.js'
 import { validateArticles } from './validateArticles.js'
+import {
+  createImageAssetResolver,
+  formatImageAssetWarning
+} from './imageAssets/index.js'
+import type { ImageAssetResolver } from './imageAssets/index.js'
 import type {
   ArticleDetail,
   NotionClient,
@@ -81,19 +86,94 @@ const resolveDataSourceId = async (client: NotionClient, config: SyncConfig): Pr
 const renderPage = async ({
   page,
   client,
-  config
+  config,
+  imageAssetResolver
 }: {
   page: NotionPage
   client: NotionClient
   config: SyncConfig
+  imageAssetResolver: ImageAssetResolver
 }): Promise<{ article: ArticleDetail; warnings: RenderWarning[] }> => {
   const blocks = await client.listBlockChildren(page.id)
-  const renderedContent = await renderNotionBlocksToMarkdown(blocks, client)
-  const article = mapNotionPageToArticle({ page, renderedContent, config })
+  const renderedContent = await renderNotionBlocksToMarkdown(blocks, client, {
+    pageId: page.id,
+    pageLastEditedTime: page.last_edited_time,
+    imageResolver: imageAssetResolver
+  })
+  const coverResult = await resolvePageCover({ page, imageAssetResolver })
+  const article = mapNotionPageToArticle({
+    page,
+    renderedContent,
+    config,
+    coverUrl: coverResult.coverUrl
+  })
 
   return {
     article,
-    warnings: renderedContent.warnings
+    warnings: [...renderedContent.warnings, ...coverResult.warnings]
+  }
+}
+
+const resolvePageCover = async ({
+  page,
+  imageAssetResolver
+}: {
+  page: NotionPage
+  imageAssetResolver: ImageAssetResolver
+}): Promise<{ coverUrl?: string; warnings: RenderWarning[] }> => {
+  const cover = page.cover
+
+  if (!cover) {
+    return { warnings: [] }
+  }
+
+  if (cover.type === 'external') {
+    const coverUrl = await imageAssetResolver.resolveExternalImage(cover.external?.url ?? '')
+    return coverUrl
+      ? { coverUrl, warnings: [] }
+      : {
+          warnings: [{
+            blockId: 'cover',
+            blockType: 'cover',
+            message: 'Skipped an external cover image without a URL.'
+          }]
+        }
+  }
+
+  if (cover.type !== 'file') {
+    return {
+      warnings: [{
+        blockId: 'cover',
+        blockType: 'cover',
+        message: `Skipped an unsupported cover image source type "${cover.type ?? 'unknown'}".`
+      }]
+    }
+  }
+
+  try {
+    const coverUrl = await imageAssetResolver.resolveNotionFileImage({
+      pageId: page.id,
+      blockId: 'cover',
+      blockType: 'cover',
+      lastEditedTime: page.last_edited_time,
+      temporaryUrl: cover.file?.url ?? ''
+    })
+
+    return coverUrl ? { coverUrl, warnings: [] } : { warnings: [] }
+  } catch (error) {
+    return {
+      warnings: [{
+        blockId: 'cover',
+        blockType: 'cover',
+        message: formatImageAssetWarning({
+          pageId: page.id,
+          blockId: 'cover',
+          blockType: 'cover',
+          sourceType: 'Notion-hosted cover',
+          error
+        })
+      }]
+    }
   }
 }
 
@@ -108,6 +188,10 @@ const logWarnings = (pageTitle: string, warnings: RenderWarning[]): void => {
 const main = async (): Promise<void> => {
   const config = await loadSyncConfig()
   const client = createNotionClient(config)
+  const imageAssetResolver = await createImageAssetResolver({
+    config: config.imageAssets,
+    logger: console
+  })
   const dataSourceId = await resolveDataSourceId(client, config)
   const dataSource = await client.retrieveDataSource(dataSourceId)
   const filter = buildPublishedFilter(dataSource, config)
@@ -122,9 +206,15 @@ const main = async (): Promise<void> => {
     )
   }
 
-  const renderedPages = await mapWithConcurrency(pages, BLOCK_CONCURRENCY, async (page) => {
-    return renderPage({ page, client, config })
-  })
+  let renderedPages: Array<{ article: ArticleDetail; warnings: RenderWarning[] }> = []
+
+  try {
+    renderedPages = await mapWithConcurrency(pages, BLOCK_CONCURRENCY, async (page) => {
+      return renderPage({ page, client, config, imageAssetResolver })
+    })
+  } finally {
+    await imageAssetResolver.flush()
+  }
 
   for (const renderedPage of renderedPages) {
     logWarnings(renderedPage.article.title, renderedPage.warnings)

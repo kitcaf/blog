@@ -10,6 +10,8 @@ import {
   normalizePlainText,
   plainTextFromRichText
 } from './richText.js'
+import { formatImageAssetWarning } from './imageAssets/index.js'
+import type { ImageAssetResolver } from './imageAssets/index.js'
 import type {
   NotionBlock,
   NotionClient,
@@ -40,6 +42,15 @@ const backtickRunPattern = /`+/g
 interface BlockRenderContext {
   client: NotionClient
   warnings: RenderWarning[]
+  pageId?: string
+  pageLastEditedTime?: string
+  imageResolver?: ImageAssetResolver
+}
+
+interface RenderNotionBlocksOptions {
+  pageId?: string
+  pageLastEditedTime?: string
+  imageResolver?: ImageAssetResolver
 }
 
 const createWarning = (block: NotionBlock, message: string): RenderWarning => ({
@@ -146,19 +157,43 @@ const renderCode = (block: NotionBlock): RenderedMarkdownBlock => {
   }
 }
 
-const renderImage = (block: NotionBlock, context: BlockRenderContext): RenderedMarkdownBlock => {
+const getBlockLastEditedTime = (block: NotionBlock, context: BlockRenderContext): string => {
+  return block.last_edited_time ?? context.pageLastEditedTime ?? ''
+}
+
+const renderImage = async (block: NotionBlock, context: BlockRenderContext): Promise<RenderedMarkdownBlock> => {
   const payload: NotionImageBlockPayload = block.image ?? {}
   const captionText = plainTextFromRichText(payload.caption)
+  let imageUrl = ''
 
-  if (payload.type !== 'external') {
-    context.warnings.push(createWarning(block, 'Skipped a Notion-hosted image because Notion file URLs expire.'))
+  if (payload.type === 'external') {
+    imageUrl = await context.imageResolver?.resolveExternalImage(payload.external?.url ?? '') ?? payload.external?.url ?? ''
+  } else if (payload.type === 'file') {
+    try {
+      imageUrl = await context.imageResolver?.resolveNotionFileImage({
+        pageId: context.pageId ?? '',
+        blockId: block.id,
+        blockType: block.type,
+        lastEditedTime: getBlockLastEditedTime(block, context),
+        temporaryUrl: payload.file?.url ?? ''
+      }) ?? ''
+    } catch (error) {
+      context.warnings.push(createWarning(block, formatImageAssetWarning({
+        pageId: context.pageId ?? 'unknown',
+        blockId: block.id,
+        blockType: block.type,
+        sourceType: 'Notion-hosted',
+        error
+      })))
+      return EMPTY_RENDERED_BLOCK
+    }
+  } else {
+    context.warnings.push(createWarning(block, `Skipped an unsupported image source type "${payload.type ?? 'unknown'}".`))
     return EMPTY_RENDERED_BLOCK
   }
 
-  const imageUrl = payload.external?.url
-
   if (!imageUrl) {
-    context.warnings.push(createWarning(block, 'Skipped an external image block without a URL.'))
+    context.warnings.push(createWarning(block, `Skipped a ${payload.type ?? 'unknown'} image block without a URL.`))
     return EMPTY_RENDERED_BLOCK
   }
 
@@ -361,9 +396,16 @@ const renderBlockSequence = async (
 
 export const renderNotionBlocksToMarkdown = async (
   blocks: NotionBlock[],
-  client: NotionClient
+  client: NotionClient,
+  options: RenderNotionBlocksOptions = {}
 ): Promise<RenderedMarkdownContent> => {
-  const context: BlockRenderContext = { client, warnings: [] }
+  const context: BlockRenderContext = {
+    client,
+    warnings: [],
+    pageId: options.pageId,
+    pageLastEditedTime: options.pageLastEditedTime,
+    imageResolver: options.imageResolver
+  }
   const renderedBlocks = await renderBlockSequence(blocks, context)
 
   return {

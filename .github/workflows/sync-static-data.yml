@@ -21,7 +21,6 @@ jobs:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       GITHUB_TOKEN: ${{ secrets.GH_STATS_TOKEN || github.token }}
-      GH_STATS_TOKEN: ${{ secrets.GH_STATS_TOKEN }}
       SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH || (endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name)) }}
 
     steps:
@@ -52,7 +51,7 @@ jobs:
           set -euo pipefail
 
           search_paths=(frontend/dist data)
-          secret_names=(NOTION_TOKEN NOTION_DATABASE_ID GITHUB_TOKEN GH_STATS_TOKEN)
+          secret_names=(NOTION_TOKEN NOTION_DATABASE_ID GITHUB_TOKEN)
 
           for secret_name in "${secret_names[@]}"; do
             secret_value="${!secret_name:-}"

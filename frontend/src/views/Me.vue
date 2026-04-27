@@ -168,8 +168,7 @@ onBeforeUnmount(clearTypewriterTimers)
         {{ displayText }}
         <span
           class="ml-1 inline-block h-[1.2em] w-[2px] align-middle bg-[var(--color-fg-lightest)] transition-opacity duration-100"
-          :class="{ 'animate-pulse': isComplete, 'opacity-100': !isComplete }"
-        ></span>
+          :class="{ 'animate-pulse': isComplete, 'opacity-100': !isComplete }"></span>
       </h1>
 
       <p class="mx-auto mt-6 max-w-xl text-sm font-light leading-6 text-[var(--color-fg-light)]">
@@ -177,14 +176,8 @@ onBeforeUnmount(clearTypewriterTimers)
       </p>
 
       <div class="mt-7 flex flex-wrap justify-center gap-3">
-        <a
-          v-for="link in profile.links"
-          :key="link.url"
-          :href="link.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm text-[var(--color-fg-deep)] underline decoration-[var(--color-fg-lightest)] underline-offset-4 transition-colors hover:text-[var(--color-fg-deeper)] hover:decoration-[var(--color-fg)]"
-        >
+        <a v-for="link in profile.links" :key="link.url" :href="link.url" target="_blank" rel="noopener noreferrer"
+          class="text-sm text-[var(--color-fg-deep)] underline decoration-[var(--color-fg-lightest)] underline-offset-4 transition-colors hover:text-[var(--color-fg-deeper)] hover:decoration-[var(--color-fg)]">
           {{ link.label }}
         </a>
       </div>
@@ -223,35 +216,20 @@ onBeforeUnmount(clearTypewriterTimers)
       </dl>
 
       <div v-if="hasContributionData" class="contribution-viewport">
-        <div
-          class="contribution-chart"
-          aria-label="GitHub contribution calendar"
-          :style="{ '--week-count': String(contributionWeeks.length) }"
-        >
+        <div class="contribution-chart" aria-label="GitHub contribution calendar"
+          :style="{ '--week-count': String(contributionWeeks.length) }">
           <div class="contribution-months" aria-hidden="true">
-            <span
-              v-for="month in contributionMonths"
-              :key="month.key"
-              :style="{ gridColumn: `${month.weekIndex + 1} / span ${month.span}` }"
-            >
+            <span v-for="month in contributionMonths" :key="month.key"
+              :style="{ gridColumn: `${month.weekIndex + 1} / span ${month.span}` }">
               {{ month.label }}
             </span>
           </div>
 
           <div class="contribution-weeks">
-            <div
-              v-for="(week, weekIndex) in contributionWeeks"
-              :key="weekIndex"
-              class="contribution-week"
-              :style="{ '--week-delay': getContributionAnimationDelay(weekIndex) }"
-            >
-              <span
-                v-for="day in week.contributionDays"
-                :key="day.date"
-                class="contribution-day"
-                :data-level="getContributionLevel(day.contributionCount)"
-                :title="formatContributionTitle(day)"
-              ></span>
+            <div v-for="(week, weekIndex) in contributionWeeks" :key="weekIndex" class="contribution-week"
+              :style="{ '--week-delay': getContributionAnimationDelay(weekIndex) }">
+              <span v-for="day in week.contributionDays" :key="day.date" class="contribution-day"
+                :data-level="getContributionLevel(day.contributionCount)" :title="formatContributionTitle(day)"></span>
             </div>
           </div>
 
@@ -279,21 +257,23 @@ onBeforeUnmount(clearTypewriterTimers)
   --contribution-cell-width: 10px;
   --contribution-row-height: 14px;
   --contribution-gap: 4px;
-  --activity-empty: rgb(238 238 238 / 0.9);
-  --activity-level-1: #d8d8d8;
-  --activity-level-2: #a9a9a9;
-  --activity-level-3: #6f6f6f;
-  --activity-level-4: #171717;
-  --activity-ring: rgb(0 0 0 / 0.05);
+  --activity-empty: #f2f1ee;
+  --activity-empty-ring: rgb(0 0 0 / 0.045);
+  --activity-level-1: #c7d0d6;
+  --activity-level-2: #8ea0ac;
+  --activity-level-3: #536a78;
+  --activity-level-4: #17232c;
+  --activity-ring: rgb(0 0 0 / 0.075);
 }
 
 :global(.dark) .me-page {
-  --activity-empty: rgb(255 255 255 / 0.06);
-  --activity-level-1: #3f3f46;
-  --activity-level-2: #71717a;
-  --activity-level-3: #d4d4d8;
-  --activity-level-4: #ffffff;
-  --activity-ring: rgb(255 255 255 / 0.06);
+  --activity-empty: rgb(255 255 255 / 0.055);
+  --activity-empty-ring: rgb(255 255 255 / 0.05);
+  --activity-level-1: #34434d;
+  --activity-level-2: #617584;
+  --activity-level-3: #a7b7c1;
+  --activity-level-4: #f5f8fa;
+  --activity-ring: rgb(255 255 255 / 0.08);
 }
 
 .contribution-section {
@@ -409,6 +389,7 @@ onBeforeUnmount(clearTypewriterTimers)
 .legend-dot[data-level="0"] {
   --activity-height: 8px;
   background: var(--activity-empty);
+  box-shadow: inset 0 0 0 1px var(--activity-empty-ring);
 }
 
 .contribution-day[data-level="1"],
@@ -482,6 +463,7 @@ onBeforeUnmount(clearTypewriterTimers)
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;

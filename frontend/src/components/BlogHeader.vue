@@ -15,9 +15,19 @@ const navLinks = [
   { path: '/me', label: 'Me' }
 ]
 
+const blogRouteNames = new Set(['Blog', 'BlogArchive', 'BlogDetail'])
+
 const isActiveLink = (path: string) => {
   if (path === '/') {
-    return route.path === '/' || route.path.startsWith('/blog')
+    return blogRouteNames.has(String(route.name))
+  }
+
+  if (path === '/project') {
+    return route.name === 'Project'
+  }
+
+  if (path === '/me') {
+    return route.name === 'Me'
   }
 
   return route.path.startsWith(path)

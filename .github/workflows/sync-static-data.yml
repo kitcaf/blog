@@ -1,17 +1,28 @@
-name: Sync static data
+name: Deploy static site
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 18 * * *"
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
 jobs:
-  sync:
+  build:
     runs-on: ubuntu-latest
     env:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       GITHUB_TOKEN: ${{ secrets.GH_STATS_TOKEN || github.token }}
+      GH_STATS_TOKEN: ${{ secrets.GH_STATS_TOKEN }}
+      SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH || (endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name)) }}
 
     steps:
       - name: Checkout
@@ -29,14 +40,45 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Sync Notion articles
-        run: pnpm sync:notion
+      - name: Build static site
+        run: pnpm build:site
 
-      - name: Sync GitHub projects
-        run: pnpm sync:github-projects
+      - name: Verify deployment artifact
+        run: test -f frontend/dist/index.html
 
-      - name: Sync GitHub profile
-        run: pnpm sync:github-profile
+      - name: Verify static files do not contain build secrets
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Build frontend
-        run: pnpm build:frontend
+          search_paths=(frontend/dist data)
+          secret_names=(NOTION_TOKEN NOTION_DATABASE_ID GITHUB_TOKEN GH_STATS_TOKEN)
+
+          for secret_name in "${secret_names[@]}"; do
+            secret_value="${!secret_name:-}"
+
+            if [[ -n "$secret_value" ]] && grep -R --fixed-strings --quiet -- "$secret_value" "${search_paths[@]}"; then
+              echo "::error::${secret_name} was found in static output."
+              exit 1
+            fi
+          done
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

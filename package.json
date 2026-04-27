@@ -2,6 +2,7 @@
   "name": "blog-monorepo",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@10.30.1",
   "type": "module",
   "scripts": {
     "dev:frontend": "pnpm --filter frontend dev",
@@ -12,6 +13,9 @@
     "sync:github-projects": "pnpm build:blog-data-config && pnpm --filter @blog/github-project-sync sync",
     "sync:github-profile": "pnpm build:blog-data-config && pnpm --filter @blog/github-profile-sync sync",
     "sync:github": "pnpm sync:github-projects && pnpm sync:github-profile",
+    "sync:data": "pnpm sync:notion && pnpm sync:github",
+    "verify:frontend": "pnpm --filter frontend type-check",
+    "build:site": "pnpm sync:data && pnpm verify:frontend && pnpm build:frontend",
     "lint": "pnpm -r lint",
     "type-check": "pnpm -r type-check"
   },

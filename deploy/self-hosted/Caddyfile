@@ -1,0 +1,11 @@
+example.com {
+    root * /srv/blog/current
+    encode zstd gzip
+
+    handle /healthz {
+        respond "ok" 200
+    }
+
+    try_files {path} {path}/ /index.html
+    file_server
+}

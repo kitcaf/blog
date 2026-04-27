@@ -1,0 +1,15 @@
+[Unit]
+Description=Build and deploy the blog static site
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+Environment=BLOG_APP_ROOT=/srv/blog
+Environment=BLOG_BRANCH=main
+Environment=BLOG_KEEP_RELEASES=5
+Environment="BLOG_HEALTHCHECK_URL=https://example.com/"
+WorkingDirectory=/srv/blog/source
+ExecStart=/srv/blog/source/scripts/deploy-self-hosted.sh

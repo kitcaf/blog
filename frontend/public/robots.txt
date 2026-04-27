@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+# Add Sitemap when the production SITE_URL is configured.

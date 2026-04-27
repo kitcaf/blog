@@ -23,6 +23,9 @@ export interface BlogDataConfig {
     bio: string
     links: string[]
   }
+  imageAssets?: {
+    maxImageBytes?: number
+  }
   outputs: {
     posts: string
     projects: string
@@ -40,6 +43,9 @@ export interface ResolvedBlogDataConfig {
     fullText: string
     bio: string
     links: BlogDataProfileLink[]
+  }
+  imageAssets: {
+    maxImageBytes: number
   }
   outputs: {
     posts: string

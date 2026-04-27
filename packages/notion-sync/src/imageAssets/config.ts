@@ -19,11 +19,13 @@ export interface CloudflareR2ImageAssetsConfig {
 
 export type ImageAssetsConfig = DisabledImageAssetsConfig | CloudflareR2ImageAssetsConfig
 
+export interface ImageAssetRuntimeConfig {
+  maxImageBytes: number
+}
+
 type ProjectEnv = Record<string, string | undefined>
 
-const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const imageAssetProviderEnvKey = 'IMAGE_ASSET_PROVIDER'
-const maxImageBytesEnvKey = 'NOTION_IMAGE_MAX_BYTES'
 
 const getEnvValue = (env: ProjectEnv, key: string): string => {
   return env[key]?.trim() ?? ''
@@ -43,25 +45,12 @@ const parseImageAssetProvider = (env: ProjectEnv): ImageAssetProviderName | unde
   throw new Error(`${imageAssetProviderEnvKey} must be "cloudflare-r2" or "none".`)
 }
 
-const parseMaxImageBytes = (env: ProjectEnv): number => {
-  const rawValue = getEnvValue(env, maxImageBytesEnvKey)
-
-  if (!rawValue) {
-    return DEFAULT_MAX_IMAGE_BYTES
-  }
-
-  const parsedValue = Number.parseInt(rawValue, 10)
-
-  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-    throw new Error(`${maxImageBytesEnvKey} must be a positive integer number of bytes.`)
-  }
-
-  return parsedValue
-}
-
-export const loadImageAssetsConfig = (env: ProjectEnv): ImageAssetsConfig => {
+export const loadImageAssetsConfig = (
+  env: ProjectEnv,
+  runtimeConfig: ImageAssetRuntimeConfig
+): ImageAssetsConfig => {
   const provider = parseImageAssetProvider(env)
-  const maxImageBytes = parseMaxImageBytes(env)
+  const { maxImageBytes } = runtimeConfig
 
   if (provider === 'none') {
     return {

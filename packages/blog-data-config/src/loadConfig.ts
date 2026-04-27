@@ -12,6 +12,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_CONFIG_PATH = 'blog-data.config.ts'
+const DEFAULT_IMAGE_ASSET_MAX_BYTES = 10 * 1024 * 1024
 const githubUsernamePattern = /^[A-Za-z0-9-]{1,39}$/
 const githubHostPattern = /^(?:www\.)?github\.com$/i
 
@@ -180,6 +181,18 @@ const normalizeOutputPath = (
   return resolveProjectPath(rootDir, outputPath)
 }
 
+const normalizeImageAssets = (imageAssets: BlogDataConfig['imageAssets']): ResolvedBlogDataConfig['imageAssets'] => {
+  const maxImageBytes = imageAssets?.maxImageBytes ?? DEFAULT_IMAGE_ASSET_MAX_BYTES
+
+  if (!Number.isInteger(maxImageBytes) || maxImageBytes <= 0) {
+    throw new Error('imageAssets.maxImageBytes must be a positive integer number of bytes.')
+  }
+
+  return {
+    maxImageBytes
+  }
+}
+
 const normalizeConfig = (config: BlogDataConfig, rootDir: string): ResolvedBlogDataConfig => {
   if (!Array.isArray(config.projects)) {
     throw new Error('projects must be an array.')
@@ -200,6 +213,7 @@ const normalizeConfig = (config: BlogDataConfig, rootDir: string): ResolvedBlogD
       sources
     },
     profile: normalizeProfile(config.profile),
+    imageAssets: normalizeImageAssets(config.imageAssets),
     outputs: {
       posts: normalizeOutputPath(config.outputs, 'posts', rootDir),
       projects: normalizeOutputPath(config.outputs, 'projects', rootDir),

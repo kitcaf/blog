@@ -35,7 +35,6 @@ R2_ENDPOINT=https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
 R2_PUBLIC_BASE_URL=https://pub-xxxx.r2.dev
 R2_OBJECT_PREFIX=notion-images
 R2_CACHE_MANIFEST_KEY=notion-images/cache/notion-image-cache.json
-NOTION_IMAGE_MAX_BYTES=10485760
 BLOG_DATA_CONFIG_PATH=
 SITE_BASE_PATH=/
 ```

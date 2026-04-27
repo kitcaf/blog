@@ -11,6 +11,9 @@ const blogDataConfig = {
     bio: 'Full-stack developer. Sharing notes and thoughts on AI agents and AIGC.',
     links: ['https://github.com/kitcaf']
   },
+  imageAssets: {
+    maxImageBytes: 10 * 1024 * 1024
+  },
   outputs: {
     posts: 'data/posts.json',
     projects: 'data/projects.generated.json',

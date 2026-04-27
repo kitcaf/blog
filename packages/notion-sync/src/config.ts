@@ -74,7 +74,7 @@ export const loadSyncConfig = async (rootDir = PROJECT_ROOT): Promise<SyncConfig
     outputPath: blogDataConfig.outputs.posts,
     author: SYNC_SETTINGS.author,
     allowEmptySync: SYNC_SETTINGS.allowEmptySync,
-    imageAssets: loadImageAssetsConfig(env),
+    imageAssets: loadImageAssetsConfig(env, blogDataConfig.imageAssets),
     properties: SYNC_SETTINGS.properties
   }
 }

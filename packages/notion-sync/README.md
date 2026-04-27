@@ -51,3 +51,5 @@ R2_CACHE_MANIFEST_KEY=notion-images/cache/notion-image-cache.json
 ```
 
 R2 凭证只在 Node 构建脚本中使用，不要使用 `VITE_` 前缀。manifest 缓存在 R2 中共享，避免本地、服务器和 GitHub Actions 重复上传同一张未变化的 Notion 图片。
+
+单张 Notion 图片下载体积上限从根级 `blog-data.config.ts` 的 `imageAssets.maxImageBytes` 读取；未配置时默认使用 `10485760` 字节。

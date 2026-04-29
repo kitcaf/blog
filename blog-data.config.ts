@@ -23,3 +23,4 @@ const blogDataConfig = {
 } satisfies BlogDataConfig
 
 export default blogDataConfig
+

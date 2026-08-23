@@ -1,0 +1,19 @@
+{
+  "name": "@blog/ingest",
+  "version": "1.0.0",
+  "description": "将 Markdown 文章写入 Notion 的 Cloudflare Worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "tsx test/ingest.test.ts",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260823.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "wrangler": "^4.125.0"
+  }
+}

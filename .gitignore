@@ -14,6 +14,9 @@
 /frontendAdmin/logs
 /.idea
 node_modules
+/apps/*/.dev.vars
+/apps/*/.wrangler
+/apps/*/.wrangler-dry-run
 /frontend/src/data/*
 !/frontend/src/data/
 !/frontend/src/data/*.ts

@@ -5,6 +5,9 @@
   "packageManager": "pnpm@10.30.1",
   "type": "module",
   "scripts": {
+    "dev:ingest": "pnpm --filter @blog/ingest dev",
+    "deploy:ingest": "pnpm --filter @blog/ingest run deploy",
+    "test:ingest": "pnpm --filter @blog/ingest test",
     "dev:frontend": "pnpm --filter frontend dev",
     "pre:frontend": "pnpm --filter frontend preview",
     "build:frontend": "pnpm --filter frontend build",

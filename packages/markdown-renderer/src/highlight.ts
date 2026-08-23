@@ -78,6 +78,11 @@ export interface HighlightedCode {
   highlightedLanguage: string
 }
 
+/**
+ * 
+ * @param param0 
+ * @returns 
+ */
 export const highlightCode = async ({ code, language }: HighlightCodeOptions): Promise<HighlightedCode> => {
   const highlighter = await getHighlighter()
   const requestedLanguage = normalizeLanguageName(language)

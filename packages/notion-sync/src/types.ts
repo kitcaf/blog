@@ -174,19 +174,10 @@ export interface NotionClient {
   listBlockChildren(blockId: string): Promise<NotionBlock[]>
 }
 
-export interface RenderedBlock {
-  html: string
-  plainText: string
-}
-
 export interface RenderWarning {
   blockId: string
   blockType: string
   message: string
-}
-
-export interface RenderedContent extends RenderedBlock {
-  warnings: RenderWarning[]
 }
 
 export interface RenderedMarkdownBlock {

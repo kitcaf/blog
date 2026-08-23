@@ -24,6 +24,16 @@
   -> 部署到服务器或静态托管平台
 ```
 
+## ChatGPT 内容归档
+
+`apps/ingest` 提供一个独立的 Cloudflare Worker，将 ChatGPT 生成的 Markdown 文章直接写入 Notion：
+
+```text
+ChatGPT -> kitcaf-ingest -> Notion -> 现有定时同步 -> GitHub Pages
+```
+
+Worker 只负责鉴权、协议校验、映射 Notion properties 和原样转发 Markdown，不触发 GitHub Actions，也不改变现有发布链路。配置和部署方式见 [`apps/ingest/README.md`](apps/ingest/README.md)。
+
 ## 使用方式
 
 项目的使用方式主要分为两种：自建服务器部署，或者使用 GitHub Actions 自动构建发布。两种方式的核心都一样：先把需要的变量配置完整，再交给脚本或自动化流程统一执行同步、构建和发布。
@@ -67,4 +77,3 @@ Notion 数据库建议包含以下字段：
 ## 自定义
 
 - blog-data.config.ts outputs对象中定义了notion同步和github同步的数据存储位置。可以根据数据重新定义自己的ui
-

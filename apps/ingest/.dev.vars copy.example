@@ -1,0 +1,3 @@
+INGEST_TOKEN=replace-with-your-ingest-token
+NOTION_TOKEN=replace-with-your-notion-token
+NOTION_DATA_SOURCE_ID=replace-with-your-notion-data-source-id

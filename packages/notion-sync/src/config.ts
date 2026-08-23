@@ -21,8 +21,8 @@ const SYNC_SETTINGS = {
     status: 'Status',
     publishedStatus: 'Published',
     category: 'Category',
-    tags: 'Tags',
-    publishedAt: 'PublishedAt',
+    tags: 'Tag',
+    publishedAt: '日期',
     slug: 'Slug'
   }
 } satisfies Omit<SyncConfig, 'rootDir' | 'notionToken' | 'notionDatabaseId' | 'outputPath' | 'imageAssets'>

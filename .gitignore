@@ -6,7 +6,6 @@
 !.env.example
 /frontend/.env
 /frontend/.env.local
-/docs
 /frontendAdmin/.agents
 /frontend/.agents
 /backend/.agents

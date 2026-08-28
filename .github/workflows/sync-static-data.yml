@@ -6,7 +6,7 @@ on:
     - cron: "0 18 * * *"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -26,10 +26,10 @@ jobs:
       R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME || secrets.R2_BUCKET_NAME }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_ENDPOINT: ${{ vars.R2_ENDPOINT || secrets.R2_BUCKET_NAME}}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT || secrets.R2_ENDPOINT }}
       R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL || secrets.R2_PUBLIC_BASE_URL }}
-      R2_OBJECT_PREFIX: ${{ vars.R2_OBJECT_PREFIX || secrets.R2_OBJECT_PREFIX}}
-      R2_CACHE_MANIFEST_KEY: ${{ vars.R2_CACHE_MANIFEST_KEY || secrets.R2_CACHE_MANIFEST_KEY}}
+      R2_OBJECT_PREFIX: ${{ vars.R2_OBJECT_PREFIX || secrets.R2_OBJECT_PREFIX }}
+      R2_CACHE_MANIFEST_KEY: ${{ vars.R2_CACHE_MANIFEST_KEY || secrets.R2_CACHE_MANIFEST_KEY }}
       SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH || (endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name)) }}
 
     steps:
@@ -70,6 +70,30 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Keep repo active
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A data 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            git commit --allow-empty -m "chore: keep repo active [skip ci]"
+          else
+            git commit -m "chore: refresh data [skip ci]"
+          fi
+
+          git push origin "HEAD:${GITHUB_REF_NAME}" || {
+            echo "push rejected, retrying after rebase"
+            git fetch origin "${GITHUB_REF_NAME}"
+            git rebase "origin/${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          }
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

@@ -1,5 +1,32 @@
 [
   {
+    "sourceId": "3ccee003",
+    "slug": "graph-engineering-3ccee003",
+    "title": "Graph Engineering",
+    "date": "2026-08-30",
+    "publishedAt": "2026-08-30T12:00:00.000Z",
+    "tags": [],
+    "category": "agent",
+    "author": "kitcaf",
+    "contentMarkdown": "Graph Engineering = **把 Agent 系统中的“任务、Agent、状态以及它们之间的关系”显式建模成可执行、可变化、可演化的图，从而把优化对象从“单个 Agent 的智能”提升到“整个 Agent 系统的组织智能”**\n\n**2026 年 7 月 18 日**，OpenClaw 创建者 Peter Steinberger 在 X 上发了一句：\n\n>  Are we still talking loops or did we shift to graphs yet\n\nLangGraph、AutoGen本质就是图式 Agent orchestration（就是Graph Engineering）\n\n### 综述：\n\nGraph Engineering in the Era of LLM Agents: From Individual Intelligence to System Intelligence\n\nGraph Engineering定义：**以 Graph 为核心 substrate，把任务、组件和运行状态之间的关系 externalize，从而支持系统级的组织、协调、监控、恢复和优化**\n\n核心：过去 Agent Engineering 主要在优化一个 Agent；现在开始优化“**一群智能组件如何组成一个智能系统（任务、Agent、状态之间的关系结构）**”\n\n![Article image](<https://pub-737ea5fdc32e4c1395648c25a7732afd.r2.dev/notion-images/0b70aecf4cd853ff.png>)\n\n```typescript\n              Graph Engineering\n                     │\n       ┌─────────────┼─────────────┐\n       ↓             ↓             ↓\n\n Task Organization  Agent       Runtime State\n                    Coordination Management\n\n做什么？            谁来做？       现在发生了什么？\n怎么组织工作？      怎么协作？     出错以后怎么办？\n```\n\n#### 第一张 Graph：Task Organization\n\n- Goal Decomposition：任务分解Subgoal\n- Workflow Optimization：GPTSwarm、ADAS、AutoFlow、AFlow、A2Flow、MermaidFlow、VFlow\n\n```typescript\n运行\n ↓\n获得 feedback\n ↓\n修改 workflow\n ↓\n继续运行\n```\n\n#### 第二张Graph：Agent Coordination\n\n- Agent Capability Graph：AI Workforce Capability Graph\n\n回答：Task X 需要 Python \\+ Web \\+ Finance，应该派给谁？\n\n- Agent Team Graph：谁属于团队，谁负责什么\n- Communication Graph：此时此刻，谁需要告诉谁什么\n\n#### 第三张 Graph：Runtime State Management",
+    "updatedAt": "2026-08-30T12:43:00.000Z"
+  },
+  {
+    "sourceId": "3c8ee003",
+    "slug": "speaking-practice-ai-agent-training-methods-3c8ee003",
+    "title": "Speaking Practice: AI Agent Training Methods",
+    "date": "2026-08-26",
+    "publishedAt": "2026-08-26T00:00:00.000Z",
+    "tags": [
+      "English",
+      "Speaking"
+    ],
+    "category": "English Learning",
+    "author": "kitcaf",
+    "contentMarkdown": "### What I Wanted to Say\n\n- An AI agent has three components: the model, context, and tools\\.\n- There are three training methods: pre\\-training, supervised fine\\-tuning, and reinforcement learning\\.\n- Pre\\-training gives a model a broad base of knowledge\\.\n- Supervised fine\\-tuning teaches a model from example input\\-output pairs\\.\n- Reinforcement learning improves behavior through rewards and penalties based on results\\.\n\n### A Better Way to Say It\n\nAn AI agent has three main components: the model, context, and tools\\. There are also three main training methods\\. Pre\\-training gives the model a broad base of knowledge\\. Supervised fine\\-tuning teaches the model to produce answers by learning from example input\\-output pairs\\. Reinforcement learning improves the model's behavior by letting it try and then rewarding or penalizing it based on the results\\.\n\n### Useful Sentences & Expressions\n\n#### 1\\. The agent has three components: the model, context, and tools\\.\n\n**When to use it**\n\nUse this pattern to introduce the main parts of a system\\.\n\n#### 2\\. There are three training methods\\.\n\n**When to use it**\n\nUse this to introduce a list of methods or approaches\\.\n\n#### 3\\. Pre\\-training gives the model a broad base of knowledge\\.\n\n**When to use it**\n\nUse \"a broad base of knowledge\" to describe general knowledge learned across many topics\\.\n\n#### 4\\. Supervised fine\\-tuning teaches the model to produce answers by learning from example input\\-output pairs\\.\n\n**When to use it**\n\nUse \"learn from example input\\-output pairs\" when explaining supervised learning\\.\n\n#### 5\\. The goal of reinforcement learning is to improve the model's behavior\\.\n\n**When to use it**\n\nUse \"the goal of \\.\\.\\. is to \\.\\.\\.\" to explain the purpose of a method\\.\n\n### Words & Phrases I Didn't Know\n\n#### 监督微调\n\n**Natural English**\n\n> supervised fine\\-tuning\n\n#### 提供\n\n**Natural English**\n\n> provide\n\nExample: \"examples provided by a supervisor\"\n\n#### 负面的\n\n**Natural English**\n\n> negative\n\nExample: \"a negative signal\"\n\n#### penalize\n\n**Meaning**\n\n> to give a penalty or negative feedback\n\n#### 信号\n\n**Natural English**\n\n> signal\n\n### Re\\-speak Challenge\n\n**Try to talk about:**\n\n- the three components of an AI agent\n- the three training methods\n- how pre\\-training, supervised fine\\-tuning, and reinforcement learning differ\n\n**Try to use:**\n\n- \"a broad base of knowledge\"\n- \"example input\\-output pairs\"\n- \"rewarding or penalizing it based on the results\"",
+    "updatedAt": "2026-08-30T12:00:00.000Z"
+  },
+  {
     "sourceId": "3c5ee003",
     "slug": "talking-about-my-weekend-ingest-test-2026-08-23-12-48-18-3c5ee003",
     "title": "Talking About My Weekend - Ingest Test 2026-08-23 12:48:18",
